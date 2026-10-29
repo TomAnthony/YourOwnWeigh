@@ -55,9 +55,18 @@ class Backend:
     async def connect(self, device_id, receive, disconnected):
         if device_id not in self.devices:
             raise ValueError("Scan again before connecting to this scale")
+        device = self.devices[device_id]
+        device_path = None
+        if sys.platform == "linux":
+            # Bleak uses this exact path too. The same address can be cached
+            # under several adapters, so an address-only lookup is ambiguous.
+            details = device.details
+            device_path = details.get("path") if isinstance(details, dict) else None
+            if not isinstance(device_path, str) or not device_path:
+                raise ValueError("Scan again before connecting to this scale")
         transport = Transport()
         transport.client = BleakClient(
-            self.devices[device_id],
+            device,
             disconnected_callback=lambda _: disconnected(),
             timeout=30,
         )
@@ -65,14 +74,9 @@ class Backend:
         opened_le = False
         try:
             if sys.platform == "linux":
-                from .bluez import BlueZ, DEVICE, values
+                from .bluez import BlueZ, DEVICE
 
                 bluez = await BlueZ().__aenter__()
-                paths = [path for path, interfaces in (await bluez.objects()).items()
-                         if values(interfaces.get(DEVICE, {})).get("Address", "").upper() == device_id.upper()]
-                if not paths:
-                    raise ValueError("Scan again before connecting to this scale")
-                device_path = paths[0]
                 opened_le = await bluez.prepare_ble(device_path)
             await transport.client.connect()
             service = transport.client.services.get_service(SERVICE)

@@ -107,10 +107,20 @@ class BlueZ:
         if current.get("Paired") or current.get("Connected"):
             return False
         await self.call(adapter, ADAPTER, "RemoveDevice", "o", [path])
-        await self.call(adapter, ADAPTER, "ConnectDevice", "a{sv}", [{
-            "Address": Variant("s", props["Address"]),
-            "AddressType": Variant("s", props.get("AddressType", "public")),
-        }])
+        try:
+            await self.call(adapter, ADAPTER, "ConnectDevice", "a{sv}", [{
+                "Address": Variant("s", props["Address"]),
+                "AddressType": Variant("s", props.get("AddressType", "public")),
+            }])
+        except (TimeoutError, asyncio.CancelledError):
+            # Cancelling our D-Bus wait does not cancel BlueZ's connection
+            # attempt. The caller cannot own/clean up this link until we return.
+            # Disconnect also cancels a pending Device1 connection attempt.
+            try:
+                await self.call(path, DEVICE, "Disconnect", timeout=3)
+            except Exception:
+                pass  # The transient device may already be gone; keep the original error.
+            raise
         return True
 
     async def pair(self, path):

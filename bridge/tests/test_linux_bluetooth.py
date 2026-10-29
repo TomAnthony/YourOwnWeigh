@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 if sys.platform == "linux":
+    from bleak.backends.device import BLEDevice
     from dbus_fast import DBusError, Message, MessageType, Variant
     from dbus_fast.aio import MessageBus
     from yow_bridge.transports import classic_linux
@@ -161,9 +162,13 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(sys.platform == "linux", "Linux D-Bus transport")
 class BlueZTests(unittest.IsolatedAsyncioTestCase):
-    async def test_ble_connects_le_before_pairing_and_negotiates_write_size(self):
+    async def test_ble_uses_scanned_adapter_for_connection_pairing_and_mtu(self):
         from yow_bridge.transports import ble, bluez as bluez_module
 
+        address = "00:11:22:33:44:55"
+        other_path = "/org/bluez/hci0/dev_00_11_22_33_44_55"
+        scanned_path = "/org/bluez/hci1/dev_00_11_22_33_44_55"
+        device = BLEDevice(address, "Body", {"path": scanned_path})
         steps = []
         characteristic = object()
         client = SimpleNamespace(is_connected=False, services=SimpleNamespace(
@@ -175,6 +180,7 @@ class BlueZTests(unittest.IsolatedAsyncioTestCase):
 
         async def pair(path):
             self.assertTrue(client.is_connected)
+            self.assertEqual(path, scanned_path)
             steps.append("pair")
 
         async def notify(*args):
@@ -185,18 +191,87 @@ class BlueZTests(unittest.IsolatedAsyncioTestCase):
         client.disconnect = AsyncMock()
         bluez = BlueZ()
         bluez.bus = SimpleNamespace(disconnect=lambda: steps.append("close-bus"))
-        bluez.objects = AsyncMock(return_value={"/scale": {DEVICE: {"Address": Variant("s", "00:11:22:33:44:55")}}})
+        # Put the other adapter first to catch accidental address-only lookup.
+        bluez.objects = AsyncMock(return_value={
+            path: {DEVICE: {"Address": Variant("s", address)}}
+            for path in (other_path, scanned_path)
+        })
         bluez.pair = pair
         bluez.prepare_ble = AsyncMock(return_value=False)
         bluez.notify_mtu = AsyncMock(return_value=185)
         context = SimpleNamespace(__aenter__=AsyncMock(return_value=bluez))
         radio = ble.Backend()
-        radio.devices["00:11:22:33:44:55"] = object()
-        with patch.object(ble, "BleakClient", return_value=client), patch.object(bluez_module, "BlueZ", return_value=context):
-            transport = await radio.connect("00:11:22:33:44:55", lambda _: None, lambda: None)
+        radio.devices[address] = device
+        with patch.object(ble, "BleakClient", return_value=client) as client_factory, patch.object(bluez_module, "BlueZ", return_value=context):
+            transport = await radio.connect(address, lambda _: None, lambda: None)
+        self.assertIs(client_factory.call_args.args[0], device)
+        bluez.prepare_ble.assert_awaited_once_with(scanned_path)
+        bluez.notify_mtu.assert_awaited_once_with(scanned_path, ble.CHARACTERISTIC)
         self.assertEqual(steps, ["connect-le", "pair", "notify", "close-bus"])
         self.assertEqual(transport.max_write, 182)
         await transport.disconnect()
+
+    async def test_missing_scanned_path_does_not_fall_back_to_another_adapter(self):
+        from yow_bridge.transports import ble
+
+        radio = ble.Backend()
+        address = "00:11:22:33:44:55"
+        radio.devices[address] = BLEDevice(address, "Body", {})
+        with patch.object(ble, "BleakClient") as client_factory:
+            with self.assertRaisesRegex(ValueError, "Scan again"):
+                await radio.connect(address, lambda _: None, lambda: None)
+        client_factory.assert_not_called()
+
+    def pending_le_connection(self):
+        bluez = BlueZ()
+        bluez.objects = AsyncMock(return_value={"/scale": {DEVICE: {
+            "Address": Variant("s", "00:11:22:33:44:55"),
+            "Adapter": Variant("o", "/adapter"), "Paired": Variant("b", False),
+            "Connected": Variant("b", False),
+        }}})
+        bluez.bus = SimpleNamespace(introspect=AsyncMock(return_value=SimpleNamespace(interfaces=[
+            SimpleNamespace(name=ADAPTER, methods=[SimpleNamespace(name="ConnectDevice")])
+        ])))
+        return bluez
+
+    async def test_cancelled_le_connection_disconnects_before_propagating(self):
+        bluez = self.pending_le_connection()
+        started = asyncio.Event()
+        disconnected = asyncio.Event()
+
+        async def call(path, interface, member, *args, **kwargs):
+            if member == "ConnectDevice":
+                started.set()
+                await asyncio.Future()
+            elif member == "Disconnect":
+                await asyncio.sleep(0)  # Cleanup must be awaited after cancellation.
+                disconnected.set()
+
+        bluez.call = AsyncMock(side_effect=call)
+        task = asyncio.create_task(bluez.prepare_ble("/scale"))
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(disconnected.is_set())
+            self.assertEqual([c.args[2] for c in bluez.call.await_args_list],
+                             ["RemoveDevice", "ConnectDevice", "Disconnect"])
+            bluez.call.assert_awaited_with("/scale", DEVICE, "Disconnect", timeout=3)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_timed_out_le_connection_disconnects_and_preserves_original_error(self):
+        for cleanup_error in (None, DBusError("org.bluez.Error.DoesNotExist", "Already gone")):
+            with self.subTest(cleanup_fails=cleanup_error is not None):
+                bluez = self.pending_le_connection()
+                original = TimeoutError("ConnectDevice timed out")
+                bluez.call = AsyncMock(side_effect=[None, original, cleanup_error])
+                with self.assertRaises(TimeoutError) as raised:
+                    await bluez.prepare_ble("/scale")
+                self.assertIs(raised.exception, original)
+                bluez.call.assert_awaited_with("/scale", DEVICE, "Disconnect", timeout=3)
 
     async def test_fresh_dual_mode_device_is_connected_explicitly_over_le(self):
         bluez = BlueZ()
