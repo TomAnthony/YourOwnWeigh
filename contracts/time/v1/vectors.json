@@ -1,0 +1,66 @@
+[
+  {
+    "zone": "UTC",
+    "utcSeconds": 1767225600,
+    "goff": 0,
+    "dst": 0,
+    "ngoff": 0,
+    "wppHex": "6955b900000000000000000000000000"
+  },
+  {
+    "zone": "Europe/Berlin",
+    "utcSeconds": 1774745999,
+    "goff": 3600,
+    "dst": 1774746000,
+    "ngoff": 7200,
+    "wppHex": "69c8798f00000e1069c8799000001c20"
+  },
+  {
+    "zone": "Europe/Berlin",
+    "utcSeconds": 1774746000,
+    "goff": 7200,
+    "dst": 1792890000,
+    "ngoff": 3600,
+    "wppHex": "69c8799000001c206add549000000e10"
+  },
+  {
+    "zone": "Europe/Berlin",
+    "utcSeconds": 1792889999,
+    "goff": 7200,
+    "dst": 1792890000,
+    "ngoff": 3600,
+    "wppHex": "6add548f00001c206add549000000e10"
+  },
+  {
+    "zone": "Europe/Berlin",
+    "utcSeconds": 1792890000,
+    "goff": 3600,
+    "dst": 1806195600,
+    "ngoff": 7200,
+    "wppHex": "6add549000000e106ba85b9000001c20"
+  },
+  {
+    "zone": "America/New_York",
+    "utcSeconds": 1769947200,
+    "goff": -18000,
+    "dst": 1772953200,
+    "ngoff": -14400,
+    "wppHex": "697f4040ffffb9b069ad1e70ffffc7c0"
+  },
+  {
+    "zone": "Asia/Kolkata",
+    "utcSeconds": 1782864000,
+    "goff": 19800,
+    "dst": 0,
+    "ngoff": 19800,
+    "wppHex": "6a44588000004d580000000000004d58"
+  },
+  {
+    "zone": "Australia/Adelaide",
+    "utcSeconds": 1782864000,
+    "goff": 34200,
+    "dst": 1791045000,
+    "ngoff": 37800,
+    "wppHex": "6a445880000085986ac12d88000093a8"
+  }
+]

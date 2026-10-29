@@ -1,0 +1,687 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yourownweigh.invalid/contracts/bridge/v1/command.schema.json",
+  "title": "Python Bridge Command v1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "version",
+    "kind",
+    "id",
+    "operationId",
+    "name",
+    "parameters"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "yow.bridge"
+    },
+    "version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "command"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,80}$"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,80}$"
+    },
+    "deviceId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "connectionGeneration": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "replyTo": {
+      "type": "string"
+    },
+    "name": {
+      "enum": [
+        "bridge.describe",
+        "device.scan.start",
+        "device.scan.stop",
+        "device.connect",
+        "device.disconnect",
+        "device.probe",
+        "device.complete_setup",
+        "device.reveal_secret",
+        "device.enroll",
+        "device.read_configuration",
+        "device.set_server",
+        "device.connect_wifi",
+        "device.set_time",
+        "firmware.generate",
+        "firmware.inspect",
+        "firmware.install",
+        "artifact.begin",
+        "artifact.chunk",
+        "artifact.finish",
+        "artifact.discard",
+        "artifact.read",
+        "operation.get",
+        "operation.cancel"
+      ]
+    },
+    "parameters": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "bridge.describe"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.scan.start"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "enum": [
+                  "WBS06",
+                  "WBS03"
+                ]
+              },
+              "durationSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60
+              }
+            },
+            "required": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.scan.stop"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.connect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.disconnect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.probe"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.complete_setup"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.reveal_secret"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.enroll"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "approved": {
+                "const": true
+              },
+              "label": {
+                "type": "string"
+              },
+              "timeZone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "approved"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.read_configuration"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.set_server"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "transport": {
+                "enum": [
+                  "http",
+                  "https"
+                ]
+              }
+            },
+            "required": [
+              "host",
+              "transport"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.connect_wifi"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ssid": {
+                "type": "string"
+              },
+              "password": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ssid",
+              "password"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.set_time"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "utcSeconds": {
+                "type": "integer"
+              },
+              "goff": {
+                "type": "integer"
+              },
+              "dst": {
+                "type": "integer"
+              },
+              "ngoff": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "utcSeconds",
+              "goff",
+              "dst",
+              "ngoff"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "firmware.generate"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "enum": [
+                  "WBS06",
+                  "WBS03"
+                ]
+              }
+            },
+            "required": [
+              "model"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "firmware.inspect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "artifactId"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "firmware.install"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "confirmation": {
+                "const": "FLASH"
+              }
+            },
+            "required": [
+              "artifactId",
+              "sha256",
+              "confirmation"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "artifact.begin"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "enum": [
+                  "WBS06",
+                  "WBS03"
+                ]
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 2097152
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "filename": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "model",
+              "size",
+              "sha256",
+              "filename"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "artifact.chunk"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "transferId": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "dataBase64": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "transferId",
+              "offset",
+              "dataBase64"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "artifact.finish"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "transferId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "transferId"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "artifact.discard"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              }
+            },
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "artifact.read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "artifactId"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "operation.get"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operationId"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "operation.cancel"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "operationId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operationId"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

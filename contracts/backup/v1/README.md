@@ -1,0 +1,33 @@
+# Household Backup v1
+
+`GET /api/backup/export` requires the signed-in administrator and returns a
+`YOW-backup-v1` JSON document.
+The structural envelope is in
+`backup.schema.json`. Exact per-table columns and semantic validation are kept
+in one place: [`server/ts/backup.ts`](../../../server/ts/backup.ts), with storage
+constraints in [`server/migrations/`](../../../server/migrations/).
+
+Each section contains complete database rows. IDs are numeric, nullable columns
+remain `null`, and JSON-valued database columns remain strings. Device secrets,
+readings and optional password hashes are private backup contents. Browser
+sessions, bridge invitations/pairings, active device sessions and nonces are
+excluded. The raw `withings_capture` field is cleared; normalized
+profiles are retained in `reviewed_captures`.
+
+`POST /api/backup/import` accepts a multipart `backup` file plus `_csrf`, validates
+at most 10 MiB / 25,000 rows, and stages rows for 15 minutes. It renders a preview
+containing `import_id` and a digest. `POST /api/backup/commit` requires these,
+`_csrf`, `mode=merge|replace`, and `confirmed=1`, all from the same admin session.
+`restore_access=1` explicitly restores included access settings and signs out
+existing sessions. Otherwise current passwords remain.
+
+Merge keeps local edits, matches users by numeric Withings ID and scales by MAC,
+and remaps reading/scale references while deduplicating readings and receipts.
+A matching MAC with a different model or secret is an error. Replace removes
+household rows and restores the staged data. The final change is one SQLite
+transaction or D1 batch; staging failures never replace active data. A committed
+or expired preview cannot be reused.
+
+Tests cover SQLite rollback, reference remapping, repeat merge and access
+preservation. `tools/check_backup_integration.mjs` additionally exercises the
+HTTP flow against a disposable Node or local Wrangler/D1 instance.

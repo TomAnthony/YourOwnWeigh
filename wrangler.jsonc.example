@@ -1,0 +1,35 @@
+// Prefer npm run setup:cloudflare; see server/cloudflare/README.md.
+{
+  "name": "yourownweigh",
+  "main": "server/cloudflare/worker_ts.ts",
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "server/static",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "YOW_BRIDGE",
+        "class_name": "BridgeDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "bridge-v1",
+      "new_sqlite_classes": [
+        "BridgeDurableObject"
+      ]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yourownweigh",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "server/migrations"
+    }
+  ]
+}

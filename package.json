@@ -1,0 +1,32 @@
+{
+  "name": "yow-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "worker:typecheck": "tsc --project tsconfig.worker.json",
+    "server:typecheck": "tsc --project tsconfig.server.json",
+    "server:start": "node --experimental-strip-types server/ts/local.ts",
+    "server:test": "node --experimental-strip-types --test server/ts/tests/*.test.ts",
+    "setup:local": "node --experimental-strip-types tools/setup_local.mjs",
+    "setup:cloudflare": "node tools/setup_cloudflare.mjs",
+    "assets:prepare": "node tools/prepare_assets.mjs",
+    "bridge:test": "PYTHONPATH=bridge/src .venv/bin/python -m unittest discover -s bridge/tests -v"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261026.1",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "prettier": "^3.6.2",
+    "typescript": "7.0.2",
+    "wrangler": "4.152.0"
+  },
+  "overrides": {
+    "undici": "7.30.1"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

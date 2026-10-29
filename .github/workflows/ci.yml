@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # macOS exercises the real PyObjC callback bindings, without Bluetooth hardware.
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Install Dependencies
+        run: |
+          npm ci
+          python -m venv .venv
+          .venv/bin/python -m pip install ./bridge build
+      - name: Run Offline Checks
+        run: sh tools/check_offline.sh
+      - name: Prepare And Check Shortcut Downloads
+        run: |
+          npm run assets:prepare
+          node --experimental-strip-types --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          import { assets } from './server/ts/local.ts';
+          const source = readFileSync('connectors/Apple Health/YourOwnWeigh Sync.shortcut');
+          assert.ok(source.length > 0);
+          assert.deepEqual(readFileSync('server/static/YourOwnWeigh-Sync.shortcut'), source);
+          const response = await assets().fetch(new Request('http://localhost/YourOwnWeigh-Sync.shortcut'));
+          assert.equal(response.status, 200);
+          assert.deepEqual(Buffer.from(await response.arrayBuffer()), source);
+          JS
+      - name: Check Worker Bundle Without Deploying
+        run: npm run setup:cloudflare -- --name yow-ci --dry-run
+      - name: Build Bridge Distributions
+        run: .venv/bin/python -m build bridge --outdir dist
+      - name: Check Installed Wheel And Release Metadata
+        # A separate environment catches missing package data and source-tree imports.
+        run: |
+          python -m venv "$RUNNER_TEMP/yow-wheel-check"
+          "$RUNNER_TEMP/yow-wheel-check/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/yow-wheel-check/bin/yow-bridge" --help
+          "$RUNNER_TEMP/yow-wheel-check/bin/python" -I - <<'PY'
+          from importlib.metadata import version
+          from pathlib import Path
+          import re
+          import tomllib
+          import yow_bridge
+          from yow_bridge.firmware import RELEASES, recipe
+
+          root = Path.cwd()
+          metadata = tomllib.loads((root / 'bridge/pyproject.toml').read_text())['project']
+          bridge_version = version('yow-bridge')
+          assert bridge_version == metadata['version'] == yow_bridge.__version__
+          assert not Path(yow_bridge.__file__).resolve().is_relative_to(root)
+          web_version = re.search(r'WEB_APP_VERSION = "([^"]+)"',
+                                  (root / 'server/ts/version.ts').read_text()).group(1)
+          notes = [f'YourOwnWeigh web app: {web_version}', f'Python bridge: {bridge_version}', '',
+                   'Firmware recipes included (images are generated locally):']
+          for model, (firmware_version, expected_hash) in sorted(RELEASES.items()):
+              packaged = recipe(model)
+              assert packaged['version'] == firmware_version
+              assert packaged['outputSha256'] == expected_hash
+              notes.append(f'- {model}: v{firmware_version}')
+          notes += ['', 'The bridge requires Python 3.11+ on macOS. Install the wheel with pip.',
+                    'The signed Apple Health Shortcut is included with configuration placeholders.',
+                    'Download the repository source for local server or Cloudflare setup.']
+          (root / 'dist/RELEASE-NOTES.md').write_text('\n'.join(notes) + '\n')
+          PY
+      - name: Assemble Release Files
+        run: |
+          cp 'connectors/Apple Health/YourOwnWeigh Sync.shortcut' dist/
+          python - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          files = sorted(p for p in Path('dist').iterdir() if p.is_file())
+          Path('dist/SHA256SUMS').write_text(''.join(
+              f'{sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in files))
+          PY
+      - name: Upload Tested Release Files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: yow-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

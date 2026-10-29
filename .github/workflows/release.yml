@@ -1,0 +1,48 @@
+# Commit and push these workflows, then push a version tag such as v0.4.0.
+# Web, bridge and firmware versions are independent; CI records each in the notes.
+# Uses GitHub's automatic token. No Apple, PyPI or Cloudflare credentials required.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download Tested Release Files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: yow-release
+          path: dist/
+      - name: Verify Checksums
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # A hyphen marks a prerelease (for example v0.5.0-rc.1).
+          options=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/*.shortcut dist/SHA256SUMS dist/RELEASE-NOTES.md \
+            --verify-tag --title "YourOwnWeigh $RELEASE_TAG" \
+            --notes-file dist/RELEASE-NOTES.md "${options[@]}"

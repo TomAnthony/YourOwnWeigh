@@ -1,0 +1,308 @@
+{
+  "bridge.describe": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.scan.start": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "model": {
+        "enum": [
+          "WBS06",
+          "WBS03"
+        ]
+      },
+      "durationSeconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 60
+      }
+    },
+    "required": [
+      "model"
+    ]
+  },
+  "device.scan.stop": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.connect": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.disconnect": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.probe": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.complete_setup": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.reveal_secret": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.enroll": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "approved": {
+        "const": true
+      },
+      "label": {
+        "type": "string"
+      },
+      "timeZone": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "approved"
+    ]
+  },
+  "device.read_configuration": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "device.set_server": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "host": {
+        "type": "string"
+      },
+      "transport": {
+        "enum": [
+          "http",
+          "https"
+        ]
+      }
+    },
+    "required": [
+      "host",
+      "transport"
+    ]
+  },
+  "device.connect_wifi": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "ssid": {
+        "type": "string"
+      },
+      "password": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ssid",
+      "password"
+    ]
+  },
+  "device.set_time": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "utcSeconds": {
+        "type": "integer"
+      },
+      "goff": {
+        "type": "integer"
+      },
+      "dst": {
+        "type": "integer"
+      },
+      "ngoff": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "utcSeconds",
+      "goff",
+      "dst",
+      "ngoff"
+    ]
+  },
+  "firmware.generate": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "model": {
+        "enum": [
+          "WBS06",
+          "WBS03"
+        ]
+      }
+    },
+    "required": [
+      "model"
+    ]
+  },
+  "firmware.inspect": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "artifactId"
+    ]
+  },
+  "firmware.install": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      },
+      "sha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "confirmation": {
+        "const": "FLASH"
+      }
+    },
+    "required": [
+      "artifactId",
+      "sha256",
+      "confirmation"
+    ]
+  },
+  "artifact.begin": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "model": {
+        "enum": [
+          "WBS06",
+          "WBS03"
+        ]
+      },
+      "size": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 2097152
+      },
+      "sha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "filename": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "model",
+      "size",
+      "sha256",
+      "filename"
+    ]
+  },
+  "artifact.chunk": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "transferId": {
+        "type": "string"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "dataBase64": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "transferId",
+      "offset",
+      "dataBase64"
+    ]
+  },
+  "artifact.finish": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "transferId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "transferId"
+    ]
+  },
+  "artifact.discard": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      }
+    },
+    "required": []
+  },
+  "artifact.read": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "artifactId": {
+        "type": "string"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "artifactId"
+    ]
+  },
+  "operation.get": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "operationId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "operationId"
+    ]
+  },
+  "operation.cancel": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "operationId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "operationId"
+    ]
+  }
+}

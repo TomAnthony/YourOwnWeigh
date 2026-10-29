@@ -1,0 +1,2 @@
+# UART transport only; firmware build dependencies live beside each recipe.
+pyserial==3.5

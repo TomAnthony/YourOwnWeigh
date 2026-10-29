@@ -1,0 +1,65 @@
+# Owner-specific firmware, captures, research notes, logs, and credentials.
+/local/
+/server/data/
+/server/.venv/
+/.venv/
+/.venv-workers/
+/.wrangler/
+/python_modules/
+/node_modules/
+/.dev.vars
+/.dev.vars.*
+/.env
+/.env.*
+/wrangler.jsonc
+/wrangler-ts.jsonc
+/wrangler-minimal.jsonc
+/src/vendor/
+/tools/*.log
+
+# Generated apps, firmware images, dumps, and temporary files.
+*.bin
+!design/startup-face/face-user-wbs06-37x26.bin
+!firmware/ws30/v921/startup_face_37x26.bin
+!firmware/wbs06/v1181/startup_face_37x26.bin
+*.img
+*.dump
+*.raw.log
+*.sqlite3
+*.sqlite3-*
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.eth
+*.pcap
+*.pcapng
+*.key
+*.pem
+*.p12
+*.mobileprovision
+*.app/
+*.xcarchive/
+*.ipa
+*.zip
+**/.build/
+**/DerivedData/
+**/build/
+**/__pycache__/
+*.pyc
+.DS_Store
+
+# Local editor state.
+*.xcuserstate
+xcuserdata/
+.idea/
+.vscode/
+
+# Other
+tom-notes.md
+
+# Generated deployment assets and Python packaging.
+/server/static/*.shortcut
+**/*.egg-info/
+**/dist/
+**/.ruff_cache/
