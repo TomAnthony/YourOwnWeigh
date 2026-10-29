@@ -124,7 +124,7 @@ class Application:
             models=["WBS06", "WBS03"],
             backends=["CoreBluetooth", "IOBluetooth"]
             if platform.system() == "Darwin"
-            else [],
+            else ["BlueZ GATT", "BlueZ RFCOMM"] if platform.system() == "Linux" else [],
             deviceId=self.device_id,
             connectionGeneration=self.generation,
             state="connected" if self.connected else "disconnected",

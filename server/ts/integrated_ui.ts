@@ -10,7 +10,7 @@ export function timeZoneSelect(name: string, value = "", id = ""): string {
 export function firmwareWorkspace(csrf: string): string {
   return `<div id="firmware-workspace" data-csrf="${e(csrf)}"><section class="bridge-heading"><h1>Firmware Bridge</h1><div id="bridge-connection" class="bridge-status is-offline"><span class="status-dot" aria-hidden="true"></span><span id="bridge-status-text" role="status">Python Bridge Not Connected</span><button type="button" id="revoke-bridge" class="text-button" title="Disconnect from this server. An active firmware transfer continues locally." hidden>Disconnect Bridge</button></div></section>
     <section id="bridge-offline"><h2>Connect The Python Bridge</h2>
-      <p>Run the bridge on your Mac and leave it running while setting up a scale.</p>
+      <p>Run the bridge on your Mac or Linux computer and leave it running while setting up a scale.</p>
       <ol><li>Install: <code>python3.11 -m venv .venv &amp;&amp; .venv/bin/pip install ./bridge</code></li>
       <li>Run <code>.venv/bin/yow-bridge</code> in Terminal.</li><li>Generate an invitation and paste it into Terminal.</li></ol>
       <div class="action-row"><button id="new-invitation" type="button">Generate Connection Invitation</button><button id="copy-invitation" class="secondary" type="button" hidden>Copy Invitation</button></div>
@@ -35,7 +35,7 @@ export function firmwareWorkspace(csrf: string): string {
       <div class="firmware-grid">
         <section id="firmware-panel"><h2>Firmware</h2>
           <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option></select></label>
-          <p class="hint">Download stock firmware and generate YourOwnWeigh firmware. Files stay on your Mac.</p>
+          <p class="hint">Download stock firmware and generate YourOwnWeigh firmware. Files stay on the computer running the bridge.</p>
           <div class="action-row"><button id="generate-firmware" type="button">Generate Firmware For WBS06</button><label class="text-button file-link">Select Manually<input id="manual-firmware" type="file" accept=".bin" hidden></label></div></div>
           <div id="firmware-info" class="firmware-artifact" hidden></div>
           <div class="action-row"><button id="install-firmware" type="button" disabled>Send Update To Device</button><button id="download-firmware" type="button" class="text-button" hidden>Download Firmware</button></div>

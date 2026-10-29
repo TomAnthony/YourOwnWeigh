@@ -275,7 +275,7 @@
         candidate.presence === "paired_only"
           ? "Paired · Not Seen This Scan"
           : candidate.presence === "connected"
-            ? "Connected To Mac"
+            ? "Connected To Computer"
             : candidate.presence === "seen"
               ? "Seen This Scan"
               : "Unknown",

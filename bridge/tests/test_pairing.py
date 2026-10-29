@@ -3,6 +3,7 @@
 import asyncio
 import json
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -95,6 +96,48 @@ class Pairing(unittest.TestCase):
 
 
 class WebSocketIdentity(unittest.IsolatedAsyncioTestCase):
+    async def test_rapid_disconnects_back_off_despite_successful_upgrades(self):
+        stopped = asyncio.Event()
+        attempts = []
+
+        async def handler(socket):
+            attempts.append(time.monotonic())
+            await socket.recv()
+            if len(attempts) < 3:
+                await socket.close(1011, "Temporary server failure")
+            else:
+                stopped.set()
+
+        application = SimpleNamespace(snapshot=lambda: {}, outgoing=asyncio.Queue())
+        async with serve(handler, "127.0.0.1", 0) as server:
+            pairing = {"server": f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}",
+                       "credential": "test-credential"}
+            with self.assertLogs("yow", level="WARNING"):
+                await asyncio.wait_for(network(application, pairing, stopped), 8)
+        self.assertEqual(len(attempts), 3)
+        self.assertGreaterEqual(attempts[2] - attempts[1], 1.8)
+
+    async def test_protocol_rejection_stops_without_retry_or_state_loss(self):
+        attempts = 0
+        state = {"activeOperation": {"name": "firmware.install", "state": "running"}}
+
+        async def handler(socket):
+            nonlocal attempts
+            attempts += 1
+            await socket.recv()
+            await socket.close(1002, "Unsupported protocol")
+
+        application = SimpleNamespace(snapshot=lambda: dict(state), outgoing=asyncio.Queue())
+        async with serve(handler, "127.0.0.1", 0) as server:
+            pairing = {"server": f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}",
+                       "credential": "test-credential"}
+            with self.assertLogs("yow", level="ERROR") as logs:
+                await asyncio.wait_for(network(application, pairing, asyncio.Event()), 3)
+        self.assertEqual(attempts, 1)
+        self.assertEqual(state["activeOperation"]["state"], "running")
+        self.assertIn("matching releases", "\n".join(logs.output))
+        self.assertIn("--resume", "\n".join(logs.output))
+
     async def test_reconnect_retries_conflict_and_keeps_running_operation(self):
         stopped = asyncio.Event()
         state = {"activeOperation": {"name": "firmware.install", "state": "running", "bytesDone": 0}}

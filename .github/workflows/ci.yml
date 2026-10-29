@@ -10,6 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  linux-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Check Linux Bridge Without Bluetooth Hardware
+        run: |
+          python -m pip install ./bridge
+          python -m unittest discover -s bridge/tests -v
+          yow-bridge --help
+          python -m yow_bridge.diagnose --help
   check:
     # macOS exercises the real PyObjC callback bindings, without Bluetooth hardware.
     runs-on: macos-15
@@ -80,7 +96,7 @@ jobs:
               assert packaged['version'] == firmware_version
               assert packaged['outputSha256'] == expected_hash
               notes.append(f'- {model}: v{firmware_version}')
-          notes += ['', 'The bridge requires Python 3.11+ on macOS. Install the wheel with pip.',
+          notes += ['', 'The bridge requires Python 3.11+ on macOS or Linux with BlueZ. Install the wheel with pip.',
                     'The signed Apple Health Shortcut is included with configuration placeholders.',
                     'Download the repository source for local server or Cloudflare setup.']
           (root / 'dist/RELEASE-NOTES.md').write_text('\n'.join(notes) + '\n')

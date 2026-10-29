@@ -49,9 +49,9 @@ You can check your model under the batteries. “Body Smart” and other Withing
 | macOS 26 | Should work |
 | macOS 15 | Should work |
 | Windows | Pending |
-| Linux | Pending |
+| Linux | Confirmed |
 
-The web app component should support all operating systems, but with this launch the Python bridge currently only supports macOS. The Bluetooth code should be largely the same, hopefully.
+The web app component should support all operating systems, but the Python bridge currently only supports macOS & Linux. Windows support still needs adding.
 
 
 ## Quick Start Using Cloudflare
@@ -148,7 +148,7 @@ See this [blog post](https://www.tomanthony.co.uk/blog/withings-yow-free-wifi-sy
 
 There are 3 areas that can help (all are achievable without special equipment):
 
- 1. Adding Windows & Linux support to the Python bridge - most of the code should be transferrable but I don't have the hardware to check things.
+ 1. Adding Windows support to the Python bridge - most of the code should be transferrable but I don't have the hardware to check things.
  2. Adding support for more models of scales. You must own the model of scales you are adding, and be willing to test against them. You need to be comfortable with modding firmware, or trust AI to do it for you, and be willing to then install that on your own device.
  3. If you can't contribute firmware, but do own a model of scales (check under the batteries for the model number) not on the [firmware list](CONTRIBUTING.md), then running a Python script can identify the firmware used for that model, which is also useful.
 

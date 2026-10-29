@@ -1,11 +1,13 @@
-"""WBS06 GATT transport using Bleak/CoreBluetooth on macOS.
+"""WBS06 GATT transport using Bleak on macOS and Linux.
 
-The characteristic is protected: CoreBluetooth handles the pairing prompt.
+The characteristic is protected: CoreBluetooth handles pairing on macOS;
+Linux pairs through a scoped BlueZ agent before enabling notifications.
 Discovery names are hints only; connect checks the service and probe checks
 hardware/bootloader identity before model commands are enabled.
 """
 
 import asyncio
+import sys
 
 from bleak import BleakClient, BleakScanner
 
@@ -53,13 +55,29 @@ class Backend:
     async def connect(self, device_id, receive, disconnected):
         if device_id not in self.devices:
             raise ValueError("Scan again before connecting to this scale")
+        device = self.devices[device_id]
+        device_path = None
+        if sys.platform == "linux":
+            # Bleak uses this exact path too. The same address can be cached
+            # under several adapters, so an address-only lookup is ambiguous.
+            details = device.details
+            device_path = details.get("path") if isinstance(details, dict) else None
+            if not isinstance(device_path, str) or not device_path:
+                raise ValueError("Scan again before connecting to this scale")
         transport = Transport()
         transport.client = BleakClient(
-            self.devices[device_id],
+            device,
             disconnected_callback=lambda _: disconnected(),
             timeout=30,
         )
+        bluez = None
+        opened_le = False
         try:
+            if sys.platform == "linux":
+                from .bluez import BlueZ, DEVICE
+
+                bluez = await BlueZ().__aenter__()
+                opened_le = await bluez.prepare_ble(device_path)
             await transport.client.connect()
             service = transport.client.services.get_service(SERVICE)
             characteristic = (
@@ -68,17 +86,38 @@ class Backend:
             if characteristic is None:
                 raise ValueError(
                     "WBS06 service and protected characteristic were not found"
+                    + ("; remove the scale's old Classic pairing in Linux Bluetooth settings and retry"
+                       if bluez else "")
                 )
             transport.characteristic = characteristic
-            # ATT writes with response; 512 is CoreBluetooth's GATT value limit.
-            transport.max_write = min(512, max(20, transport.client.mtu_size - 3))
+            # Keep each WPP control frame within one ATT write on both OSes.
+            if bluez:
+                # Establish LE before Pair. WBS06 has a dual-mode radio: asking
+                # older BlueZ to pair a disconnected device can select BR/EDR
+                # and expose only its Serial Port service instead of GATT.
+                await bluez.pair(device_path)
+                mtu = await bluez.notify_mtu(device_path, CHARACTERISTIC)
+                # Allow BlueZ to release the temporary AcquireNotify fd before
+                # Bleak calls StartNotify on its own D-Bus connection.
+                await asyncio.sleep(0.05)
+            else:
+                mtu = transport.client.mtu_size
+            transport.max_write = min(512, max(20, mtu - 3))
             await transport.client.start_notify(
                 characteristic, lambda _, data: receive(bytes(data))
             )
             return transport
         except BaseException:
             await transport.disconnect()
+            if bluez and opened_le:
+                try:
+                    await bluez.call(device_path, DEVICE, "Disconnect", timeout=3)
+                except Exception:
+                    pass
             raise
+        finally:
+            if bluez:
+                bluez.close()
 
 
 class Transport:
