@@ -40,9 +40,9 @@ class Backend:
         self.devices.clear()
         self.stop.clear()
         async with BlueZ() as bluez:
-            adapter, objects = await bluez.adapter()
-            cache = {path: values(interfaces[DEVICE]) for path, interfaces in objects.items()
-                     if DEVICE in interfaces and path.startswith(adapter + "/")}
+            adapter = None
+            cache = {}
+            pending = []
             seen = set()
             discovering = False
 
@@ -60,9 +60,7 @@ class Backend:
                            presence="connected" if props.get("Connected") else
                            "seen" if path in seen else "paired_only"))
 
-            def changed(message):
-                if message.message_type != MessageType.SIGNAL:
-                    return
+            def apply_change(message):
                 if message.interface == OBJECT_MANAGER and message.member == "InterfacesAdded":
                     path, interfaces = message.body
                     if DEVICE not in interfaces or not path.startswith(adapter + "/"):
@@ -70,7 +68,8 @@ class Backend:
                     cache[path] = values(interfaces[DEVICE])
                     if discovering:
                         seen.add(path)
-                    report(path)
+                    if pending is None:
+                        report(path)
                 elif message.interface == PROPERTIES and message.member == "PropertiesChanged":
                     interface, updates, invalidated = message.body
                     path = message.path
@@ -83,26 +82,48 @@ class Backend:
                     # RSSI is emitted by inquiry; Connected is reported as such.
                     if discovering and "RSSI" in updates:
                         seen.add(path)
-                    report(path)
+                    if pending is None:
+                        report(path)
                 elif message.interface == OBJECT_MANAGER and message.member == "InterfacesRemoved":
                     path, interfaces = message.body
                     if DEVICE in interfaces:
                         cache.pop(path, None)
 
+            def changed(message):
+                if message.message_type != MessageType.SIGNAL:
+                    return
+                if not ((message.interface == OBJECT_MANAGER and message.member in
+                         ("InterfacesAdded", "InterfacesRemoved")) or
+                        (message.interface == PROPERTIES and message.member == "PropertiesChanged")):
+                    return
+                if pending is not None:
+                    pending.append(message)
+                else:
+                    apply_change(message)
+
             bluez.bus.add_message_handler(changed)
-            # BlueZ emits broadcast signals only to subscribed bus clients.
-            for interface in (OBJECT_MANAGER, PROPERTIES):
-                reply = await bluez.bus.call(Message(
-                    destination="org.freedesktop.DBus", path="/org/freedesktop/DBus",
-                    interface="org.freedesktop.DBus", member="AddMatch", signature="s",
-                    body=[f"type='signal',sender='org.bluez',interface='{interface}'"],
-                ))
-                if reply.message_type == MessageType.ERROR:
-                    raise DBusError(reply.error_name, str(reply.body))
-            for path in cache:
-                report(path)
             started = False
             try:
+                # Subscribe before GetManagedObjects (inside adapter()). Buffer
+                # signals across its await, then replay them in arrival order so
+                # the snapshot cannot erase a newly added device or newer state.
+                for interface in (OBJECT_MANAGER, PROPERTIES):
+                    reply = await bluez.bus.call(Message(
+                        destination="org.freedesktop.DBus", path="/org/freedesktop/DBus",
+                        interface="org.freedesktop.DBus", member="AddMatch", signature="s",
+                        body=[f"type='signal',sender='org.bluez',interface='{interface}'"],
+                    ))
+                    if reply.message_type == MessageType.ERROR:
+                        raise DBusError(reply.error_name, str(reply.body))
+                adapter, objects = await bluez.adapter()
+                cache = {path: values(interfaces[DEVICE]) for path, interfaces in objects.items()
+                         if DEVICE in interfaces and path.startswith(adapter + "/")}
+                for message in pending:
+                    apply_change(message)
+                pending = None
+                for path in cache:
+                    report(path)
+
                 await bluez.call(adapter, ADAPTER, "SetDiscoveryFilter", "a{sv}", [{
                     "Transport": Variant("s", "bredr"), "DuplicateData": Variant("b", True),
                 }])

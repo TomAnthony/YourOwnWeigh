@@ -18,7 +18,7 @@ if sys.platform == "linux":
     from dbus_fast import DBusError, Message, MessageType, Variant
     from dbus_fast.aio import MessageBus
     from yow_bridge.transports import classic_linux
-    from yow_bridge.transports.bluez import ADAPTER, DEVICE, BlueZ, PairingAgent
+    from yow_bridge.transports.bluez import ADAPTER, DEVICE, OBJECT_MANAGER, PROPERTIES, BlueZ, PairingAgent
     from yow_bridge.transports.classic_linux import Backend, Profile, Transport
 
 
@@ -145,6 +145,124 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(candidates[-1]["rssi"], -45)
         self.assertEqual(actions[-2:], ["StopDiscovery", "BusClosed"])
         self.assertIn(candidates[0]["deviceId"], backend.devices)
+
+    async def test_signals_during_snapshot_are_reconciled_before_reporting(self):
+        backend = Backend()
+        adapter = "/org/bluez/hci0"
+        cached, removed, added = [f"{adapter}/dev_00_24_E4_00_00_0{i}" for i in (1, 2, 3)]
+        other_adapter = "/org/bluez/hci1/dev_00_24_E4_00_00_04"
+
+        def props(index, paired=True):
+            return {"Address": Variant("s", f"00:24:E4:00:00:0{index}"),
+                    "Name": Variant("s", "WS-30"), "Paired": Variant("b", paired),
+                    "RSSI": Variant("n", -90)}
+
+        # The reply was captured before the queued signals below were emitted.
+        snapshot = {cached: {DEVICE: props(1)}, removed: {DEVICE: props(2)}}
+        snapshot[cached][DEVICE]["Connected"] = Variant("b", True)
+        candidates, matches = [], []
+        handlers = []
+        self_test = self
+
+        def emit(message):
+            for callback in handlers:
+                callback(message)
+
+        def update(path, updates, invalidated=()):
+            emit(Message.new_signal(path, PROPERTIES, "PropertiesChanged", "sa{sv}as",
+                                    [DEVICE, updates, list(invalidated)]))
+
+        class Bus:
+            def add_message_handler(self, callback):
+                handlers.append(callback)
+
+            def remove_message_handler(self, callback):
+                handlers.remove(callback)
+
+            async def call(self, message):
+                matches.append(message.body[0])
+                return SimpleNamespace(message_type=MessageType.METHOD_RETURN)
+
+        class FakeBlueZ:
+            bus = Bus()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def adapter(self):
+                # Both subscriptions must precede the snapshot request.
+                self_test.assertEqual(len(matches), 2)
+                self_test.assertIn(OBJECT_MANAGER, matches[0])
+                self_test.assertIn(PROPERTIES, matches[1])
+                await asyncio.sleep(0)
+                emit(Message.new_signal("/", OBJECT_MANAGER, "InterfacesAdded", "oa{sa{sv}}",
+                                        [added, {DEVICE: props(3, paired=False)}]))
+                update(added, {"Name": Variant("s", "WS-30 New")})
+                update(cached, {"Name": Variant("s", "WS-30 Renamed")}, ["RSSI", "Connected"])
+                emit(Message.new_signal("/", OBJECT_MANAGER, "InterfacesRemoved", "oas",
+                                        [removed, [DEVICE]]))
+                emit(Message.new_signal("/", OBJECT_MANAGER, "InterfacesAdded", "oa{sa{sv}}",
+                                        [other_adapter, {DEVICE: props(4)}]))
+                return adapter, snapshot
+
+            async def call(self, path, interface, member, *args, **kwargs):
+                if member == "StartDiscovery":
+                    update(added, {"RSSI": Variant("n", -44)})
+                    backend.stop.set()
+
+        with patch.object(classic_linux, "BlueZ", FakeBlueZ):
+            await backend.scan(20, candidates.append)
+        self.assertEqual([(c["name"], c["presence"], c["rssi"]) for c in candidates], [
+            ("WS-30 Renamed", "paired_only", None),
+            ("WS-30 New", "seen", -44),
+        ])
+        self.assertEqual(backend.devices, {"00:24:E4:00:00:01": cached, "00:24:E4:00:00:03": added})
+        self.assertEqual(handlers, [])
+
+    async def test_initialization_failure_removes_handler_and_closes_bus(self):
+        for failure in ("subscription", "snapshot"):
+            with self.subTest(failure=failure):
+                handlers, actions = [], []
+
+                class Bus:
+                    def add_message_handler(self, callback):
+                        handlers.append(callback)
+
+                    def remove_message_handler(self, callback):
+                        handlers.remove(callback)
+
+                    async def call(self, message):
+                        if failure == "subscription":
+                            return SimpleNamespace(message_type=MessageType.ERROR,
+                                                   error_name="org.freedesktop.DBus.Error.AccessDenied",
+                                                   body=["Match denied"])
+                        return SimpleNamespace(message_type=MessageType.METHOD_RETURN)
+
+                class FakeBlueZ:
+                    bus = Bus()
+
+                    async def __aenter__(self):
+                        return self
+
+                    async def __aexit__(self, *args):
+                        actions.append("BusClosed")
+
+                    async def adapter(self):
+                        if failure == "snapshot":
+                            raise DBusError("org.bluez.Error.Failed", "Snapshot failed")
+                        return "/org/bluez/hci0", {}
+
+                    async def call(self, path, interface, member, *args, **kwargs):
+                        actions.append(member)
+
+                with patch.object(classic_linux, "BlueZ", FakeBlueZ):
+                    with self.assertRaises(DBusError):
+                        await Backend().scan(20, lambda _: None)
+                self.assertEqual(handlers, [])
+                self.assertEqual(actions, ["BusClosed"])
 
     async def test_connect_failure_unregisters_profile_and_agent(self):
         backend = Backend()
