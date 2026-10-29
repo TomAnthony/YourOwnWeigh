@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yow-bridge"
-version = "0.4.0"
+version = "0.4.1"
 description = "Local Bluetooth and firmware bridge for YourOwnWeigh"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-dependencies = ["bleak>=1.0,<3", "websockets>=15,<17", "pyobjc-framework-IOBluetooth>=11,<13; sys_platform == 'darwin'"]
+dependencies = ["bleak>=1.0,<3", "websockets>=15,<17", "pyobjc-framework-IOBluetooth>=11,<13; sys_platform == 'darwin'", "dbus-fast>=2.24,<6; sys_platform == 'linux'"]
 
 [project.scripts]
 yow-bridge = "yow_bridge.__main__:main"

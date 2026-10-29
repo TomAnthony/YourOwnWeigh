@@ -113,6 +113,7 @@ async def network(application, pairing, stopped):
     # process. An authenticated reconnect may replace its own half-open socket.
     run_id = uuid.uuid4().hex
     while not stopped.is_set():
+        connected_at = None
         try:
             async with connect(
                 socket_url,
@@ -127,7 +128,7 @@ async def network(application, pairing, stopped):
                 ping_timeout=20,
             ) as socket:
                 LOG.info("Connected to %s", pairing["server"])
-                backoff = 1
+                connected_at = time.monotonic()
                 # Clear before taking/sending the fresh snapshot. Clearing after
                 # an awaited send could discard a just-completed OTA outcome.
                 while not application.outgoing.empty():
@@ -182,6 +183,12 @@ async def network(application, pairing, stopped):
                         task.cancel()
                     await asyncio.gather(*pumps, return_exceptions=True)
         except ConnectionClosed as error:
+            if error.rcvd and error.rcvd.code in (1002, 1003):
+                LOG.error(
+                    "Server rejected the bridge protocol (WebSocket %s). Update the server and bridge to matching releases, then restart with --resume. Reconnecting cannot resolve this mismatch.",
+                    error.rcvd.code,
+                )
+                return
             # Codes are useful diagnostics; arbitrary server text may contain
             # request details, so log the codes without echoing the close reason.
             LOG.warning(
@@ -213,6 +220,10 @@ async def network(application, pairing, stopped):
                 )
             else:
                 LOG.warning("Server connection failed (%s); retrying", type(error).__name__)
+        # A successful HTTP upgrade is not a healthy connection. Keep backing
+        # off when the server accepts then immediately closes the socket.
+        if connected_at is not None and time.monotonic() - connected_at >= 30:
+            backoff = 1
         try:
             await asyncio.wait_for(stopped.wait(), backoff)
         except TimeoutError:
@@ -300,9 +311,9 @@ def main():
     # Avoid library debug output exposing transport parameters.
     logging.getLogger("websockets").setLevel(logging.WARNING)
     LOG.info("YourOwnWeigh bridge %s", __version__)
-    if sys.platform != "darwin" and not args.simulate:
+    if sys.platform not in ("darwin", "linux") and not args.simulate:
         parser.error(
-            "This release supports macOS Bluetooth; Linux and Windows are planned."
+            "Bluetooth is supported on macOS and Linux; Windows is not yet supported."
         )
     try:
         path = args.state_dir / "pairing.json"

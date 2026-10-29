@@ -13,7 +13,7 @@ Use this checklist when changing Bluetooth transports, provisioning or firmware.
 
 ## Firmware Update
 
-Generate the release and check its model, version and pinned hash. Use fresh batteries and keep the scale close to the Mac. Enter `FLASH` once and leave the bridge running. Test forced interruption only with simulated devices.
+Generate the release and check its model, version and pinned hash. Use fresh batteries and keep the scale close to the computer. Enter `FLASH` once and leave the bridge running. Test forced interruption only with simulated devices.
 
 After transfer, reconnect to confirm the running version, complete setup and verify a fresh weigh-in. A transfer acknowledgment does not confirm that the new application booted. If the final acknowledgment is lost, inspect the terminal and reconnect before deciding whether to retry.
 
@@ -21,4 +21,22 @@ Bluetooth does not reveal or control the destination flash slot. An inactive ext
 
 ## Record Results
 
-Record the macOS/Python/backend versions, CPU architecture, scale model, source and target firmware, discovery/probe behavior, update duration and final reading result. Exercise both WBS06 and WS-30 for changes shared by their protocols. Keep credentials and personal measurements out of public reports.
+Record the OS/Python/backend versions (including BlueZ and kernel on Linux), CPU architecture, scale model, source and target firmware, discovery/probe behavior, update duration and final reading result. Exercise both WBS06 and WS-30 for changes shared by their protocols. Keep credentials and personal measurements out of public reports.
+
+For Linux transport work, first run `python -m yow_bridge.diagnose --model WBS06 --probe --read-configuration` (or `WBS03`) without a server. Check discovery cancellation, cold pairing, reconnecting an existing bond, and unplugging/switching off the adapter. Then exercise the full web flow above. Successful discovery and probe alone do not qualify OTA.
+
+## Linux Validation — 29 October 2026
+
+Test system: Manjaro 21.2.6, x86_64, kernel 5.15.38, BlueZ 5.64 with experimental D-Bus enabled, Intel USB Bluetooth adapter (8087:0a2a), Python 3.12.16, Bleak 2.1.1 and dbus-fast 5.2.0. All bridge commands ran as an ordinary user over SSH.
+
+| Check | WBS06 v126 / BLE | WS-30 v102 / Classic |
+| --- | --- | --- |
+| Discovery, including stopping when the selected scale appears | Passed | Passed |
+| Identity and protected settings reads | Passed; bootloader 4 | Passed; bootloader 15 |
+| Server and SSID readback | Passed | Passed |
+| Reconnect after returning to setup | Passed with saved LE bond | Passed |
+| Transport write limit | 182 bytes after ATT negotiation | 256-byte serial packet limit |
+| Download and generate release, verify pinned hash | Passed: v127 | Passed: v102 |
+| Configuration writes, Complete Setup, OTA and resulting Wi-Fi sync | Not tested from Linux | Not tested from Linux |
+
+The old BlueZ daemon initially selected Classic for the dual-mode WBS06. Explicit LE connection before pairing resolved that, and the next connection reused the LE bond. WS-30 connected via a BlueZ Serial Port client profile without a fixed RFCOMM channel or a new pairing. Neither successful WS-30 probe needed the first-request retry. Adapter removal during a live operation and other Linux distributions remain untested.

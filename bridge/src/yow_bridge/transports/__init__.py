@@ -4,14 +4,17 @@ import sys
 
 
 def backend(model):
-    if sys.platform != "darwin":
+    if sys.platform not in ("darwin", "linux"):
         raise RuntimeError(
-            "This release supports Bluetooth on macOS. Other platform backends are not yet qualified."
+            "Bluetooth is supported on macOS and Linux; Windows is not yet supported."
         )
     if model == "WBS06":
         from .ble import Backend
     elif model == "WBS03":
-        from .classic_macos import Backend
+        if sys.platform == "linux":
+            from .classic_linux import Backend
+        else:
+            from .classic_macos import Backend
     else:
         raise ValueError("Unsupported scale model")
     return Backend()

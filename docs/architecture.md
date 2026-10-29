@@ -3,7 +3,7 @@
 ```mermaid
 flowchart LR
   Browser[Web Browser] <-->|HTTPS + WebSocket| App[TypeScript App]
-  Bridge[Python Bridge on Mac] <-->|Outbound WSS| App
+  Bridge[Python Bridge on Mac or Linux] <-->|Outbound WSS| App
   Bridge <-->|BLE or RFCOMM| Scale[WBS06 or WS-30]
   Scale -->|Wi-Fi HTTP / HTTPS| App
   App --> DB[(SQLite or D1)]

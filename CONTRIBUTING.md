@@ -2,7 +2,7 @@
 
 There are 3 areas that can help:
 
-1. Adding Windows & Linux support to the Python bridge.
+1. Adding Windows support to the Python bridge.
 2. Adding support for more models of scales. You need to be comfortable with modding firmware, or trust AI to do it for you, and be willing to then install that on your own device. We will only accept PRs where you confirm you have tested the firmware on the model you are support.
 3. Adding more `<model, firmware>` pairs. A bluetooth connection can read the model, and confirm what firmware Withings is advertising for it.
 
