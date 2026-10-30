@@ -12,6 +12,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
+import { isIP } from "node:net";
 import { LocalSqlite } from "./sqlite.ts";
 import { handleApp, type AppEnv } from "./app.ts";
 import { captureWithings, firmwareOffer } from "./withings_capture.ts";
@@ -85,7 +86,7 @@ export function peerAddress(
     .split(",")
     .pop()!
     .trim();
-  return /^[0-9A-Fa-f.:]{2,45}$/.test(last) ? last : peer;
+  return isIP(last) ? last : peer;
 }
 export function localListener(
   env: AppEnv,

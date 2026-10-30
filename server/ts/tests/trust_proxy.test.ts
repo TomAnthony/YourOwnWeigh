@@ -30,6 +30,18 @@ test("peer address only trusts X-Forwarded-For from a loopback proxy when enable
     "203.0.113.7",
   );
   assert.equal(peerAddress("127.0.0.1", "not an address", true), "127.0.0.1");
+  for (const malformed of [
+    "999.999.999.999",
+    "203.0.113.7:1234",
+    "deadbeef",
+    "1.2.3",
+    "[2001:db8::1]",
+  ])
+    assert.equal(
+      peerAddress("127.0.0.1", malformed, true),
+      "127.0.0.1",
+      malformed,
+    );
   assert.equal(peerAddress("127.0.0.1", undefined, true), "127.0.0.1");
 });
 
