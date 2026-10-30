@@ -67,11 +67,32 @@ export function assets(): AppEnv["ASSETS"] {
     },
   };
 }
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+/** Client address used for failed-password limits. Behind a reverse proxy on
+ * the same machine every request comes from loopback, so one stranger could
+ * lock everyone out. With YOW_TRUST_PROXY=1, a loopback peer's X-Forwarded-For
+ * is used instead; its last entry is the one the proxy itself added.
+ */
+export function peerAddress(
+  remote: string | undefined,
+  forwarded: string | string[] | undefined,
+  trustProxy: boolean,
+): string {
+  const peer = remote ?? "unknown";
+  if (!trustProxy || !LOOPBACK.has(peer) || forwarded === undefined)
+    return peer;
+  const last = (Array.isArray(forwarded) ? forwarded.join(",") : forwarded)
+    .split(",")
+    .pop()!
+    .trim();
+  return /^[0-9A-Fa-f.:]{2,45}$/.test(last) ? last : peer;
+}
 export function localListener(
   env: AppEnv,
   secure: boolean,
   allowedHosts: Set<string>,
   scaleOnly = false,
+  trustProxy = false,
 ) {
   return async (
     incoming: IncomingMessage,
@@ -113,7 +134,14 @@ export function localListener(
       for (const [name, value] of Object.entries(incoming.headers))
         if (value !== undefined && name !== "host")
           headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-      headers.set("X-YOW-Peer-IP", incoming.socket.remoteAddress ?? "unknown");
+      headers.set(
+        "X-YOW-Peer-IP",
+        peerAddress(
+          incoming.socket.remoteAddress,
+          incoming.headers["x-forwarded-for"],
+          trustProxy,
+        ),
+      );
       const request = new Request(url, {
         method: incoming.method,
         headers,
@@ -190,7 +218,8 @@ export async function startLocal() {
     lookupFirmwareOffer: firmwareOffer,
     bridgeRequest: (request, adminId) => bridge.request(request, adminId),
   };
-  const listener = localListener(env, secure, allowedHosts);
+  const trustProxy = config.YOW_TRUST_PROXY === "1";
+  const listener = localListener(env, secure, allowedHosts, false, trustProxy);
   const server = secure
     ? createHttpsServer(
         { cert: readFileSync(cert!), key: readFileSync(key!) },
@@ -214,7 +243,7 @@ export async function startLocal() {
     const scaleHost = config.YOW_SCALE_HOST || "127.0.0.1";
     const proxyHost = config.YOW_SCALE_PROXY_HOST || `127.0.0.1:${scalePort}`;
     scaleServer = createHttpServer(
-      localListener(env, false, new Set([proxyHost]), true),
+      localListener(env, false, new Set([proxyHost]), true, trustProxy),
     );
     scaleServer.listen(scalePort, scaleHost, () =>
       console.log(`Scale-only HTTP listener: ${scaleHost}:${scalePort}`),

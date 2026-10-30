@@ -30,6 +30,7 @@ For dashboard-only development, `npm run server:start` needs no certificate or p
 | `YOW_SCALE_PORT` | Optional separate HTTP scale-only listener; local setup uses `8081` |
 | `YOW_SCALE_HOST` | `127.0.0.1`; proxy-facing bind address |
 | `YOW_SCALE_PROXY_HOST` | `127.0.0.1:8081` for the setup recipe; exact allowed Host header |
+| `YOW_TRUST_PROXY` | `1` behind a reverse proxy on the same machine: failed-password limits use the last `X-Forwarded-For` address of loopback requests instead of the proxy's own address. The proxy must overwrite that header (nginx: `proxy_set_header X-Forwarded-For $remote_addr;`) |
 
 Plain HTTP application listeners refuse non-loopback binds. A generic proxy must preserve the configured Host; do not expose the loopback application through an arbitrary HTTP tunnel. The bundled scale proxy is separate. Preserve the SQLite directory, bootstrap file and `bridge-pairing.json`; the latter contains only the server's pairing hashes, not device secrets.
 
