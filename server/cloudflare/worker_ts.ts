@@ -17,7 +17,7 @@ export default {
     const sanitized = new Headers(request.headers);
     sanitized.delete("X-YOW-Peer-IP");
     request = new Request(request, { headers: sanitized });
-    return handleApp(request, {
+    const response = await handleApp(request, {
       ...env,
       ALLOW_HTTP_SCALE: true,
       bridgeRequest: (request, adminId) => {
@@ -34,6 +34,15 @@ export default {
       },
       captureWithings: captureWithings,
       lookupFirmwareOffer: firmwareOffer,
+    });
+    if (new URL(request.url).protocol !== "https:" || response.status === 101)
+      return response;
+    const headers = new Headers(response.headers);
+    headers.set("Strict-Transport-Security", "max-age=31536000");
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
     });
   },
 };
