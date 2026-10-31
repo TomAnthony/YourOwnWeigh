@@ -31,6 +31,10 @@ type ScaleRow = {
 };
 
 const NONCE_TTL = 120;
+// browser_auth_limits also holds browser/Sync API counters with a ten-minute window.
+const AUTH_LIMIT_RETENTION = 600;
+const MAX_LIVE_CHALLENGES = 1024;
+const MAX_ONCE_PER_PEER = 32;
 const SESSION_TTL = 3600;
 const MAX_BODY = 128 * 1024;
 const MAC_RE = /^(?:(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}|[0-9a-f]{12})$/i;
@@ -134,24 +138,44 @@ function audit(
     .bind(scaleId, endpoint, outcome, now(), detail);
 }
 
-async function once(env: ScaleEnv, params: URLSearchParams): Promise<Response> {
+function peer(request: Request): string {
+  // Both production entrypoints replace or strip client-supplied peer headers.
+  return request.headers.get("X-YOW-Peer-IP") ??
+    request.headers.get("CF-Connecting-IP") ?? "unknown";
+}
+
+async function limitKey(request: Request, purpose: string): Promise<string> {
+  return sha256(`${purpose}:${peer(request)}`);
+}
+
+async function once(env: ScaleEnv, request: Request, params: URLSearchParams): Promise<Response> {
   if (params.get("action") !== "get") return error(400, "unsupported action");
-  const nonce = randomHex(12);
   const timestamp = now();
+  const key = await limitKey(request, "scale-once");
+  const cutoff = timestamp - NONCE_TTL;
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM challenges WHERE issued_at<?").bind(
-      timestamp - NONCE_TTL,
-    ),
+    env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?")
+      .bind(timestamp - AUTH_LIMIT_RETENTION),
     env.DB.prepare(
-      "DELETE FROM challenges WHERE nonce NOT IN " +
-        "(SELECT nonce FROM challenges ORDER BY issued_at DESC,nonce DESC LIMIT 256)",
-    ),
-    env.DB.prepare("INSERT INTO challenges(nonce,issued_at) VALUES(?,?)").bind(
-      nonce,
-      timestamp,
-    ),
-    audit(env.DB, null, "once", "issued"),
+      "INSERT INTO browser_auth_limits(key,window_start,attempts) VALUES(?,?,1) " +
+      "ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END," +
+      "window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END",
+    ).bind(key, timestamp, cutoff, cutoff),
+    env.DB.prepare("DELETE FROM challenges WHERE issued_at<? OR consumed_at IS NOT NULL").bind(cutoff),
   ]);
+  const budget = await env.DB.prepare("SELECT attempts FROM browser_auth_limits WHERE key=?")
+    .bind(key).first<{ attempts: number }>();
+  if ((budget?.attempts ?? 0) > MAX_ONCE_PER_PEER)
+    return json({ error: "too many challenges" }, 429);
+  const nonce = randomHex(12);
+  // The capacity check and insert are one SQL statement, so concurrent callers
+  // cannot force out a live nonce while a scale computes its session hash.
+  const issued = await env.DB.prepare(
+    "INSERT INTO challenges(nonce,issued_at) SELECT ?,? " +
+      "WHERE (SELECT COUNT(*) FROM challenges)<?",
+  ).bind(nonce, timestamp, MAX_LIVE_CHALLENGES).run();
+  if (issued.meta.changes !== 1)
+    return json({ error: "challenge capacity reached" }, 429);
   return json({ status: 0, body: { once: nonce } });
 }
 
@@ -266,49 +290,34 @@ export async function roster(
 async function authenticationFailure(
   env: ScaleEnv,
   scale: ScaleRow | null,
+  request: Request,
 ): Promise<Response> {
   if (scale) {
     const timestamp = now();
-    const prior = await env.DB.prepare(
-      "SELECT window_start,attempts FROM auth_failures WHERE scale_id=?",
-    )
-      .bind(scale.id)
-      .first<{ window_start: number; attempts: number }>();
-    const withinWindow = prior && prior.window_start >= timestamp - 300;
-    const attempts = withinWindow ? prior.attempts + 1 : 1;
+    const key = await limitKey(request, `scale-session-${scale.id}`);
     await env.DB.batch([
+      env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?")
+        .bind(timestamp - AUTH_LIMIT_RETENTION),
       env.DB.prepare(
-        "INSERT INTO auth_failures(scale_id,window_start,attempts,blocked_until) " +
-          "VALUES(?,?,?,?) ON CONFLICT(scale_id) DO UPDATE SET " +
-          "window_start=excluded.window_start,attempts=excluded.attempts,blocked_until=excluded.blocked_until",
-      ).bind(
-        scale.id,
-        withinWindow ? prior.window_start : timestamp,
-        attempts,
-        attempts >= 10 ? timestamp + 300 : 0,
-      ),
-      audit(env.DB, scale.id, "session", "rejected", "challenge mismatch"),
+        "INSERT INTO browser_auth_limits(key,window_start,attempts) " +
+          "VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET " +
+          "attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END," +
+          "window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END",
+      ).bind(key, timestamp, timestamp - 300, timestamp - 300),
     ]);
-  } else {
-    await audit(
-      env.DB,
-      null,
-      "session",
-      "rejected",
-      "challenge mismatch",
-    ).run();
   }
   return error(403, "session authentication failed");
 }
 
 async function newSession(
   env: ScaleEnv,
+  request: Request,
   params: URLSearchParams,
 ): Promise<Response> {
   const auth = params.get("auth") ?? "";
   const submitted = params.get("hash") ?? "";
   const mac = canonicalMac(auth);
-  if (!mac) return authenticationFailure(env, null);
+  if (!mac) return authenticationFailure(env, null, request);
   const scale = await env.DB.prepare("SELECT * FROM scales WHERE mac=?")
     .bind(mac)
     .first<ScaleRow>();
@@ -319,21 +328,15 @@ async function newSession(
     : scale?.model === "WBS06" &&
       HASH_RE.test(submitted) &&
       params.get("hashmethod") === "sha256";
-  if (!validHash) return authenticationFailure(env, scale);
+  if (!validHash) return authenticationFailure(env, scale, request);
   if (scale) {
+    const key = await limitKey(request, `scale-session-${scale.id}`);
     const failure = await env.DB.prepare(
-      "SELECT blocked_until FROM auth_failures WHERE scale_id=?",
+      "SELECT window_start,attempts FROM browser_auth_limits WHERE key=?",
     )
-      .bind(scale.id)
-      .first<{ blocked_until: number }>();
-    if (failure && failure.blocked_until > now()) {
-      await audit(
-        env.DB,
-        scale.id,
-        "session",
-        "rejected",
-        "temporary authentication lock",
-      ).run();
+      .bind(key)
+      .first<{ window_start: number; attempts: number }>();
+    if (failure && failure.attempts >= 10 && failure.window_start >= now() - 300) {
       return error(403, "session authentication failed");
     }
   }
@@ -341,7 +344,7 @@ async function newSession(
   if (scale) {
     const { results } = await env.DB.prepare(
       "SELECT nonce FROM challenges WHERE consumed_at IS NULL AND issued_at>=? " +
-        "ORDER BY issued_at DESC LIMIT 256",
+        "ORDER BY issued_at DESC LIMIT 1024",
     )
       .bind(now() - NONCE_TTL)
       .all<{ nonce: string }>();
@@ -354,7 +357,7 @@ async function newSession(
       }
     }
   }
-  if (!scale || !matched) return authenticationFailure(env, scale);
+  if (!scale || !matched) return authenticationFailure(env, scale, request);
 
   const reportedMask = params.get("feature_mask") ?? "";
   const reportedMfgid = params.get("mfgid") ?? "";
@@ -446,8 +449,8 @@ async function newSession(
       `UPDATE challenges SET consumed_at=? WHERE nonce=? AND consumed_at IS NULL AND ${present}`,
     ).bind(timestamp, matched, token),
     env.DB.prepare(
-      `DELETE FROM auth_failures WHERE scale_id=? AND ${present}`,
-    ).bind(scale.id, token),
+      `DELETE FROM browser_auth_limits WHERE key=? AND ${present}`,
+    ).bind(await limitKey(request, `scale-session-${scale.id}`), token),
     env.DB.prepare(
       `UPDATE scales SET last_session_at=? WHERE id=? AND ${present}`,
     ).bind(timestamp, scale.id, token),
@@ -529,9 +532,10 @@ async function deleteSession(
 
 async function session(
   env: ScaleEnv,
+  request: Request,
   params: URLSearchParams,
 ): Promise<Response> {
-  if (params.get("action") === "new") return newSession(env, params);
+  if (params.get("action") === "new") return newSession(env, request, params);
   if (params.get("action") === "delete") return deleteSession(env, params);
   return error(400, "unsupported action");
 }
@@ -542,24 +546,13 @@ async function requireDeviceSession(
   endpoint: string,
 ): Promise<ScaleRow | null> {
   const token = params.get("sessionid") ?? "";
-  if (!SID_RE.test(token)) {
-    await audit(env.DB, null, endpoint, "rejected", "bad session token").run();
-    return null;
-  }
+  if (!SID_RE.test(token)) return null;
   const scale = await env.DB.prepare(
     "SELECT s.* FROM device_sessions ds JOIN scales s ON s.id=ds.scale_id " +
       "WHERE ds.token=? AND ds.deleted_at IS NULL AND ds.expires_at>?",
   )
     .bind(token, now())
     .first<ScaleRow>();
-  if (!scale)
-    await audit(
-      env.DB,
-      null,
-      endpoint,
-      "rejected",
-      "expired or unknown session",
-    ).run();
   return scale;
 }
 
@@ -758,27 +751,23 @@ function parseGroups(params: URLSearchParams): {
 
 async function invalidMeasure(
   env: ScaleEnv,
+  scaleId: number,
   params: URLSearchParams,
   reason: string,
 ): Promise<Response> {
-  const diagnostic = Object.fromEntries(
-    [
-      "macaddress",
-      "userid",
-      "devtype",
-      "category",
-      "attribstatus",
-      "measuregrps",
-    ]
-      .filter((key) => params.has(key))
-      .map((key) => [key, params.getAll(key)]),
-  );
+  const groups = params.get("measuregrps") ?? "";
+  const diagnostic = {
+    macaddress: params.get("macaddress")?.slice(0, 32) ?? "",
+    measuregrps_prefix: groups.slice(0, 256),
+    measuregrps_length: groups.length,
+    measuregrps_sha256: await sha256(groups),
+  };
   await env.DB.batch([
     env.DB.prepare(
       "INSERT INTO measure_rejections(received_at,validation_stage,reason,form_without_session) " +
         "VALUES(?,?,?,?)",
     ).bind(now(), "measure groups", reason, JSON.stringify(diagnostic)),
-    audit(env.DB, null, "measure", "invalid", `measure groups: ${reason}`),
+    audit(env.DB, scaleId, "measure", "invalid", `measure groups: ${reason}`),
   ]);
   return error(400, "invalid measurement payload");
 }
@@ -789,6 +778,8 @@ async function measure(
 ): Promise<Response> {
   if (params.get("action") !== "batchstore")
     return error(400, "unsupported action");
+  const scale = await requireDeviceSession(env, params, "measure");
+  if (!scale) return error(403, "invalid session");
   let parsed: ReturnType<typeof parseGroups>;
   try {
     parsed = parseGroups(params);
@@ -808,13 +799,12 @@ async function measure(
       cause instanceof Error && known.has(cause.message)
         ? cause.message
         : "ValueError";
-    return invalidMeasure(env, params, reason);
+    return invalidMeasure(env, scale.id, params, reason);
   }
-  const scale = await requireDeviceSession(env, params, "measure");
-  if (!scale || scale.mac !== parsed.mac) {
+  if (scale.mac !== parsed.mac) {
     await audit(
       env.DB,
-      scale?.id ?? null,
+      scale.id,
       "measure",
       "rejected",
       "MAC/session mismatch",
@@ -954,8 +944,8 @@ export async function handleScaleRequest(
   if (request.method !== "POST" || !paths.includes(url.pathname)) return null;
   const params = await parameters(request, url);
   if (params instanceof Response) return params;
-  if (url.pathname === "/once") return once(env, params);
-  if (url.pathname === "/session") return session(env, params);
+  if (url.pathname === "/once") return once(env, request, params);
+  if (url.pathname === "/session") return session(env, request, params);
   if (url.pathname === "/v2/screen")
     return fixture(env, params, "screen", "getbydeviceid");
   if (url.pathname === "/v2/summary")

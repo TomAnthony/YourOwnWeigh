@@ -163,6 +163,9 @@ test("Worker always accepts HTTP scale traffic while dashboard/API remain HTTPS"
       assert.equal(response.headers.get("location"), `https://scales.test${path}`);
     }
     assert.equal((await worker.fetch(request("/once", "GET"), { DB: h.db, ALLOW_HTTP_SCALE: "1" })).status, 404);
+    const secure = await worker.fetch(new Request("https://scales.test/login"), { DB: h.db });
+    assert.equal(secure.headers.get("strict-transport-security"), "max-age=31536000");
+    assert.equal((await worker.fetch(request(), { DB: h.db })).headers.get("strict-transport-security"), null);
     await h.db.prepare("INSERT INTO settings(key,value) VALUES('scale_api_enabled','0')").run();
     assert.equal((await worker.fetch(request(), { DB: h.db, ALLOW_HTTP_SCALE: "1" })).status, 200);
   } finally { h.cleanup(); }

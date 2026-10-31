@@ -36,6 +36,9 @@ const columns: Record<string, string[]> = {
     "id received_at validation_stage reason form_without_session".split(" "),
 };
 const sections = Object.keys(columns);
+// Operational diagnostics can be regenerated and must never make a household
+// backup too large to restore. Preserve empty sections for v1 compatibility.
+const diagnostics = new Set(["sync_audit", "measure_attempts", "measure_rejections"]);
 const access = new Set([
   "admin_password",
   "api_password",
@@ -56,7 +59,9 @@ export type Backup = {
 export async function exportBackup(db: D1Database): Promise<Backup> {
   const results = await db.batch(
     sections.map((table) =>
-      db.prepare(`SELECT ${columns[table].join(",")} FROM ${table}`),
+      db.prepare(
+        `SELECT ${columns[table].join(",")} FROM ${table}${diagnostics.has(table) ? " LIMIT 0" : ""}`,
+      ),
     ),
   );
   const rows = Object.fromEntries(
@@ -102,6 +107,12 @@ function parse(raw: string): Backup {
   for (const section of sections) {
     const data = b.sections[section];
     if (!Array.isArray(data)) throw new Error(`Missing ${section} section`);
+    // Older backups may contain many diagnostic rows. They are disposable and
+    // never staged, so they cannot exhaust the household row budget on restore.
+    if (diagnostics.has(section)) {
+      b.sections[section] = [];
+      continue;
+    }
     count += data.length;
     for (const row of data) {
       // Backups from before firmware tracking remain importable. Use the export's

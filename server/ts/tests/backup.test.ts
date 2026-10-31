@@ -58,6 +58,7 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
       .run();
     const backup = await exportBackup(source.asD1());
     assert.equal(backup.sections.scales[0].id, 7);
+    assert.deepEqual(backup.sections.sync_audit, []);
     assert.equal(backup.accessSettings.length, 1);
     assert.equal("admin_sessions" in backup.sections, false);
     for (let n = 0; n < 2; n++) {
@@ -125,6 +126,24 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
   } finally {
     source.close();
     target.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("older backups with many diagnostic rows remain restorable within the byte limit", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-backup-diagnostics-"));
+  const store = new LocalSqlite(join(dir, "db"));
+  try {
+    await seed(store);
+    const backup = await exportBackup(store.asD1());
+    backup.sections.sync_audit = Array.from({ length: 26000 }, (_, i) => ({
+      id: i + 1, scale_id: null, endpoint: "once", outcome: "issued",
+      received_at: 1, detail: null,
+    }));
+    const preview = await stageBackup(store.asD1(), JSON.stringify(backup), "admin");
+    assert.equal(preview.counts.sync_audit, 0);
+    assert.equal(preview.counts.readings, 1);
+  } finally {
+    store.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
