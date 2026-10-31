@@ -98,6 +98,12 @@ export class LocalSqlite {
         "utf8",
       ),
     );
+    this.database.exec(
+      readFileSync(
+        join(ROOT, "server/migrations/0007_diagnostic_retention.sql"),
+        "utf8",
+      ),
+    );
     try {
       chmodSync(path, 0o600);
     } catch {

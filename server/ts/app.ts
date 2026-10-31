@@ -236,15 +236,12 @@ async function browserSession(
     auth_version: 0,
     expires_at: now() + 86400,
   };
-  await run(
-    db,
-    "INSERT INTO admin_sessions(token_hash,csrf,is_admin,auth_version,expires_at) VALUES(?,?,?,?,?)",
-    row.token_hash,
-    row.csrf,
-    row.is_admin,
-    row.auth_version,
-    row.expires_at,
-  );
+  await db.batch([
+    db.prepare("DELETE FROM admin_sessions WHERE expires_at<=?").bind(now()),
+    db.prepare(
+      "INSERT INTO admin_sessions(token_hash,csrf,is_admin,auth_version,expires_at) VALUES(?,?,?,?,?)",
+    ).bind(row.token_hash, row.csrf, row.is_admin, row.auth_version, row.expires_at),
+  ]);
   return {
     row,
     cookie: `${SESSION_COOKIE}=${fresh}; HttpOnly; ${new URL(request.url).protocol === "https:" ? "Secure; " : ""}SameSite=Strict; Path=/; Max-Age=86400`,

@@ -7,15 +7,18 @@ The structural envelope is in
 in one place: [`server/ts/backup.ts`](../../../server/ts/backup.ts), with storage
 constraints in [`server/migrations/`](../../../server/migrations/).
 
-Each section contains complete database rows. IDs are numeric, nullable columns
-remain `null`, and JSON-valued database columns remain strings. Device secrets,
+Household sections contain complete database rows. The three operational diagnostic
+sections (`sync_audit`, `measure_attempts`, `measure_rejections`) are empty in
+exports and ignored when importing older backups; they are not needed to restore
+people, devices or readings. IDs are numeric, nullable columns remain `null`,
+and JSON-valued database columns remain strings. Device secrets,
 readings and optional password hashes are private backup contents. Browser
 sessions, bridge invitations/pairings, active device sessions and nonces are
 excluded. The raw `withings_capture` field is cleared; normalized
 profiles are retained in `reviewed_captures`.
 
 `POST /api/backup/import` accepts a multipart `backup` file plus `_csrf`, validates
-at most 10 MiB / 25,000 rows, and stages rows for 15 minutes. It renders a preview
+at most 10 MiB / 25,000 household rows, and stages rows for 15 minutes. It renders a preview
 containing `import_id` and a digest. `POST /api/backup/commit` requires these,
 `_csrf`, `mode=merge|replace`, and `confirmed=1`, all from the same admin session.
 `restore_access=1` explicitly restores included access settings and signs out
