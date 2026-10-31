@@ -162,12 +162,15 @@ def inspect_wbs13(data: bytes, p: dict, digest: str) -> dict:
     _, _, start, size, _, version = records[0]
     stack, reset = struct.unpack_from("<II", data, start)
     runtime_offset = p["runtimeVersionOffset"]
+    # Expansion leaves the runtime getter at its original offset, while the
+    # bootloader reads the relocated application tail. Both must match the header.
     if (
         not 0 < version <= 0xFFFFFF or stack != p["stackPointer"]
         or not reset & 1 or not 0x08008000 <= (reset & ~1) < 0x08008000 + size
         or size > p["applicationMaxSize"]
         or not start <= runtime_offset <= start + size - 4
         or struct.unpack_from("<I", data, runtime_offset)[0] != version
+        or struct.unpack_from("<I", data, start + size - 4)[0] != version
     ):
         raise ValueError("WBS13 application identity/version/bounds mismatch")
     classification = (

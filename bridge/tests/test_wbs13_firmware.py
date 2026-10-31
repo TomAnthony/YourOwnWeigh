@@ -13,10 +13,11 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def fixture(version=1311):
-    app = bytearray(128)
+def fixture(version=1311, *, extra=0):
+    app = bytearray(128 + extra)
     struct.pack_into("<II", app, 0, 0x20030000, 0x08008041)
     struct.pack_into("<I", app, 124, version)
+    struct.pack_into("<I", app, len(app) - 4, version)
     chunks = [app, bytes([4]) * 64, bytes([12]) * 32, bytes([13]) * 32]
     data = bytearray(88)
     struct.pack_into("<HH", data, 0, 1, 80)
@@ -96,3 +97,22 @@ class WBS13FirmwareTests(unittest.TestCase):
         self.recipe["runtimeVersionOffset"] = 208
         with self.assertRaisesRegex(ValueError, "version"):
             inspect(self.target, "WBS13")
+
+    def test_expanded_application_requires_matching_runtime_and_tail_versions(self):
+        # Expansion separates the runtime getter's original word from the new
+        # tail word read by the bootloader. CRCs alone do not catch disagreement.
+        valid = fixture(103, extra=16)
+        self.recipe["applicationMaxSize"] = 144
+        self.assertEqual(inspect(valid, "WBS13")["classification"], "custom")
+        _, _, start, size, _, _ = struct.unpack_from("<HHIIII", valid, 4)
+        runtime_offset = self.recipe["runtimeVersionOffset"]
+        tail_offset = start + size - 4
+        self.assertNotEqual(runtime_offset, tail_offset)
+        for offset in (runtime_offset, tail_offset):
+            with self.subTest(version_word=offset):
+                damaged = bytearray(valid)
+                struct.pack_into("<I", damaged, offset, 1311)
+                struct.pack_into("<I", damaged, 16, zlib.crc32(damaged[start:start + size]))
+                struct.pack_into("<I", damaged, 84, zlib.crc32(damaged[:84]))
+                with self.assertRaisesRegex(ValueError, "version"):
+                    inspect(bytes(damaged), "WBS13")

@@ -1,6 +1,6 @@
 """YourOwnWeigh Bluetooth bridge. Vendor imports belong to the server."""
 
-__version__ = "0.4.6"
+__version__ = "0.4.7"
 BRIDGE_PROTOCOL = "yow.bridge"
 
 # Use our product identity on HTTP and WebSocket requests. Cloudflare can reject
