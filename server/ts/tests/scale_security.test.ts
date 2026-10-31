@@ -97,3 +97,39 @@ test("diagnostic retention bounds audit and rejected-measure rows", async () => 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("failed scale sessions purge expired counters but preserve active browser limits", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "yow-session-limits-"));
+  const store = new LocalSqlite(join(directory, "test.sqlite3"));
+  const db = store.asD1();
+  try {
+    await db.prepare("INSERT INTO scales(id,label,model,mac,secret) VALUES(1,'Test','WBS03','001122334466','synthetic-device-secret')").run();
+    const timestamp = Math.floor(Date.now() / 1000);
+    await db.batch([
+      db.prepare("INSERT INTO browser_auth_limits(key,window_start,attempts) VALUES('expired',?,2)")
+        .bind(timestamp - 650),
+      db.prepare("INSERT INTO browser_auth_limits(key,window_start,attempts) VALUES('active-login',?,8)")
+        .bind(timestamp - 500),
+    ]);
+    const failedSession = () => handleScaleRequest(new Request("http://scale.test/session", {
+      method: "POST",
+      headers: { "X-YOW-Peer-IP": "203.0.113.9" },
+      body: new URLSearchParams({
+        action: "new", auth: "00:11:22:33:44:66", hash: "0".repeat(32),
+      }),
+    }), { DB: db });
+    assert.equal((await failedSession())?.status, 403);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM browser_auth_limits WHERE key='expired'")
+      .first<{ n: number }>())!.n, 0);
+    assert.equal((await db.prepare("SELECT attempts FROM browser_auth_limits WHERE key='active-login'")
+      .first<{ attempts: number }>())!.attempts, 8);
+    assert.equal((await failedSession())?.status, 403);
+    const { results: counters } = await db.prepare(
+      "SELECT attempts FROM browser_auth_limits WHERE key NOT IN ('expired','active-login')",
+    ).all<{ attempts: number }>();
+    assert.deepEqual(counters.map((row) => row.attempts), [2]);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

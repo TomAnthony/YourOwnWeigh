@@ -31,6 +31,8 @@ type ScaleRow = {
 };
 
 const NONCE_TTL = 120;
+// browser_auth_limits also holds browser/Sync API counters with a ten-minute window.
+const AUTH_LIMIT_RETENTION = 600;
 const MAX_LIVE_CHALLENGES = 1024;
 const MAX_ONCE_PER_PEER = 32;
 const SESSION_TTL = 3600;
@@ -152,7 +154,8 @@ async function once(env: ScaleEnv, request: Request, params: URLSearchParams): P
   const key = await limitKey(request, "scale-once");
   const cutoff = timestamp - NONCE_TTL;
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?").bind(cutoff - 600),
+    env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?")
+      .bind(timestamp - AUTH_LIMIT_RETENTION),
     env.DB.prepare(
       "INSERT INTO browser_auth_limits(key,window_start,attempts) VALUES(?,?,1) " +
       "ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END," +
@@ -292,22 +295,16 @@ async function authenticationFailure(
   if (scale) {
     const timestamp = now();
     const key = await limitKey(request, `scale-session-${scale.id}`);
-    const prior = await env.DB.prepare(
-      "SELECT window_start,attempts FROM browser_auth_limits WHERE key=?",
-    )
-      .bind(key)
-      .first<{ window_start: number; attempts: number }>();
-    const withinWindow = prior && prior.window_start >= timestamp - 300;
-    const attempts = withinWindow ? prior.attempts + 1 : 1;
-    await env.DB.prepare(
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?")
+        .bind(timestamp - AUTH_LIMIT_RETENTION),
+      env.DB.prepare(
         "INSERT INTO browser_auth_limits(key,window_start,attempts) " +
-          "VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET " +
-          "window_start=excluded.window_start,attempts=excluded.attempts",
-      ).bind(
-        key,
-        withinWindow ? prior.window_start : timestamp,
-        attempts,
-      ).run();
+          "VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET " +
+          "attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END," +
+          "window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END",
+      ).bind(key, timestamp, timestamp - 300, timestamp - 300),
+    ]);
   }
   return error(403, "session authentication failed");
 }
