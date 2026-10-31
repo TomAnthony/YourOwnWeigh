@@ -469,7 +469,7 @@
                 "pattern": "^[a-f0-9]{64}$"
               },
               "confirmation": {
-                "const": "FLASH"
+                "enum": ["FLASH", "FLASH UNKNOWN"]
               }
             },
             "required": [

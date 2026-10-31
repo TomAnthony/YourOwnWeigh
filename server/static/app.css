@@ -598,6 +598,7 @@ label input[type="checkbox"] {
   background: #f4f8f8;
   border-radius: 0.5rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 0.9rem;
 }
 #operation-status {

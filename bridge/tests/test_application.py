@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import tempfile
 import unittest
 import uuid
@@ -146,11 +147,11 @@ class Commands(unittest.IsolatedAsyncioTestCase):
             "device.enroll", {"approved": True}, deviceId="body-smart", connectionGeneration=1,
         ))
         self.assertEqual(result["kind"], "error")
-        self.assertIn("requires YOW v100 and a device secret", result["error"]["message"])
+        self.assertIn("requires supported YOW firmware and a device secret", result["error"]["message"])
         # The selected model must match the probed identity even if the initial
         # BLE discovery result used the common WBS06 discovery category.
         self.app.artifacts["wrong"] = (b"firmware", {"model": "WBS06"})
-        with patch("yow_bridge.application.inspect", return_value={"sha256": "0" * 64}):
+        with patch("yow_bridge.application.inspect", return_value={"sha256": "0" * 64, "classification": "known_release"}):
             result = await self.run_command(command(
                 "firmware.install", {"artifactId": "wrong", "confirmation": "FLASH", "sha256": "0" * 64},
                 deviceId="body-smart", connectionGeneration=1,
@@ -185,7 +186,7 @@ class Commands(unittest.IsolatedAsyncioTestCase):
             "firmware.install", {"artifactId": "candidate", "confirmation": "FLASH", "sha256": "0" * 64},
             deviceId="body-smart", connectionGeneration=1,
         )
-        with patch("yow_bridge.application.inspect", return_value={"sha256": "0" * 64}):
+        with patch("yow_bridge.application.inspect", return_value={"sha256": "0" * 64, "classification": "known_release"}):
             await self.app.accept(install)
             await started.wait()
             active_task = self.app.task
@@ -205,6 +206,56 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.total, 1200)
         controls = [Decoder().feed(packet)[0].command for packet in transport.sent[:3]]
         self.assertEqual(controls, [0x101, 0x155, 0x401])
+
+    async def test_unknown_firmware_upload_and_confirmation_before_any_ota_write(self):
+        from test_protocol import MockTransport, probe
+        from test_wbs13_firmware import fixture, profile, digest
+
+        transport = MockTransport("WBS06")
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        with patch("test_protocol.probe", return_value=frame):
+            await transport.session.probe()
+        self.app.session, self.app.connected = transport.session, True
+        self.app.device_id, self.app.generation = "body-smart", 1
+        stock, known, unknown = fixture(), fixture(100), fixture(101)
+        with patch("yow_bridge.firmware.recipe", return_value=profile(stock, known)):
+            start = await self.run_command(command("artifact.begin", dict(
+                model="WBS13", filename="custom.bin", size=len(unknown), sha256=digest(unknown),
+            )))
+            transfer = start["result"]["transferId"]
+            await self.run_command(command("artifact.chunk", dict(
+                transferId=transfer, offset=0, dataBase64=base64.b64encode(unknown).decode(),
+            )))
+            result = await self.run_command(command("artifact.finish", dict(transferId=transfer)))
+            artifact = result["result"]
+            self.assertEqual(artifact["classification"], "custom")
+            params = dict(artifactId=artifact["artifactId"], sha256=artifact["sha256"])
+            # Even a stale/spoofed descriptor must not downgrade the byte-derived consent.
+            artifact["classification"] = "known_release"
+            before = list(transport.sent)
+            for phrase in ("FLASH", "", "flash unknown", "FLASH UNKNOWN "):
+                result = await self.run_command(command(
+                    "firmware.install", {**params, "confirmation": phrase},
+                    deviceId="body-smart", connectionGeneration=1,
+                ))
+                self.assertEqual(result["kind"], "error")
+                self.assertIn("Type FLASH UNKNOWN", result["error"]["message"])
+                self.assertEqual(transport.sent, before)
+                self.assertFalse(transport.session.ota_started)
+            result = await self.run_command(command(
+                "firmware.install", {**params, "sha256": "0" * 64, "confirmation": "FLASH UNKNOWN"},
+                deviceId="body-smart", connectionGeneration=1,
+            ))
+            self.assertEqual(result["kind"], "error")
+            self.assertEqual(transport.sent, before)
+            result = await self.run_command(command(
+                "firmware.install", {**params, "confirmation": "FLASH UNKNOWN"},
+                deviceId="body-smart", connectionGeneration=1,
+            ))
+            self.assertEqual(result["kind"], "result", result)
+            self.assertTrue(result["result"]["transferred"])
+            self.assertEqual(transport.total, len(unknown))
 
     async def test_upload_rejects_out_of_order(self):
         c = command(

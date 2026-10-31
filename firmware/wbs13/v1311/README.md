@@ -585,8 +585,8 @@ Current YOW integration status:
    unassigned HTTP weight upload and recognised body-composition/heart-rate
    upload to the capture listener. Direct HTTPS sync to the YOW Cloudflare Worker
    also passed, including local-user roster adoption and persistence of new and
-   previously queued measurements. The UI/bridge still exposes an experimental
-   flag and restricts operations to the reviewed identity and firmware versions.
+   previously queued measurements. WBS13 is a supported model; the bridge
+   restricts operations to the reviewed identity and firmware versions.
 
 For further protocol exploration, capture complete request/response bodies using
 the diagnostic listener, and preserve unknown metric fields.

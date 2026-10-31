@@ -3,6 +3,7 @@
 import argparse
 from contextlib import redirect_stdout
 import io
+import json
 from pathlib import Path
 import struct
 import tempfile
@@ -104,6 +105,49 @@ class BackupTests(unittest.TestCase):
                 dump.dump_slot(None, directory, 1, 0x18000, args)
             self.assertFalse((directory / "wbs13_fw1_v1311.bin").exists())
             self.assertTrue((directory / "wbs13_fw1_v1311.bin.part").exists())
+
+    def test_resume_after_interruption_between_metadata_and_partial_creation(self):
+        source = image()
+        args = argparse.Namespace(gap_ms=0, timeout=1, chunk=128)
+
+        def read(port, address, size, *unused):
+            return source[address - 0x18000:address - 0x18000 + size]
+
+        original_open = dump.private_open
+
+        def interrupt(path, mode):
+            if path.suffix == ".part":
+                raise KeyboardInterrupt()
+            return original_open(path, mode)
+
+        with tempfile.TemporaryDirectory() as temp, patch.object(dump, "read_dump", side_effect=read), redirect_stdout(io.StringIO()):
+            directory = Path(temp)
+            metadata = directory / "wbs13_fw1_v1311.bin.part.json"
+            partial = directory / "wbs13_fw1_v1311.bin.part"
+            with patch.object(dump, "private_open", side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
+                dump.dump_slot(None, directory, 1, 0x18000, args)
+            self.assertTrue(metadata.exists())
+            self.assertFalse(partial.exists())
+            result = dump.dump_slot(None, directory, 1, 0x18000, args)
+            self.assertEqual(Path(result["file"]).read_bytes(), source)
+            self.assertFalse(metadata.exists())
+            self.assertFalse(partial.exists())
+
+    def test_orphaned_metadata_must_match_before_creating_partial(self):
+        source = image()
+        args = argparse.Namespace(gap_ms=0, timeout=1, chunk=128)
+        identity = dict(model="WBS13", base=0x18000, size=len(source),
+                        header=source[:dump.HEADER_SIZE].hex(), chunk=args.chunk)
+        for key, value in (("base", 0x1F4000), ("header", "00"), ("chunk", 256)):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                metadata = directory / "wbs13_fw1_v1311.bin.part.json"
+                saved = json.dumps(dict(identity, **{key: value}))
+                metadata.write_text(saved)
+                with patch.object(dump, "read_dump", return_value=source[:dump.HEADER_SIZE]), self.assertRaisesRegex(dump.DumpError, "parameters/header differ"):
+                    dump.dump_slot(None, directory, 1, 0x18000, args)
+                self.assertEqual(metadata.read_text(), saved)
+                self.assertFalse((directory / "wbs13_fw1_v1311.bin.part").exists())
 
 
 if __name__ == "__main__":

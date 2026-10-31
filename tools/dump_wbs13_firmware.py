@@ -153,9 +153,18 @@ def dump_slot(port, directory, slot, base, args):
         digest, _ = verify_image(image)
         print(f"fw{slot}: existing verified backup; SHA-256 {digest}", flush=True)
         return dict(slot=slot, base=base, size=size, sha256=digest, file=str(target), components=sections)
-    if partial.exists():
-        if not metadata.exists() or json.loads(metadata.read_text()) != identity:
+    # An interrupted initialisation can leave metadata without a .part file.
+    # Validate/reuse it before creating the empty partial; never overwrite it
+    # or mix a different slot, source header or chunk size into an old backup.
+    if metadata.exists():
+        if json.loads(metadata.read_text()) != identity:
             raise DumpError("Partial backup parameters/header differ; refusing to mix reads")
+    elif partial.exists():
+        raise DumpError("Partial backup parameters/header differ; refusing to mix reads")
+    else:
+        with private_open(metadata, "wb") as output:
+            output.write((json.dumps(identity, indent=2) + "\n").encode())
+    if partial.exists():
         completed = partial.stat().st_size
         if completed > size or (completed != size and completed % args.chunk):
             raise DumpError("Partial backup has an invalid length")
@@ -169,8 +178,6 @@ def dump_slot(port, directory, slot, base, args):
             if last != read_dump(port, base + start, len(last), gap, args.timeout):
                 raise DumpError("Last saved chunk differs from the scale; refusing to resume")
     else:
-        with private_open(metadata, "wb") as output:
-            output.write((json.dumps(identity, indent=2) + "\n").encode())
         with private_open(partial, "wb"):
             pass
         completed = 0

@@ -102,6 +102,11 @@ export function validateStoredMetrics(row: Record<string, any>): void {
   if (row.weight_value === null && (!measures.length || weight))
     throw new Error("Invalid metric-only reading");
   if (row.group_json !== null) {
+    // A captured group is authoritative: heart-rate-only uploads cannot gain
+    // a weight via the legacy columns during restore. Older ungrouped rows
+    // can still use their original weight columns without a type-1 measure.
+    if (row.weight_value !== null && !weight)
+      throw new Error("Stored weight does not match measures");
     const group = JSON.parse(row.group_json);
     validateMetricJson(group);
     if (

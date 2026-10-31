@@ -15,7 +15,7 @@ SERVICE = "00000020-5749-5448-0007-000000000000"
 CHARACTERISTIC = "00000024-5749-5448-0007-000000000000"
 # Body Smart/WBS13 answers the same identity request on the newer UUID pair.
 # The session requires a matching Body Smart/bootloader identity before enabling
-# the experimental WBS13 commands; this service must never enable WBS06 OTA.
+# the WBS13 commands; this service must never enable WBS06 OTA.
 IDENTITY_SERVICE = "00000020-5749-5448-0010-000000000000"
 IDENTITY_CHARACTERISTIC = "00000024-5749-5448-0010-000000000000"
 WPP_SERVICES = ((SERVICE, CHARACTERISTIC), (IDENTITY_SERVICE, IDENTITY_CHARACTERISTIC))

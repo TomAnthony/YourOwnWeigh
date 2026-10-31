@@ -142,7 +142,7 @@ class ScaleSession:
         if not re.fullmatch(r"[0-9A-F]{12}", mac):
             raise ProtocolError("Probe contains an invalid device identity")
         # UUIDs distinguish the modern WPP transport, but are not a model ID.
-        # Enable the experimental WBS13 path only for the exact observed probe
+        # Enable the WBS13 path only for the exact observed probe
         # identity and service profile, never another device on the same UUIDs.
         modern = getattr(self.transport, "wpp_profile", None) == "WBS13"
         if self.model != "WBS03" and modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF:
@@ -206,9 +206,9 @@ class ScaleSession:
             )
         version = self.identity["firmwareVersion"]
         if self.model == "WBS13":
-            owner = version == 100
+            owner = version in (100, 101, 102, 103)
             return dict(
-                ota=version in (1311, 100), experimental=True,
+                ota=version in (1311, 100, 101, 102, 103),
                 serverRead=owner, serverWrite=owner,
                 serverTransports=["http", "https"] if owner else [],
                 hostnameMaxBytes=48 if owner else 0,
@@ -247,7 +247,7 @@ class ScaleSession:
     def export(self, label):
         self.require_probe()
         if self.model == "WBS13" and not self.capabilities()["enrollment"]:
-            raise ProtocolError("WBS13 import requires YOW v100 and a device secret")
+            raise ProtocolError("WBS13 import requires supported YOW firmware and a device secret")
         i = self.identity
         return dict(
             format="YOW-BLE-device-v1"

@@ -155,6 +155,79 @@ test("older backups with many diagnostic rows remain restorable within the byte 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test("restore rejects invented weights in captured groups while retaining legacy weights", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-backup-group-weight-"));
+  const store = new LocalSqlite(join(dir, "db"));
+  try {
+    await seed(store);
+    const original = await exportBackup(store.asD1());
+    const forged = structuredClone(original);
+    const reading = forged.sections.readings[0];
+    const measures = [{ type: 11, value: 72, unit: 0 }];
+    reading.measures_json = JSON.stringify(measures);
+    reading.group_json = JSON.stringify({
+      meastime: reading.meastime,
+      measures,
+    });
+    // Weight columns still say 70 kg despite the captured group having only HR.
+    await assert.rejects(
+      stageBackup(store.asD1(), JSON.stringify(forged), "admin"),
+      /Stored weight does not match measures/,
+    );
+    assert.equal(
+      (
+        await store
+          .prepare("SELECT count(*) n FROM backup_staging_rows")
+          .first<any>()
+      ).n,
+      0,
+    );
+    // A genuine metric-only group remains restorable, without a Health receipt.
+    reading.weight_value = null;
+    reading.weight_unit = null;
+    forged.sections.health_sync_receipts = [];
+    const preview = await stageBackup(
+      store.asD1(),
+      JSON.stringify(forged),
+      "admin",
+    );
+    await commitBackup(
+      store.asD1(),
+      preview.id,
+      preview.digest,
+      "admin",
+      "replace",
+      false,
+    );
+    assert.equal(
+      (await store.prepare("SELECT weight_value FROM readings").first<any>())
+        .weight_value,
+      null,
+    );
+    // Pre-group backups legitimately store weight only in the legacy columns.
+    const legacy = await stageBackup(
+      store.asD1(),
+      JSON.stringify(original),
+      "admin",
+    );
+    await commitBackup(
+      store.asD1(),
+      legacy.id,
+      legacy.digest,
+      "admin",
+      "replace",
+      false,
+    );
+    assert.equal(
+      (await store.prepare("SELECT weight_value FROM readings").first<any>())
+        .weight_value,
+      70000,
+    );
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("recognition measurement time survives backup and older backups default it to null", async () => {
   const dir = mkdtempSync(join(tmpdir(), "yow-recognition-backup-"));
   const store = new LocalSqlite(join(dir, "db"));

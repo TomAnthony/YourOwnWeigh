@@ -1,4 +1,12 @@
-# WBS13 YOW v100
+# WBS13 YOW v103
+
+v103 adds the approved native-resolution YOW face to the battery-insertion startup screen,
+with eyes tilted outward like feet on a scale, a curved smile, yellow cheeks and
+a small scale dial inspired by the teal app icon. It retains
+v100's owner-server, Bluetooth and TLS patches. The new screen has passed ARM
+emulation and pixel-by-pixel framebuffer checks. On 31 October 2026 the maintainer
+confirmed that the smiley works correctly on the physical scale after the v103
+update. The protocol and networking live results below describe v100.
 
 This patch adds an owner-selected HTTP/HTTPS server to **Body Smart WBS13,
 stock v1311, bootloader 2**. It has passed offline container, ARM emulation and
@@ -35,19 +43,22 @@ over HTTP. `--offline-source /path/to/stock.bin` avoids a download, and
 `--check-only` validates without writing files. Default output:
 
 ```text
-local/firmware/wbs13/wbs13_yow_100.bin
-local/firmware/wbs13/wbs13_yow_100.yow.json
+local/firmware/wbs13/wbs13_yow_103.bin
+local/firmware/wbs13/wbs13_yow_103.yow.json
 ```
 
 | Image | Bytes | SHA-256 |
 | --- | ---: | --- |
 | Stock 1311 | 1,213,984 | `e9a98ceb50f18b5dc2e439296b6133fec9f33ae5362785763da232b9e92b6217` |
 | YOW 100 | 1,222,176 | `ab2574098c2dac57cfb7f2ce6a776d661cc04c50e0407f3ac9feced2500499b9` |
+| YOW 101 | 1,222,176 | `95a25af047d2f0aa5a8f38a285af94e994c110b735072c87298337c31c95c5d4` |
+| YOW 102 | 1,222,176 | `56a1209dab950ad0fd87767208e77d9a2ec9cf1f13a0805c969dc9f98b497ae6` |
+| YOW 103 | 1,222,176 | `c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4` |
 
 Regenerate the compiler-free recipe after a reviewed build:
 
 ```sh
-python3 tools/package_firmware.py WBS13 /path/to/stock.bin local/firmware/wbs13/wbs13_yow_100.bin
+python3 tools/package_firmware.py WBS13 /path/to/stock.bin local/firmware/wbs13/wbs13_yow_103.bin
 ```
 
 The original dispatcher table is copied from the stock download at generation
@@ -71,6 +82,9 @@ The developer builder and recipe both reject outputs that differ from the pin.
   factory client certificate/key are not offered to the owner server.
 - Both newly received and previously cached vendor firmware offers are
   suppressed in owner mode. Bluetooth OTA remains available.
+- The startup splash draws a YOW smiley instead of the Withings and
+  Body Smart text. This display change applies whether or not an owner server
+  is configured; the model name returned over Bluetooth remains Body Smart.
 
 Without a committed owner target, the factory host, server verification and
 client-certificate behavior are retained. A corrupt owner record fails closed.
@@ -83,6 +97,25 @@ places the protected wireless boundary at `0x080E0000` on the qualification unit
 The bootloader, wireless and Wi-Fi components remain byte-identical to stock;
 their container offsets move to accommodate the larger application. No fixed
 RAM reservation, option-byte change or bootloader modification is used.
+
+## Startup Artwork
+
+Stock v1311 draws the splash as text and a horizontal line in callback
+`0x08063E04`; it is not a single bitmap. [patch_startup.py](patch_startup.py)
+replaces only its draw pointer at `0x08082A58`. The screen's timing, entry, exit
+and refresh callbacks are retained. [startup_face.c](startup_face.c) calls the
+stock clear/rectangle routines and black/white/yellow palette entries.
+
+[startup_artwork.py](startup_artwork.py) defines the original vector design and
+uses deterministic integer curve sampling to render it at native resolution.
+The reviewable [SVG](../../../design/startup-face/wbs13-smiley.svg) is generated
+from the same source. The **256×216** artwork is centred at `(32, 12)` on the
+**320×240** canvas. It encodes 418 one-pixel-high spans in 1672 bytes, each holding
+`y, first x, last x (inclusive), palette index`. Encoded SHA-256:
+`47dcb851bed6b951ac018e475720799832e47c51f7be841c3b36768409dc91d3`.
+The renderer uses stock white (6), yellow (14) and black (13), with no palette
+changes, extra framebuffer, heap allocation or persistent RAM. The artwork and
+renderer fit inside the existing 8192-byte application expansion.
 
 ## Offline Validation
 
@@ -103,14 +136,20 @@ clock framing and OTA acknowledgements. The original bootloader validates the
 candidate and copies its application from either explicit OTA slot while
 preserving the bootloader and protected-wireless region. An insufficient flash
 boundary is rejected before erasure. These are not full-device boot tests.
+Startup tests execute the new callback and original drawing routines, check all
+76,800 pixels and dirty-map entries, verify preserved registers/stack, and reject
+RAM writes outside the framebuffer, dirty map and stack.
 
 ## Hardware Validation
 
 The bridge identifies WBS13 using its modern WPP service, `Body Smart` identity,
-bootloader 2 and observed hardware field. Stock v1311 enables only experimental
-OTA; v100 also enables owner configuration, Wi-Fi, time and Complete Setup.
-Other firmware versions remain disabled. Initial OTA accepts only the pinned
-stock or YOW image. BLE uses the negotiated packet size and a 15-packet ACK window.
+bootloader 2 and observed hardware field. Stock v1311 enables only
+OTA; v100–v103 also enable owner configuration, Wi-Fi, time and Complete Setup.
+Other running firmware versions remain disabled. Manually selected images must
+pass the same container, application-boundary and bootloader/radio checks. An
+image whose hash is unknown to the bridge requires an explicit warning and
+`FLASH UNKNOWN`; pinned stock and YOW images use `FLASH`. BLE uses the negotiated
+packet size and a 15-packet ACK window.
 
 The first complete OTA and reconnect/probe showing **100** passed on hardware.
 The original updater chooses the external bank; the bridge does not choose it.
@@ -138,7 +177,7 @@ Keep Complete Setup an explicit test step: the unit used for this work has not
 been enrolled with Withings. Firmware generation and inspection do not complete
 setup or touch hardware.
 
-WBS13 v100 can now be imported through the bridge or its device export. Select
+WBS13 v100–v103 can be imported through the bridge or its device export. Select
 one to eight local users in Scales → Edit Settings before syncing; this explicit
 selection replaces the scale's roster. The server accepts metric-only groups,
 preserves `algo`/`position` and unknown types, and handles the captured last-update
@@ -155,5 +194,6 @@ and a cold-restart persistence check remain outstanding. See the
 [hardware checklist](../../../docs/hardware-acceptance.md).
 
 Withings roster import remains unavailable: its lookup requires the factory TLS
-client identity, unlike the older models' MAC/secret-only lookup. Registered-device
-Bluetooth authentication also remains untested.
+client identity, unlike the older models' MAC/secret-only lookup. Factory-reset
+previously Withings-registered scales before setup; Bluetooth authentication
+without a reset has not been qualified.

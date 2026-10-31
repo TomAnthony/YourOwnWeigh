@@ -11,6 +11,7 @@ npm run server:test
 "$patch_python" -m unittest discover -s bridge/tests -v
 "$patch_python" -m unittest discover -s tools -p test_probe_withings_firmware.py -v
 "$patch_python" -m unittest discover -s tools -p test_capture_wbs13_http.py -v
+"$patch_python" -m unittest discover -s tools -p test_dump_wbs13_firmware.py -v
 "$patch_python" -m unittest discover -s firmware/wbs13/v1311 -p test_body_composition.py -v
 node --check server/static/firmware.js
 printf 'Offline checks passed. Review skipped private-image tests; hardware is not exercised.\n'

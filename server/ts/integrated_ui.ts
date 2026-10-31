@@ -34,10 +34,11 @@ export function firmwareWorkspace(csrf: string): string {
       </section>
       <div class="firmware-grid">
         <section id="firmware-panel"><h2>Firmware</h2>
-          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option><option value="WBS13">Body Smart (WBS13) · Experimental</option></select></label>
+          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option><option value="WBS13">Body Smart (WBS13)</option></select></label>
           <p class="hint">Download stock firmware and generate YourOwnWeigh firmware. Files stay on the computer running the bridge.</p>
           <div class="action-row"><button id="generate-firmware" type="button">Generate Firmware For WBS06</button><label class="text-button file-link">Select Manually<input id="manual-firmware" type="file" accept=".bin" hidden></label></div></div>
           <div id="firmware-info" class="firmware-artifact" hidden></div>
+          <p id="firmware-warning" class="notice" hidden></p>
           <div class="action-row"><button id="install-firmware" type="button" disabled>Send Update To Device</button><button id="download-firmware" type="button" class="text-button" hidden>Download Firmware</button></div>
           <div id="operation-status" class="inline-status" hidden aria-live="polite"><p id="operation-message"></p><progress id="operation-progress" hidden max="1" value="0" aria-label="Firmware Progress"></progress></div>
         </section>
@@ -50,7 +51,7 @@ export function firmwareWorkspace(csrf: string): string {
       </div>
     </div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-relevant="additions" aria-label="Notifications"></div>
-    <dialog id="flash-dialog"><button class="dialog-close" data-close-dialog type="button">×</button><h2>Install Firmware?</h2><p>This replaces an external firmware slot. Keep the scale powered and the Python bridge running until transfer finishes. Keep your original firmware backup and recovery instructions.</p><p id="flash-summary"></p><label>Type FLASH<input id="flash-confirmation" autocomplete="off"></label><div class="dialog-actions"><button id="confirm-flash" type="button" disabled>Confirm Update</button><button type="button" data-close-dialog class="secondary">Cancel</button></div></dialog>
+    <dialog id="flash-dialog"><button class="dialog-close" data-close-dialog type="button">×</button><h2 id="flash-title">Install Firmware?</h2><p id="flash-warning" class="notice" hidden></p><p>This replaces an external firmware slot. Keep the scale powered and the Python bridge running until transfer finishes. Keep your original firmware backup and recovery instructions.</p><p id="flash-summary" class="firmware-artifact"></p><label><span id="flash-prompt">Type FLASH</span><input id="flash-confirmation" autocomplete="off" spellcheck="false" aria-describedby="flash-warning flash-summary"></label><div class="dialog-actions"><button id="confirm-flash" type="button" disabled>Confirm Update</button><button type="button" data-close-dialog class="secondary">Cancel</button></div></dialog>
     <dialog id="enroll-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Device To Server?</h2><p id="enroll-description">Save this scale and check Withings for existing users and settings. You choose which new users to import.</p><label>Scale Name<input id="device-label" maxlength="80"></label><div class="dialog-actions"><button id="confirm-enroll" type="button">Import Device</button><button type="button" data-close-dialog class="secondary">Later</button></div></dialog>
     <dialog id="roster-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Users</h2><p id="roster-message"></p><div id="roster-users"></div><div class="dialog-actions"><button id="confirm-roster" type="button">Import Selected Users</button><button type="button" data-close-dialog class="secondary">Later</button></div></dialog>
   </div><script src="/firmware.js?v=${WEB_APP_VERSION}" defer></script>`;

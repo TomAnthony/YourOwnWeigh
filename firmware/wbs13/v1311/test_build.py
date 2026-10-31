@@ -29,15 +29,15 @@ class BuildTests(unittest.TestCase):
         cls.candidate, cls.metadata = build.build(cls.stock)
 
     def test_container_and_preserved_components(self):
-        verify_candidate(self.candidate, self.stock, version=100, extra=8192,
+        verify_candidate(self.candidate, self.stock, version=build.VERSION, extra=8192,
                          application_limit=0x080E0000)
         before, after = components(self.stock), components(self.candidate)
         self.assertEqual(after[0]["size"], APP_SIZE + 8192)
-        self.assertEqual(after[0]["version"], 100)
+        self.assertEqual(after[0]["version"], build.VERSION)
         for old, new in zip(before[1:], after[1:]):
             self.assertEqual(self.stock[old["offset"]:old["offset"]+old["size"]],
                              self.candidate[new["offset"]:new["offset"]+new["size"]])
-        self.assertLess(self.metadata["tls"]["end_va"], APP_BASE + APP_SIZE + 8192 - 4)
+        self.assertLess(self.metadata["startup"]["end_va"], APP_BASE + APP_SIZE + 8192 - 4)
 
     def test_wrong_stock_corruption_and_flash_boundary_rejected(self):
         changed = bytearray(self.stock)
@@ -49,13 +49,13 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             components(changed)
         with self.assertRaisesRegex(ValueError, "flash boundary"):
-            verify_candidate(self.candidate, self.stock, version=100, extra=8192,
+            verify_candidate(self.candidate, self.stock, version=build.VERSION, extra=8192,
                              application_limit=APP_BASE + APP_SIZE)
 
     def test_original_bootloader_accepts_candidate_and_rejects_corruption(self):
         result = validate_external_image(self.stock, self.candidate)
         self.assertEqual(result["result"], 0)
-        self.assertEqual(result["parsed_application_version"], 100)
+        self.assertEqual(result["parsed_application_version"], build.VERSION)
         changed = bytearray(self.candidate)
         changed[APP_END + 256] ^= 1
         self.assertNotEqual(validate_external_image(self.stock, changed)["result"], 0)
@@ -68,7 +68,7 @@ class BuildTests(unittest.TestCase):
         cpu.mem_map(0x58004000, 0x1000)
         cpu.mem_write(0x58004080, struct.pack("<I", sfsa))
         info = 0x20001000
-        cpu.mem_write(info + 8, struct.pack("<III", APP_FILE, APP_SIZE + 8192, 100))
+        cpu.mem_write(info + 8, struct.pack("<III", APP_FILE, APP_SIZE + 8192, build.VERSION))
         writes, erases, reads = [], [], []
         secure_marker = b"wireless-region-unchanged"
         boundary = 0x08000000 + (sfsa << 12)
@@ -117,7 +117,7 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(bytes(cpu.mem_read(0x08000000, 0x8000)), self.stock[0xA28A8:0xAA8A8])
         return result, cpu, writes, erases, reads
 
-    def test_original_installer_copies_v100_from_either_explicit_ota_slot(self):
+    def test_original_installer_copies_candidate_from_either_explicit_ota_slot(self):
         for mode in (2, 3):
             with self.subTest(mode=mode):
                 result, cpu, writes, erases, reads = self.install(mode, 224)

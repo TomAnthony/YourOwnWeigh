@@ -12,6 +12,7 @@
     connected = false,
     busy = false,
     selectedArtifact = null,
+    flashArtifact = null,
     migration = null,
     offerIdentityKey = null,
     offerReport = "";
@@ -45,6 +46,12 @@
     ({ WBS03: "WS-30 (WBS03)", WBS13: "Body Smart (WBS13)" })[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
+  const unknownFirmware = (artifact) =>
+    !["known_release", "known_stock"].includes(artifact.classification);
+  const flashPhrase = (artifact) =>
+    unknownFirmware(artifact) ? "FLASH UNKNOWN" : "FLASH";
+  const unknownFirmwareWarning =
+    "This image does not match a known YOW release or stock firmware in this bridge. Its container checks passed, but its application has not been verified and could leave the scale unable to boot. Only continue if you trust this image and can recover the scale.";
   // Small, dismissible notices are independent of the persistent OTA progress.
   // Text is never interpreted as HTML; there are no third-party UI dependencies.
   const message = (text, error = false, key = uuid()) => {
@@ -240,9 +247,6 @@
       ["MAC", d.mac],
       ["Firmware", d.firmwareVersion],
       ["Bootloader", d.bootloaderVersion],
-      ...(d.capabilities?.experimental
-        ? [["Support", "Experimental · Awaiting Hardware Qualification"]]
-        : []),
       ...(d.secretAvailable === false
         ? [["Secret", "Not Provided By Scale"]]
         : []),
@@ -632,9 +636,16 @@
   }
   function showFirmware(artifact) {
     selectedArtifact = artifact;
+    const classification = unknownFirmware(artifact)
+      ? "Unknown Firmware"
+      : artifact.classification === "known_stock"
+        ? "Known Stock Firmware"
+        : "Known YOW Release";
     $("firmware-info").hidden = false;
     $("firmware-info").textContent =
-      `${artifact.filename} · v${artifact.version} · ${artifact.size.toLocaleString()} Bytes · ${artifact.experimental ? "Experimental · Hardware Test Pending" : artifact.classification.replaceAll("_", " ")}\nSHA-256: ${artifact.sha256}`;
+      `${artifact.filename} · v${artifact.version} · ${artifact.size.toLocaleString()} Bytes · ${classification}\nSHA-256: ${artifact.sha256}`;
+    $("firmware-warning").hidden = !unknownFirmware(artifact);
+    $("firmware-warning").textContent = unknownFirmwareWarning;
     $("download-firmware").hidden = false;
     updateControls();
   }
@@ -901,6 +912,13 @@
       async () => {
         const file = $("manual-firmware").files[0];
         if (!file) return;
+        // Failed inspection must not leave a previously selected image ready to flash.
+        selectedArtifact = null;
+        $("firmware-info").hidden = true;
+        $("firmware-warning").hidden = true;
+        $("download-firmware").hidden = true;
+        $("manual-firmware").value = "";
+        updateControls();
         if (file.size > 2 * 1024 * 1024)
           throw new Error("Firmware exceeds the 2 MiB limit");
         const data = new Uint8Array(await file.arrayBuffer());
@@ -929,29 +947,47 @@
           $("operation-progress").value = (offset + chunk.length) / data.length;
         }
         showFirmware(await command("artifact.finish", { transferId }));
-        message("Manual Image Validated");
+        message(
+          unknownFirmware(selectedArtifact)
+            ? "Unknown Firmware Selected · Review The Warning Before Installing"
+            : "Manual Image Validated",
+        );
       },
       { transientProgress: true },
     );
   $("install-firmware").onclick = () => {
+    if (!selectedArtifact) return;
+    flashArtifact = selectedArtifact;
+    $("flash-title").textContent = unknownFirmware(flashArtifact)
+      ? "Install Unknown Firmware?"
+      : "Install Firmware?";
+    $("flash-warning").hidden = !unknownFirmware(flashArtifact);
+    $("flash-warning").textContent = unknownFirmwareWarning;
     $("flash-summary").textContent =
-      `${selectedArtifact.filename} → ${label(model())} · ${snapshot.device.mac}`;
+      `${flashArtifact.filename} · v${flashArtifact.version} → ${label(model())} · ${snapshot.device.mac}\nSHA-256: ${flashArtifact.sha256}`;
+    $("flash-prompt").textContent = `Type ${flashPhrase(flashArtifact)}`;
     $("flash-confirmation").value = "";
     $("confirm-flash").disabled = true;
     $("flash-dialog").showModal();
   };
   $("flash-confirmation").oninput = () => {
-    $("confirm-flash").disabled = $("flash-confirmation").value !== "FLASH";
+    $("confirm-flash").disabled =
+      !flashArtifact ||
+      $("flash-confirmation").value !== flashPhrase(flashArtifact);
   };
   $("confirm-flash").onclick = () =>
     action(async () => {
-      if ($("flash-confirmation").value !== "FLASH")
-        throw new Error("Type FLASH to confirm");
+      const artifact = flashArtifact;
+      if (!artifact || artifact !== selectedArtifact)
+        throw new Error("Select the firmware again before confirming");
+      const confirmation = flashPhrase(artifact);
+      if ($("flash-confirmation").value !== confirmation)
+        throw new Error(`Type ${confirmation} to confirm`);
       $("flash-dialog").close();
       const result = await command("firmware.install", {
-        artifactId: selectedArtifact.artifactId,
-        sha256: selectedArtifact.sha256,
-        confirmation: "FLASH",
+        artifactId: artifact.artifactId,
+        sha256: artifact.sha256,
+        confirmation,
       });
       snapshot.device = null;
       renderIdentity();
@@ -1098,6 +1134,7 @@
     snapshot = { ...snapshot, device: null, candidates: [] };
     selectedArtifact = null;
     $("firmware-info").hidden = true;
+    $("firmware-warning").hidden = true;
     $("download-firmware").hidden = true;
     renderCandidates([]);
     updateControls();

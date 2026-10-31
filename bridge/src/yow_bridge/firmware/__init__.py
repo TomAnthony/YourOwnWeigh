@@ -20,7 +20,7 @@ from .. import USER_AGENT
 RELEASES = {
     "WBS06": (127, "419aeafa0ab3a60197dfc6909b27381477498ac3688cd147ae0d675cf5a6b808"),
     "WBS03": (102, "97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a"),
-    "WBS13": (100, "ab2574098c2dac57cfb7f2ce6a776d661cc04c50e0407f3ac9feced2500499b9"),
+    "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",
@@ -132,7 +132,8 @@ def inspect(data: bytes, model: str) -> dict:
 def inspect_wbs13(data: bytes, p: dict, digest: str) -> dict:
     """WBS13 has an 88-byte TLV header, not the legacy scale container.
 
-    First qualification accepts only the pinned stock or candidate. Every
+    Unknown applications are classified as custom after structural validation;
+    installation requires the separate FLASH UNKNOWN confirmation. Every
     non-application component must independently match the reviewed baseline.
     """
     if struct.unpack_from("<HH", data) != (1, 80):
@@ -173,13 +174,10 @@ def inspect_wbs13(data: bytes, p: dict, digest: str) -> dict:
         "known_release" if digest == p["outputSha256"] else
         "known_stock" if digest == p["sourceSha256"] else "custom"
     )
-    if classification == "custom":
-        raise ValueError("Experimental WBS13 OTA accepts only the pinned stock or YOW candidate")
     return dict(
         model="WBS13", version=version, size=len(data), sha256=digest,
         bootloader=p["bootloader"], classification=classification,
         releaseId=f"WBS13-{version}" if classification == "known_release" else None,
-        experimental=True,
     )
 
 

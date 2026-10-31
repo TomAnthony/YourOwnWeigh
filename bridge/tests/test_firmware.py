@@ -28,7 +28,7 @@ class FirmwareTests(unittest.TestCase):
         for model, source, target in [
             ("WBS06", "wbs06_1181_device.bin", "wbs06_yow_127.bin"),
             ("WBS03", "ws30/wbs03_921_dR7wKb.bin", "ws30/wbs03_yow_102.bin"),
-            ("WBS13", "wbs13/wbs13_1311_lb2w93.bin", "wbs13/wbs13_yow_100.bin"),
+            ("WBS13", "wbs13/wbs13_1311_lb2w93.bin", "wbs13/wbs13_yow_103.bin"),
         ]:
             raw = (root / source).read_bytes()
             out = apply(raw, model)

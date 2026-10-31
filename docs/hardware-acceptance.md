@@ -75,10 +75,18 @@ General readings API and metric-discovery behavior are covered by automated
 tests. Weight is the default; other metrics appear after receipt. Apple Health
 continues to use the weight-only queue.
 
-Remaining hardware checks are configured server/SSID readback after a cold
-restart, access to a previously Withings-registered device, and WBS13's Bluetooth
-workflow on Linux. Linux already has the shared Bleak/BlueZ transport; its pending
+WBS13 firmware and server support are established by these results. Factory-reset
+previously Withings-registered scales before setup; access without that reset
+has not been qualified. Remaining hardware checks are configured server/SSID
+readback after a cold restart and WBS13's Bluetooth workflow on Linux.
+Linux already has the shared Bleak/BlueZ transport; its pending
 test concerns Bluetooth communication rather than firmware or server support.
 The separate `/v2/screen` response path has offline parser coverage but was not
 requested in the captured measurement sessions. UART write recovery has not been
 qualified on this model.
+
+WBS13 v103 replaces the startup text with a native-resolution YOW smiley. Its ARM renderer,
+framebuffer, container, bridge recipe and bootloader checks are covered offline.
+On 31 October 2026 the maintainer confirmed that the v103 update's smiley works
+correctly on the physical display. This completes the startup artwork check;
+the remaining hardware coverage gaps listed above are tracked separately.

@@ -148,7 +148,7 @@ class MockTransport:
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_wbs13_stock_identity_enables_only_experimental_update(self):
+    async def test_wbs13_stock_identity_enables_only_update(self):
         transport = MockTransport("WBS06")
         transport.identity_only = True
         transport.wpp_profile = "WBS13"
@@ -160,7 +160,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(identity["secretAvailable"])
         caps = identity["capabilities"]
         self.assertTrue(caps["ota"])
-        self.assertTrue(caps["experimental"])
+        self.assertNotIn("experimental", caps)
         for key in ("serverWrite", "wifiWrite", "completeSetup", "setTime", "enrollment"):
             self.assertFalse(caps[key])
         self.assertEqual(len(transport.sent), 2)  # Identity and read-only MTU.
@@ -183,7 +183,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress[-1], ("transfer_complete", 1200, 1200))
 
     async def test_wbs13_candidate_and_unreviewed_versions_are_distinct(self):
-        for version, expected in ((100, True), (1312, False)):
+        for version, expected in ((100, True), (101, True), (102, True), (103, True), (104, False), (1312, False)):
             transport = MockTransport("WBS06")
             transport.identity_only = True
             transport.wpp_profile = "WBS13"
@@ -198,14 +198,13 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
                 record = transport.session.export("Example")
                 self.assertEqual(record["format"], "YOW-BLE-device-v1")
                 self.assertEqual(record["model"], "WBS13")
-                self.assertEqual(record["firmware_version"], 100)
+                self.assertEqual(record["firmware_version"], version)
                 self.assertEqual(record["session_secret"], "0123456789abcdef")
             if not expected:
                 with self.assertRaises(ProtocolError):
                     transport.session.export("Example")
                 for key, value in result["capabilities"].items():
-                    if key != "experimental":
-                        self.assertFalse(value, key)
+                    self.assertFalse(value, key)
 
     async def test_wbs13_import_requires_secret_even_on_candidate(self):
         transport = MockTransport("WBS06")

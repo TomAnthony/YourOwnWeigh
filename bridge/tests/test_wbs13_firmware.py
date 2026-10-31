@@ -54,7 +54,7 @@ class WBS13FirmwareTests(unittest.TestCase):
         self.assertEqual(inspect(self.stock, "WBS13")["classification"], "known_stock")
         result = inspect(self.target, "WBS13")
         self.assertEqual((result["version"], result["bootloader"]), (100, 2))
-        self.assertTrue(result["experimental"])
+        self.assertNotIn("experimental", result)
         self.assertEqual(apply(self.stock, "WBS13"), self.target)
 
     def test_each_header_or_component_corruption_is_rejected(self):
@@ -65,15 +65,27 @@ class WBS13FirmwareTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     inspect(data, "WBS13")
 
-    def test_valid_crc_does_not_allow_changed_bootloader_or_unknown_application(self):
-        for component in (0, 1):
+    def test_unknown_application_is_classified_after_structural_checks(self):
+        result = inspect(fixture(101), "WBS13")
+        self.assertEqual(result["classification"], "custom")
+        self.assertEqual(result["version"], 101)
+        self.assertIsNone(result["releaseId"])
+        # A changed application with the same version is unknown too.
+        data = bytearray(self.target)
+        data[100] ^= 1
+        struct.pack_into("<I", data, 16, zlib.crc32(data[88:216]))
+        struct.pack_into("<I", data, 84, zlib.crc32(data[:84]))
+        self.assertEqual(inspect(bytes(data), "WBS13")["classification"], "custom")
+
+    def test_valid_crc_does_not_allow_changed_bootloader_or_radios(self):
+        for component in (1, 2, 3):
             data = bytearray(self.target)
             desc = 4 + 20 * component
             _, _, start, size, _, _ = struct.unpack_from("<HHIIII", data, desc)
             data[start + 12] ^= 1
             struct.pack_into("<I", data, desc + 12, zlib.crc32(data[start:start+size]))
             struct.pack_into("<I", data, 84, zlib.crc32(data[:84]))
-            with self.subTest(component=component), self.assertRaisesRegex(ValueError, "baseline|pinned"):
+            with self.subTest(component=component), self.assertRaisesRegex(ValueError, "baseline"):
                 inspect(bytes(data), "WBS13")
 
     def test_application_memory_limit_and_runtime_version_are_independent_guards(self):
