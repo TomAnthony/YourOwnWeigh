@@ -4,7 +4,7 @@ The web app supplies the interface; this local component handles Bluetooth, firm
 
 ## Install And Run
 
-Use Python 3.11+ on macOS or Linux. On macOS, Bleak uses CoreBluetooth for WBS06; PyObjC uses IOBluetooth for WS-30. Bleak's minimum is macOS 10.15, subject to the installed Python and PyObjC wheels. On Monterey, use 12.3 or later because 12.0–12.2 has a discovery issue. Older systems are not tested here. See [Bleak platform support](https://bleak.readthedocs.io/en/latest/) and [macOS scanner notes](https://bleak.readthedocs.io/en/stable/backends/macos.html).
+Use Python 3.11+ on macOS or Linux. On macOS, Bleak uses CoreBluetooth for WBS06 and WBS13; PyObjC uses IOBluetooth for WS-30. Bleak's minimum is macOS 10.15, subject to the installed Python and PyObjC wheels. On Monterey, use 12.3 or later because 12.0–12.2 has a discovery issue. Older systems are not tested here. See [Bleak platform support](https://bleak.readthedocs.io/en/latest/) and [macOS scanner notes](https://bleak.readthedocs.io/en/stable/backends/macos.html).
 
 ```sh
 python3.11 -m venv .venv
@@ -16,7 +16,7 @@ Open Firmware Bridge in the web app, generate an invitation and paste it into Te
 
 ### Linux Setup
 
-Use a native Linux system with BlueZ 5.55+ running, access to the system D-Bus, and a powered Bluetooth adapter. WBS06 uses BLE; WS-30 requires Classic BR/EDR and RFCOMM as well. Install your distribution's BlueZ daemon and utilities (for example, `bluez` on Debian/Ubuntu or `bluez` and `bluez-utils` on Arch/Manjaro). `bluetoothctl --version`, `systemctl status bluetooth` and `rfkill list bluetooth` help check the installation. The bridge runs as your normal user, including over SSH when the distribution's D-Bus policy permits Bluetooth access. Do not run the bridge with sudo.
+Use a native Linux system with BlueZ 5.55+ running, access to the system D-Bus, and a powered Bluetooth adapter. WBS06 and WBS13 use BLE; WS-30 requires Classic BR/EDR and RFCOMM as well. Install your distribution's BlueZ daemon and utilities (for example, `bluez` on Debian/Ubuntu or `bluez` and `bluez-utils` on Arch/Manjaro). `bluetoothctl --version`, `systemctl status bluetooth` and `rfkill list bluetooth` help check the installation. The bridge runs as your normal user, including over SSH when the distribution's D-Bus policy permits Bluetooth access. Do not run the bridge with sudo.
 
 Both transports use BlueZ's public D-Bus API. Classic uses a temporary Serial Port client profile: BlueZ performs SDP and supplies the RFCOMM stream, so no `rfcomm bind`, fixed channel number, PyBluez or native compiler is needed. BLE pairs only the selected device and negotiates the ATT write size before sending model commands. The bridge does not replace the desktop's default pairing agent. If a device requests an interactive PIN/passkey, pair it through Linux Bluetooth settings first.
 
@@ -38,7 +38,11 @@ Classic results distinguish **Paired · Not Seen This Scan**, **Seen This Scan**
 
 The WS-30 probe allows its serial reset to settle and retries the read-only identity request once after a short first timeout. OTA and configuration writes are not retried this way.
 
-An unrecognised model that speaks the same WPP identity protocol can supply credentials for the web app's read-only Withings firmware-offer lookup. Device-changing commands stay disabled. The newer BLE service used by Body Smart/WBS13 supports identity reads too; it is not enabled for configuration or OTA. A factory-new WBS13 returned an empty secret, so its identity can be displayed but the firmware-offer lookup is unavailable. On macOS, enter the scale's pairing code when prompted; Bluetooth bonding does not register the scale with Withings or complete setup. Other Bluetooth services or probe formats need their own adapter.
+An unrecognised model that speaks the same WPP identity protocol can supply credentials for the web app's read-only Withings firmware-offer lookup. Device-changing commands stay disabled. On macOS, enter the scale's pairing code when prompted; Bluetooth bonding does not register the scale with Withings or complete setup. Other Bluetooth services or probe formats need their own adapter.
+
+Body Smart/WBS13 supports stock v1311 / bootloader 2 and the pinned YOW v100 image; arbitrary WBS13 images are rejected. Its factory identity omits the secret; v100 supplies it for device import. On v100, the owner hostname, Wi-Fi settings, clock and explicit Complete Setup commands are available. Live OTA, reconnect/probe, setup, local-user roster adoption, HTTP capture and HTTPS sync to the YOW Cloudflare Worker passed on 31 October 2026, including weight, body composition, heart rate and recovery of queued readings. Use local server users for its roster: Withings import requires a separate client-certificate lookup.
+
+WBS13 uses the shared Bleak transport on macOS and Linux. Its Bluetooth workflow has been exercised on macOS; a Linux WBS13 hardware check remains outstanding. This is transport validation: the firmware image and server protocol are the same on either platform, and daily Wi-Fi sync does not use the computer. The bridge still marks this path experimental while configured-settings readback, cold-restart persistence and previously Withings-registered device access need further checks. See the [hardware checklist](../docs/hardware-acceptance.md) and [WBS13 firmware notes](../firmware/wbs13/v1311/README.md).
 
 ## Progress And Recovery
 
@@ -77,6 +81,6 @@ Omit `--probe` for discovery only. If several scales are present, add `--device 
 
 ## Firmware
 
-The recipes produce WBS06 v127 from stock 1181 and WS-30 v102 from stock 921. They verify source/output SHA-256, section CRCs, version words and preserved radio/bootloader resources. Only original changes and source-copy instructions are distributed; no vendor image is bundled.
+The recipes produce WBS06 v127 from stock 1181, WS-30 v102 from stock 921 and WBS13 v100 from stock 1311. They verify source/output SHA-256, section CRCs, version words and preserved radio/bootloader resources. Only original changes and source-copy instructions are distributed; no vendor image is bundled.
 
 Maintainers use the source builders in `firmware/` and `tools/package_firmware.py`. End users need no compiler. The manual picker accepts a completed `.bin`; structural checks cannot establish that arbitrary custom application code is safe.

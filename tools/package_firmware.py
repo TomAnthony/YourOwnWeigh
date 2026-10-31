@@ -45,6 +45,25 @@ PROFILES = {
         hostLimit=59,
         maxSize=0xE0000,
     ),
+    "WBS13": dict(
+        version=100,
+        stockVersion=1311,
+        bootloader=2,
+        container="wbs13-tlv",
+        experimental=True,
+        sourceSize=1213984,
+        outputSize=1222176,
+        expansionAt=0xA28A8,
+        expansionSize=8192,
+        sourceSha256="e9a98ceb50f18b5dc2e439296b6133fec9f33ae5362785763da232b9e92b6217",
+        outputSha256="ab2574098c2dac57cfb7f2ce6a776d661cc04c50e0407f3ac9feced2500499b9",
+        url="http://cdnfw.withings.net/wbs13/wbs13_1311_lb2w93.bin",
+        ownerProtocol=1,
+        hostLimit=48,
+        maxSize=0x1DC000,
+        runtimeVersionOffset=0xA28A4,
+        applicationMaxSize=0xD8000,
+    ),
 }
 
 
@@ -64,9 +83,10 @@ def package(model, source, target):
     n = p["expansionSize"]
     base = bytearray(source[:at] + bytes(n) + source[at:])
     p["sourceCopies"] = []
-    if model == "WBS06":
-        start = 0x84 + 0x4480 - 0x4000
-        size = 84
+    if model in ("WBS06", "WBS13"):
+        # Preserve the original WPP dispatcher table from the stock download.
+        # The extra owner-command entry is authored patch data, emitted below.
+        start, size = (0x52C, 156) if model == "WBS13" else (0x504, 84)
         assert target[at : at + size] == source[start : start + size]
         p["sourceCopies"].append(dict(sourceOffset=start, offset=at, length=size))
         base[at : at + size] = source[start : start + size]
@@ -93,7 +113,10 @@ def package(model, source, target):
     assert bytes(base) == target
     p["resources"] = []
     for i in range(1, 4):
-        _, off, size, _, extra = struct.unpack_from("<5I", source, 0x30 + i * 20)
+        if model == "WBS13":
+            kind, _, off, size, _, extra = struct.unpack_from("<HHIIII", source, 4 + i * 20)
+        else:
+            _, off, size, _, extra = struct.unpack_from("<5I", source, 0x30 + i * 20)
         p["resources"].append(
             dict(
                 index=i,
@@ -102,12 +125,14 @@ def package(model, source, target):
                 sha256=digest(source[off : off + size]),
             )
         )
-    p["stackPointer"] = struct.unpack_from("<I", source, 0x84)[0]
-    p["releaseSource"] = (
-        "firmware/wbs06/v1181/build.py"
-        if model == "WBS06"
-        else "firmware/ws30/v921/build.py"
-    )
+        if model == "WBS13":
+            p["resources"][-1]["type"] = kind
+    p["stackPointer"] = struct.unpack_from("<I", source, 0x58 if model == "WBS13" else 0x84)[0]
+    p["releaseSource"] = {
+        "WBS06": "firmware/wbs06/v1181/build.py",
+        "WBS03": "firmware/ws30/v921/build.py",
+        "WBS13": "firmware/wbs13/v1311/build.py",
+    }[model]
     return p
 
 

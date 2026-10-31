@@ -1,4 +1,4 @@
-"""Application commands for Body/WBS06 (BLE) and WS-30/WBS03 (RFCOMM).
+"""Application commands for WBS06/WBS13 (BLE) and WS-30/WBS03 (RFCOMM).
 
 Transport objects provide write(bytes), disconnect(), max_write, and deliver raw
 bytes through receive(). No Wi-Fi password or device secret is logged here.
@@ -57,14 +57,14 @@ def hostname(value, limit):
 
 class ScaleSession:
     def __init__(self, model, transport):
-        if model not in ("WBS06", "WBS03"):
+        if model not in ("WBS06", "WBS03", "WBS13"):
             raise ValueError("Unsupported model")
         self.model, self.transport = model, transport
         self.serial_reset = asyncio.Event()
-        self.decoder = Decoder() if model == "WBS06" else SerialDecoder(self.serial_reset.set)
+        self.decoder = SerialDecoder(self.serial_reset.set) if model == "WBS03" else Decoder()
         self.inbox = asyncio.Queue()
         self.identity = None
-        self.mtu = 20 if model == "WBS06" else 252
+        self.mtu = 252 if model == "WBS03" else 20
         self.ota_started = False
 
     def receive(self, data):
@@ -106,12 +106,15 @@ class ScaleSession:
         packet = encode(command, payload)
         # The proven BLE path sends each control frame in one ATT write. Do
         # not assume the scale reassembles arbitrarily split control frames.
-        if self.model == "WBS06" and len(packet) > self.mtu:
+        if self.model != "WBS03" and len(packet) > self.mtu:
             raise ProtocolError("Control frame exceeds the scale's negotiated MTU")
         await self.send(packet)
         return await self.wait(command, timeout)
 
     async def probe(self):
+        # A failed or changed identity/MTU response must never retain a prior
+        # successful probe's write capabilities on the same connection.
+        self.identity = None
         payload = tlv(0x12A, b"\x01\x01\x00\x00\x00\x01")
         if self.model == "WBS03":
             self.serial_reset.clear()
@@ -138,27 +141,46 @@ class ScaleSession:
         mac = re.sub(r"[:-]", "", identity["mac"]).upper()
         if not re.fullmatch(r"[0-9A-F]{12}", mac):
             raise ProtocolError("Probe contains an invalid device identity")
+        # UUIDs distinguish the modern WPP transport, but are not a model ID.
+        # Enable the experimental WBS13 path only for the exact observed probe
+        # identity and service profile, never another device on the same UUIDs.
+        modern = getattr(self.transport, "wpp_profile", None) == "WBS13"
+        if self.model != "WBS03" and modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF:
+            self.model = "WBS13"
         supported = (
+            modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF
+            if self.model == "WBS13" else
             name == "Body" and boot == 4 and identity["hardwareVersion"] == 0xFFFFFF
             if self.model == "WBS06"
             else boot == 15 and bool(re.search(r"WS-?30", name, re.IGNORECASE))
         )
-        supported = supported and not getattr(self.transport, "identity_only", False)
+        supported = supported and (self.model == "WBS13" or not getattr(self.transport, "identity_only", False))
         # A factory-new Body Smart returned a valid identity with an empty
         # secret. Show that identity without enabling provisioning or claiming
         # credentials are available. Supported models still require their key;
         # a nonempty malformed key is an error on every model.
         secret = identity["secret"]
-        if not re.fullmatch(r"[0-9a-fA-F]{16}", secret) and (supported or secret):
+        if not re.fullmatch(r"[0-9a-fA-F]{16}", secret) and ((supported and self.model != "WBS13") or secret):
             raise ProtocolError("Probe contains an invalid device identity")
-        if self.model == "WBS06" and supported:
+        if self.model != "WBS03" and supported:
             reply = await self.request(0x155, tlv(0x990, struct.pack(">H", 512)))
-            hints = [
-                struct.unpack_from(">H", value, i)[0]
-                for _, value in reply.tlvs()
-                for i in range(0, len(value) - 1, 2)
-            ]
-            self.mtu = min([n for n in hints if 20 <= n <= 512] or [20])
+            if self.model == "WBS13":
+                # Original v1311 handler: 0x990 maximum packet, 0x992 ATT MTU
+                # minus three. Require both reviewed fields for initial OTA.
+                fields = [reply.value(tag) for tag in (0x990, 0x992)]
+                if any(len(value) != 2 for value in fields):
+                    raise ProtocolError("Invalid WBS13 MTU response")
+                hints = [struct.unpack(">H", value)[0] for value in fields]
+                if any(not 20 <= value <= 512 for value in hints):
+                    raise ProtocolError("Invalid WBS13 MTU limits")
+                self.mtu = min(*hints, self.transport.max_write)
+            else:
+                hints = [
+                    struct.unpack_from(">H", value, i)[0]
+                    for _, value in reply.tlvs()
+                    for i in range(0, len(value) - 1, 2)
+                ]
+                self.mtu = min([n for n in hints if 20 <= n <= 512] or [20])
         identity.update(model=self.model, mac=mac, observedAt=timestamp(), supported=supported)
         self.identity = identity
         self.ota_started = False
@@ -183,6 +205,20 @@ class ScaleSession:
                 completeSetup=False, firmwareRead=False, otaDestinationRead=False,
             )
         version = self.identity["firmwareVersion"]
+        if self.model == "WBS13":
+            owner = version == 100
+            return dict(
+                ota=version in (1311, 100), experimental=True,
+                serverRead=owner, serverWrite=owner,
+                serverTransports=["http", "https"] if owner else [],
+                hostnameMaxBytes=48 if owner else 0,
+                wifiWrite=owner, wifiRead="ssid-only" if owner else False,
+                wifiConnectionResult="device-reported" if owner else False,
+                completeSetup=owner, setTime=owner,
+                enrollment=owner and bool(self.identity["secret"]),
+                vendorFirmwareOfferRead=False,
+                firmwareRead=False, otaDestinationRead=False,
+            )
         body = self.model == "WBS06"
         owner = version in ((123, 124, 125, 126, 127) if body else (100, 101, 102))
         known = version in ((1181, 123, 124, 125, 126, 127) if body else (921, 100, 101, 102))
@@ -210,10 +246,12 @@ class ScaleSession:
 
     def export(self, label):
         self.require_probe()
+        if self.model == "WBS13" and not self.capabilities()["enrollment"]:
+            raise ProtocolError("WBS13 import requires YOW v100 and a device secret")
         i = self.identity
         return dict(
             format="YOW-BLE-device-v1"
-            if self.model == "WBS06"
+            if self.model in ("WBS06", "WBS13")
             else "YOW-Classic-device-v1",
             model=self.model,
             name=i["name"],
@@ -229,6 +267,8 @@ class ScaleSession:
 
     async def complete_setup(self):
         self.require_probe()
+        if not self.capabilities()["completeSetup"]:
+            raise ProtocolError("Setup completion is not enabled for this firmware")
         await self.request(0x113)
         return dict(acknowledged=True, expectedDisconnect=True)
 
@@ -317,7 +357,13 @@ class ScaleSession:
 
     async def read_wifi(self):
         self.require_probe()
-        data = (await self.request(0x104)).value(0x104)
+        if not self.capabilities()["wifiRead"]:
+            return dict(supported=False)
+        reply = await self.request(0x104)
+        # The v1311 handler sends an empty reply if its Wi-Fi DB item is absent.
+        if self.model == "WBS13" and not reply.payload:
+            return dict(ssid="", unset=True, supported=True, observedAt=timestamp())
+        data = reply.value(0x104)
         if not data or len(data) < data[0] + 2:
             raise ProtocolError("Invalid stored Wi-Fi response")
         end = data[0] + 1
@@ -331,6 +377,8 @@ class ScaleSession:
 
     async def connect_wifi(self, ssid, password):
         self.require_probe()
+        if not self.capabilities()["wifiWrite"]:
+            raise ProtocolError("Wi-Fi configuration is not enabled for this firmware")
         ssid_bytes, password_bytes = ssid.encode("utf-8"), password.encode("utf-8")
         if (
             not ssid.isascii()
@@ -367,6 +415,8 @@ class ScaleSession:
 
     async def set_time(self, utcSeconds, goff, dst, ngoff):
         self.require_probe()
+        if self.capabilities().get("setTime") is False:
+            raise ProtocolError("Time configuration is not enabled for this firmware")
         if (
             any(type(x) is not int for x in (utcSeconds, goff, dst, ngoff))
             or not 0 <= utcSeconds <= 0xFFFFFFFF
@@ -392,9 +442,11 @@ class ScaleSession:
         if len(reply.payload) != 4 or reply.payload[0] != 0:
             raise ProtocolError("OTA START rejected or malformed")
         offered, batch = struct.unpack_from(">HB", reply.payload, 1)
-        maximum = 512 if self.model == "WBS06" else 252
+        maximum = 252 if self.model == "WBS03" else 512
         if not 1 <= offered <= maximum or not 1 <= batch <= 32:
             raise ProtocolError("Invalid OTA packet/window size")
+        if self.model == "WBS13" and batch != 15:
+            raise ProtocolError("WBS13 OTA window differs from the reviewed BLE protocol")
         if self.model == "WBS03" and offered + 4 > self.transport.max_write:
             # WS-30's START reply specifies the packet size; silently reducing
             # it would change the acknowledgment window compared with Swift.
@@ -404,7 +456,7 @@ class ScaleSession:
             self.transport.max_write - (4 if self.model == "WBS03" else 0),
             self.mtu,
         )
-        if self.model == "WBS06" and size < 20:
+        if self.model != "WBS03" and size < 20:
             raise ProtocolError("BLE negotiated write size is too small")
         sent, packets = 0, 0
         while sent < len(image):
@@ -417,7 +469,7 @@ class ScaleSession:
                 ack = await self.wait(0x402, 60)
                 if ack.payload:
                     raise ProtocolError("Invalid OTA progress acknowledgment")
-                await asyncio.sleep(0.03 if self.model == "WBS06" else 0.005)
+                await asyncio.sleep(0.005 if self.model == "WBS03" else 0.03)
         # A final full batch may emit progress before the COMPLETE response.
         async with asyncio.timeout(90):
             while True:

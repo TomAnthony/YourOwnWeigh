@@ -32,6 +32,7 @@ class BLETests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(factory.call_args.args[0], device)
                 self.assertIs(transport.characteristic, characteristic)
                 self.assertEqual(transport.identity_only, service_uuid == ble.IDENTITY_SERVICE)
+                self.assertEqual(transport.wpp_profile, "WBS13" if service_uuid == ble.IDENTITY_SERVICE else "WBS06")
                 self.assertEqual(transport.max_write, 182)
                 args = client.start_notify.await_args.args
                 self.assertIs(args[0], characteristic)

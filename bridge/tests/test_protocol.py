@@ -115,7 +115,7 @@ class MockTransport:
         if self.ota:
             self.total += len(data)
             self.count += 1
-            if self.count % 3 == 0:
+            if self.count % (15 if getattr(self, "wpp_profile", None) == "WBS13" else 3) == 0:
                 self.reply(encode(0x402))
             if self.total == self.size:
                 self.reply(encode(0x403))
@@ -125,11 +125,15 @@ class MockTransport:
             result = probe(self.model)
             self.reply(encode(result.command, result.payload))
         elif frame.command == 0x155:
-            self.reply(encode(0x155, tlv(0x990, struct.pack(">H", 182))))
+            payload = tlv(0x990, struct.pack(">H", 182))
+            if getattr(self, "wpp_profile", None) == "WBS13":
+                payload = tlv(0x990, struct.pack(">H", 512)) + tlv(0x992, struct.pack(">H", 182))
+            self.reply(encode(0x155, payload))
         elif frame.command == 0x401:
             self.size = struct.unpack(">I", frame.value(0x401)[1:])[0]
             self.ota = True
-            self.reply(encode(0x401, b"\x00" + struct.pack(">HB", 64, 3)))
+            window = 15 if getattr(self, "wpp_profile", None) == "WBS13" else 3
+            self.reply(encode(0x401, b"\x00" + struct.pack(">HB", 64, window)))
         else:
             self.reply(encode(frame.command))
 
@@ -144,6 +148,107 @@ class MockTransport:
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_wbs13_stock_identity_enables_only_experimental_update(self):
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertEqual(identity["model"], "WBS13")
+        self.assertTrue(identity["supported"])
+        self.assertFalse(identity["secretAvailable"])
+        caps = identity["capabilities"]
+        self.assertTrue(caps["ota"])
+        self.assertTrue(caps["experimental"])
+        for key in ("serverWrite", "wifiWrite", "completeSetup", "setTime", "enrollment"):
+            self.assertFalse(caps[key])
+        self.assertEqual(len(transport.sent), 2)  # Identity and read-only MTU.
+        for operation in (
+            lambda: transport.session.complete_setup(),
+            lambda: transport.session.connect_wifi("Example", "password123"),
+            lambda: transport.session.set_server("example.net", "https"),
+            lambda: transport.session.set_time(1793000000, 3600, 1800000000, 7200),
+        ):
+            with self.assertRaises(ProtocolError):
+                await operation()
+        self.assertEqual(len(transport.sent), 2)
+        with self.assertRaises(ProtocolError):
+            transport.session.export("Example")
+        # The mock verifies byte delivery, batching, and fragmented replies;
+        # the firmware ARM harness separately checks stock handlers' formats.
+        progress = []
+        result = await transport.session.install(bytes(1200), lambda *p: progress.append(p))
+        self.assertTrue(result["transferred"])
+        self.assertEqual(progress[-1], ("transfer_complete", 1200, 1200))
+
+    async def test_wbs13_candidate_and_unreviewed_versions_are_distinct(self):
+        for version, expected in ((100, True), (1312, False)):
+            transport = MockTransport("WBS06")
+            transport.identity_only = True
+            transport.wpp_profile = "WBS13"
+            frame = probe("WBS06", name="Body Smart", secret="0123456789abcdef", boot=2, firmware=version)
+            with patch(__name__ + ".probe", return_value=frame):
+                result = await transport.session.probe()
+            self.assertEqual(result["capabilities"]["ota"], expected)
+            self.assertEqual(result["capabilities"]["serverWrite"], expected)
+            self.assertEqual(result["capabilities"]["enrollment"], expected)
+            self.assertFalse(result["capabilities"]["vendorFirmwareOfferRead"])
+            if expected:
+                record = transport.session.export("Example")
+                self.assertEqual(record["format"], "YOW-BLE-device-v1")
+                self.assertEqual(record["model"], "WBS13")
+                self.assertEqual(record["firmware_version"], 100)
+                self.assertEqual(record["session_secret"], "0123456789abcdef")
+            if not expected:
+                with self.assertRaises(ProtocolError):
+                    transport.session.export("Example")
+                for key, value in result["capabilities"].items():
+                    if key != "experimental":
+                        self.assertFalse(value, key)
+
+    async def test_wbs13_import_requires_secret_even_on_candidate(self):
+        transport = MockTransport("WBS06")
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=100)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertFalse(identity["capabilities"]["enrollment"])
+        with self.assertRaisesRegex(ProtocolError, "device secret"):
+            transport.session.export("Example")
+
+    async def test_wbs13_requires_its_reviewed_mtu_fields(self):
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        with patch(__name__ + ".probe", return_value=frame):
+            await transport.session.probe()
+        self.assertTrue(transport.session.capabilities()["ota"])
+        original = transport.reply
+
+        def omit_att_limit(packet):
+            if Decoder().feed(packet)[0].command == 0x155:
+                packet = encode(0x155, tlv(0x990, struct.pack(">H", 512)))
+            original(packet)
+
+        transport.reply = omit_att_limit
+        with patch(__name__ + ".probe", return_value=frame):
+            with self.assertRaises(ProtocolError):
+                await transport.session.probe()
+        self.assertIsNone(transport.session.identity)
+        self.assertFalse(transport.ota)
+
+    async def test_wbs13_unconfigured_wifi_has_an_empty_settings_reply(self):
+        transport = MockTransport("WBS06")
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", boot=2, firmware=100)
+        with patch(__name__ + ".probe", return_value=frame):
+            await transport.session.probe()
+        result = await transport.session.read_wifi()
+        self.assertEqual(result["ssid"], "")
+        self.assertTrue(result["unset"])
+
     async def test_body_smart_without_secret_is_identified_without_followup_commands(self):
         transport = MockTransport("WBS06")
         transport.identity_only = True

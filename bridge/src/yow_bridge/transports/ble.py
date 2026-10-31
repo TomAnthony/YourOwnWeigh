@@ -14,7 +14,8 @@ from bleak import BleakClient, BleakScanner
 SERVICE = "00000020-5749-5448-0007-000000000000"
 CHARACTERISTIC = "00000024-5749-5448-0007-000000000000"
 # Body Smart/WBS13 answers the same identity request on the newer UUID pair.
-# Finding this service permits identification only, not WBS06 commands or OTA.
+# The session requires a matching Body Smart/bootloader identity before enabling
+# the experimental WBS13 commands; this service must never enable WBS06 OTA.
 IDENTITY_SERVICE = "00000020-5749-5448-0010-000000000000"
 IDENTITY_CHARACTERISTIC = "00000024-5749-5448-0010-000000000000"
 WPP_SERVICES = ((SERVICE, CHARACTERISTIC), (IDENTITY_SERVICE, IDENTITY_CHARACTERISTIC))
@@ -101,6 +102,7 @@ class Backend:
                 )
             transport.characteristic = characteristic
             transport.identity_only = characteristic_uuid != CHARACTERISTIC
+            transport.wpp_profile = "WBS13" if transport.identity_only else "WBS06"
             # Keep each WPP control frame within one ATT write on both OSes.
             if bluez:
                 # Establish LE before Pair. WBS06 has a dual-mode radio: asking

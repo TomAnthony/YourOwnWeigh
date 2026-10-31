@@ -1,0 +1,3 @@
+# Maintainer build and offline ARM emulation; the installed bridge needs none of these.
+pyelftools>=0.31,<1
+unicorn>=2.1,<3

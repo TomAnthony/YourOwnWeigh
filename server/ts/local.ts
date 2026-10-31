@@ -27,6 +27,8 @@ const SCALE_PATHS = new Set([
   "/v2/summary",
   "/v2/weather",
   "/v2/event",
+  "/v2/measure",
+  "/v2/feature",
 ]);
 const mime: Record<string, string> = {
   "app.css": "text/css; charset=utf-8",

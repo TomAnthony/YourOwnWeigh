@@ -104,6 +104,27 @@ export class LocalSqlite {
         "utf8",
       ),
     );
+    if (
+      !(
+        this.database.prepare("PRAGMA table_info(readings)").all() as Array<{
+          name: string;
+        }>
+      ).some((c) => c.name === "group_json")
+    ) {
+      this.database.exec("BEGIN IMMEDIATE");
+      try {
+        this.database.exec(
+          readFileSync(
+            join(ROOT, "server/migrations/0008_measurement_groups.sql"),
+            "utf8",
+          ),
+        );
+        this.database.exec("COMMIT");
+      } catch (error) {
+        this.database.exec("ROLLBACK");
+        throw error;
+      }
+    }
     try {
       chmodSync(path, 0o600);
     } catch {

@@ -17,6 +17,13 @@ sessions, bridge invitations/pairings, active device sessions and nonces are
 excluded. The raw `withings_capture` field is cleared; normalized
 profiles are retained in `reviewed_captures`.
 
+Measurement-only groups have `weight_value:null` and `weight_unit:null`.
+`measures_json` preserves item metadata such as `position`; `group_json` preserves
+the complete group, including `algo` and unknown fields. Pre-metric backups may
+omit `group_json`; import supplies `null`. These JSON strings are validated before
+staging, and richer readings and existing weight-only Health receipts survive
+both merge and replace.
+
 `POST /api/backup/import` accepts a multipart `backup` file plus `_csrf`, validates
 at most 10 MiB / 25,000 household rows, and stages rows for 15 minutes. It renders a preview
 containing `import_id` and a digest. `POST /api/backup/commit` requires these,

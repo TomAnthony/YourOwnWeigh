@@ -4,6 +4,7 @@
 | --- | --- | --- | --- |
 | WBS06 v127 | 48 ASCII bytes for new provisioning | Stock URL/DNS host field is 50 bytes including NUL, yielding a 49-character cutoff | HTTP80 or HTTPS443 |
 | WS-30 v102 | 59 ASCII bytes | Patch host buffers and stock resolver buffers are 64 bytes | HTTP80 |
+| WBS13 v100 | 48 ASCII bytes | Stock URL host field is 50 bytes; 48-byte parsing checked in emulation; live HTTP and HTTPS sync passed | HTTP80 or HTTPS443 |
 
 Enter only a DNS hostname or dotted IPv4 address. No scheme, custom port, path, IPv6 literal, trailing dot or Unicode name is accepted by the app. An ASCII/punycode domain must still fit the length limit. WBS06 readback accepts a longer old saved record so it can be diagnosed; a successful readback does not mean the resolver will use the full name. Prefer a short custom domain when a generated hosting hostname is too long.
 
@@ -17,4 +18,6 @@ A longer-name patch needs a new connection-target layout, both URL/Host copies, 
 
 WS-30's stock item-2 reader/resolver at `0x1b220` uses adjacent 64-byte stack buffers. Raising its 59-byte patch cap requires stack/frame and WPP response-layout changes.
 
-Addresses are model/source-specific ARM application runtime addresses, not interchangeable file offsets. For these containers, application file offset is `runtime - 0x4000 + 0x84`.
+WBS13 v100 passed HTTP sync to a LAN capture listener and HTTPS sync to a YOW Cloudflare Worker on 31 October 2026. The exact 48-byte hostname boundary has been checked in emulation, not in a live DNS/TLS test. The same firmware handles networking regardless of the operating system used for Bluetooth provisioning.
+
+Addresses are model/source-specific ARM application runtime addresses, not interchangeable file offsets. For WBS06/WS-30, application file offset is `runtime - 0x4000 + 0x84`. For WBS13 v1311 it is `runtime - 0x08008000 + 0x58`.

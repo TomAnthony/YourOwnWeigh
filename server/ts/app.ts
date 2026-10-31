@@ -1,4 +1,5 @@
 /** One HTTP application for Cloudflare Workers and the local Node listener. */
+import { namedMetrics, observedMetrics, storedMeasures } from "./metrics.ts";
 import { exportBackup, stageBackup, commitBackup } from "./backup.ts";
 import {
   firmwareObservation,
@@ -44,6 +45,8 @@ const SCALE_PATHS = new Set([
   "/v2/summary",
   "/v2/weather",
   "/v2/event",
+  "/v2/measure",
+  "/v2/feature",
 ]);
 const SESSION_COOKIE = "yow_session";
 const MAC = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$|^[0-9a-f]{12}$/i;
@@ -203,9 +206,11 @@ function redirect(path: string, notice = "", cookie?: string): Response {
   return new Response(null, { status: 303, headers });
 }
 function cookieValue(request: Request): string | null {
-  return /(?:^|;\s*)yow_session=([a-f0-9]{64})(?:;|$)/.exec(
-    request.headers.get("Cookie") ?? "",
-  )?.[1] ?? null;
+  return (
+    /(?:^|;\s*)yow_session=([a-f0-9]{64})(?:;|$)/.exec(
+      request.headers.get("Cookie") ?? "",
+    )?.[1] ?? null
+  );
 }
 type BrowserSession = {
   token_hash: string;
@@ -238,9 +243,17 @@ async function browserSession(
   };
   await db.batch([
     db.prepare("DELETE FROM admin_sessions WHERE expires_at<=?").bind(now()),
-    db.prepare(
-      "INSERT INTO admin_sessions(token_hash,csrf,is_admin,auth_version,expires_at) VALUES(?,?,?,?,?)",
-    ).bind(row.token_hash, row.csrf, row.is_admin, row.auth_version, row.expires_at),
+    db
+      .prepare(
+        "INSERT INTO admin_sessions(token_hash,csrf,is_admin,auth_version,expires_at) VALUES(?,?,?,?,?)",
+      )
+      .bind(
+        row.token_hash,
+        row.csrf,
+        row.is_admin,
+        row.auth_version,
+        row.expires_at,
+      ),
   ]);
   return {
     row,
@@ -452,7 +465,11 @@ function parseDeviceRecord(raw: string): Row {
     record.model === "WBS03" &&
     typeof record.name === "string" &&
     /WS-?30/i.test(record.name);
-  if (!isBody && !isWS30)
+  const isBodySmart =
+    record.format === "YOW-BLE-device-v1" &&
+    record.model === "WBS13" &&
+    record.name === "Body Smart";
+  if (!isBody && !isWS30 && !isBodySmart)
     throw new Error("Unsupported device enrollment record");
   record.mac = canonicalMac(record.mac);
   if (!/^[a-f0-9]{16}$/i.test(record.session_secret ?? ""))
@@ -482,6 +499,13 @@ function parseDeviceRecord(raw: string): Row {
     throw new Error("BLE identity is outside the reviewed WBS06 profile");
   }
   if (
+    isBodySmart &&
+    (record.hardware_version !== 0xffffff ||
+      record.bootloader_version !== 2 ||
+      record.firmware_version !== 100)
+  )
+    throw new Error("BLE identity is outside the reviewed WBS13 profile");
+  if (
     isWS30 &&
     (record.bootloader_version !== 15 ||
       ![921, 100, 101, 102].includes(record.firmware_version))
@@ -498,7 +522,7 @@ function parseDeviceRecord(raw: string): Row {
     if (
       typeof record.owner_host !== "string" ||
       !new RegExp(
-        `^[a-z0-9.-]{1,${isWS30 ? 59 : 63}}$`,
+        `^[a-z0-9.-]{1,${isBodySmart ? 48 : isWS30 ? 59 : 63}}$`,
         isWS30 ? "" : "i",
       ).test(record.owner_host) ||
       (isWS30
@@ -928,6 +952,7 @@ async function readingsApi(
   request: Request,
   url: URL,
   userRef: string,
+  includeMetrics = false,
 ): Promise<Response> {
   if (!(await readingsAuthorized(db, request))) return readingsUnauthorized();
   const user = await resolveApiUser(db, userRef);
@@ -953,22 +978,47 @@ async function readingsApi(
     date.toISOString().slice(0, 10) !== since
   )
     return json({ error: "invalid since date" }, 400);
+  const cursor = url.searchParams.get("cursor");
+  const parts = cursor?.match(/^(\d+):(\d+)$/);
+  if (
+    cursor &&
+    (!parts || !parts.slice(1).every((v) => Number.isSafeInteger(Number(v))))
+  )
+    return json({ error: "invalid cursor" }, 400);
+  const cursorTime = parts ? Number(parts[1]) : Number.MAX_SAFE_INTEGER;
+  const cursorId = parts ? Number(parts[2]) : Number.MAX_SAFE_INTEGER;
+  const ordering =
+    "(CASE WHEN r.time_quality='trusted' THEN r.meastime ELSE r.first_received_at END)";
   const matches = await rows(
     db,
     `SELECT r.*,s.label AS scale_label,h.synced_at AS health_sync_acknowledged_at
     FROM readings r JOIN scales s ON s.id=r.scale_id
     LEFT JOIN health_sync_receipts h ON h.reading_id=r.id AND h.user_id=r.user_id
-    WHERE r.user_id=? AND (CASE WHEN r.time_quality='trusted' THEN r.meastime ELSE r.first_received_at END)<?
-    AND (CASE WHEN r.time_quality='trusted' THEN r.meastime ELSE r.first_received_at END)>=?
+    WHERE r.user_id=? ${includeMetrics ? "" : "AND r.weight_value IS NOT NULL"} AND ${ordering}<?
+    AND ${ordering}>=? AND (${ordering}<? OR (${ordering}=? AND r.id<?))
     ORDER BY ${readingOrder} LIMIT ?`,
     userId,
     before,
     Math.floor(date.valueOf() / 1000),
-    limit,
+    cursorTime,
+    cursorTime,
+    cursorId,
+    limit + (includeMetrics ? 1 : 0),
   );
+  const page = matches.slice(0, limit);
+  const last = page.at(-1);
   return json({
     user,
-    readings: matches.map((r) => ({
+    ...(includeMetrics
+      ? {
+          available_metrics: await observedMetrics(db, userId),
+          next_cursor:
+            matches.length > limit && last
+              ? `${last.time_quality === "trusted" ? last.meastime : last.first_received_at}:${last.id}`
+              : null,
+        }
+      : {}),
+    readings: page.map((r) => ({
       id: r.id,
       scale: r.scale_label,
       meastime: r.meastime,
@@ -980,7 +1030,19 @@ async function readingsApi(
       received_at: new Date(r.first_received_at * 1000).toISOString(),
       ordering_time:
         r.time_quality === "trusted" ? r.meastime : r.first_received_at,
-      weight_kg: exactWeight(Number(r.weight_value), Number(r.weight_unit)),
+      weight_kg:
+        r.weight_value === null
+          ? null
+          : exactWeight(Number(r.weight_value), Number(r.weight_unit)),
+      ...(includeMetrics
+        ? {
+            metrics: namedMetrics(r),
+            measures: storedMeasures(r),
+            group: r.group_json
+              ? JSON.parse(r.group_json)
+              : { meastime: r.meastime, measures: storedMeasures(r) },
+          }
+        : {}),
       value: r.weight_value,
       unit: r.weight_unit,
       attribution: r.attribution,
@@ -1009,7 +1071,7 @@ async function healthSyncApi(
       return json({ error: "invalid reading_id" }, 400);
     const reading = await one<{ id: number }>(
       db,
-      "SELECT id FROM readings WHERE id=? AND user_id=?",
+      "SELECT id FROM readings WHERE id=? AND user_id=? AND weight_value IS NOT NULL",
       readingId,
       userId,
     );
@@ -1035,7 +1097,7 @@ async function healthSyncApi(
     db,
     `SELECT r.*,s.label AS scale_label FROM readings r JOIN scales s ON s.id=r.scale_id
     LEFT JOIN health_sync_receipts h ON h.user_id=? AND h.reading_id=r.id
-    WHERE r.user_id=? AND h.reading_id IS NULL AND r.first_received_at>=? ORDER BY r.id ASC LIMIT 1`,
+    WHERE r.user_id=? AND r.weight_value IS NOT NULL AND h.reading_id IS NULL AND r.first_received_at>=? ORDER BY r.id ASC LIMIT 1`,
     userId,
     userId,
     Math.floor(sinceDate.valueOf() / 1000),
@@ -1068,6 +1130,10 @@ async function fetchAndApplyProfile(
   fetcher: (scale: Row) => Promise<string>,
   zone: string | null,
 ) {
+  if (scale.model === "WBS13")
+    throw new Error(
+      "WBS13 uses local users; choose them in Scales → Edit Settings",
+    );
   const raw = await fetcher(scale);
   await stageCapture(db, scale.id, raw);
   const capture = parseCapture(raw),
@@ -1149,7 +1215,7 @@ async function enrollDevice(
 ): Promise<Row> {
   label =
     label.trim() ||
-    `${record.model === "WBS03" ? "WS-30" : "Body"} ${record.mac.slice(-4)}`;
+    `${record.model === "WBS03" ? "WS-30" : record.model === "WBS13" ? "Body Smart" : "Body"} ${record.mac.slice(-4)}`;
   if (label.length > 80) throw new Error("Scale label is too long");
   if (zone) zoneTriplet(zone);
   const existing = await one(
@@ -1316,6 +1382,13 @@ async function integratedApi(request: Request, env: AppEnv): Promise<Response> {
       String(body.label ?? ""),
       zone,
     );
+    if (scale.model === "WBS13")
+      return json({
+        scaleId: scale.id,
+        localRoster: true,
+        message:
+          "Device saved. Choose its users in Scales → Edit Settings before its first sync.",
+      });
     try {
       if (!env.captureWithings) throw new Error("Withings import unavailable");
       return json(
@@ -1435,8 +1508,11 @@ export async function handleApp(
       return json({ ok: false, database: "migration required" }, 503);
     }
   }
-  const api = /^\/api\/users\/(\d+|[A-Za-z]{3})\/weights$/.exec(path);
-  if (api && method === "GET") return readingsApi(db, request, url, api[1]);
+  const api = /^\/api\/users\/(\d+|[A-Za-z]{3})\/(weights|readings)$/.exec(
+    path,
+  );
+  if (api && method === "GET")
+    return readingsApi(db, request, url, api[1], api[2] === "readings");
   const healthSync =
     /^\/api\/users\/(\d+|[A-Za-z]{3})\/health-sync\/(next|ack)$/.exec(path);
   if (
@@ -1623,16 +1699,25 @@ export async function handleApp(
       "SELECT * FROM users WHERE active=1 ORDER BY id",
     );
     const cards = [];
-    for (const user of users)
+    for (const user of users) {
+      const metrics = await observedMetrics(db, user.id);
+      const metric =
+        metrics.find(
+          (m) => m.type === Number(url.searchParams.get(`metric_${user.id}`)),
+        )?.type ?? 1;
       cards.push({
         user,
+        metrics,
+        metric,
         readings: await rows(
           db,
           `SELECT r.*,s.label AS scale_label FROM readings r JOIN scales s ON s.id=r.scale_id
-      WHERE r.user_id=? ORDER BY ${readingOrder} LIMIT 5`,
+      WHERE r.user_id=? AND ${metric === 1 ? "r.weight_value IS NOT NULL" : "EXISTS (SELECT 1 FROM json_each(r.measures_json) m WHERE json_extract(m.value,'$.type')=?)"} ORDER BY ${readingOrder} LIMIT 5`,
           user.id,
+          ...(metric === 1 ? [] : [metric]),
         ),
       });
+    }
     return page(
       "Dashboard",
       dashboardPage(cards, (await setting(db, "display_weight_unit")) ?? "kg"),
@@ -1640,6 +1725,10 @@ export async function handleApp(
     );
   }
   if (path === "/readings") {
+    const metrics = await observedMetrics(db);
+    const metric =
+      metrics.find((m) => m.type === Number(url.searchParams.get("metric")))
+        ?.type ?? 1;
     const users = await rows(
       db,
       "SELECT id,name FROM users WHERE active=1 ORDER BY name,id",
@@ -1649,7 +1738,9 @@ export async function handleApp(
       `SELECT r.*,s.label AS scale_label,u.name AS user_name,
       h.synced_at AS health_sync_acknowledged_at FROM readings r JOIN scales s ON s.id=r.scale_id
       LEFT JOIN users u ON u.id=r.user_id LEFT JOIN health_sync_receipts h ON h.reading_id=r.id AND h.user_id=r.user_id
+      WHERE ${metric === 1 ? "r.weight_value IS NOT NULL" : "EXISTS (SELECT 1 FROM json_each(r.measures_json) m WHERE json_extract(m.value,'$.type')=?)"}
       ORDER BY ${readingOrder} LIMIT 10`,
+      ...(metric === 1 ? [] : [metric]),
     );
     return page(
       "Readings",
@@ -1658,6 +1749,8 @@ export async function handleApp(
         users,
         (await setting(db, "display_weight_unit")) ?? "kg",
         csrf,
+        metrics,
+        metric,
       ),
       "/readings",
     );
@@ -1667,13 +1760,18 @@ export async function handleApp(
     const id = Number(userReadings[1]);
     const user = await one(db, "SELECT * FROM users WHERE id=?", id);
     if (!user) return new Response("Not Found", { status: 404 });
+    const metrics = await observedMetrics(db, id);
+    const metric =
+      metrics.find((m) => m.type === Number(url.searchParams.get("metric")))
+        ?.type ?? 1;
     const readings = await rows(
       db,
       `SELECT r.*,s.label AS scale_label,h.synced_at AS health_sync_acknowledged_at
       FROM readings r JOIN scales s ON s.id=r.scale_id
       LEFT JOIN health_sync_receipts h ON h.reading_id=r.id AND h.user_id=r.user_id
-      WHERE r.user_id=? ORDER BY ${readingOrder}`,
+      WHERE r.user_id=? AND ${metric === 1 ? "r.weight_value IS NOT NULL" : "EXISTS (SELECT 1 FROM json_each(r.measures_json) m WHERE json_extract(m.value,'$.type')=?)"} ORDER BY ${readingOrder}`,
       id,
+      ...(metric === 1 ? [] : [metric]),
     );
     return page(
       `${user.name} Readings`,
@@ -1681,6 +1779,8 @@ export async function handleApp(
         user,
         readings,
         (await setting(db, "display_weight_unit")) ?? "kg",
+        metrics,
+        metric,
       ),
       "/readings",
     );
@@ -1699,7 +1799,19 @@ export async function handleApp(
           ind: capture.capture.ind,
         });
     }
-    return page("Scales", scalesWorkspace(scales, csrf), "/scales");
+    const localUsers = await rows(
+      db,
+      "SELECT id,name FROM users WHERE active=1 ORDER BY name,id",
+    );
+    for (const scale of scales)
+      scale.userIds = (
+        await rows(
+          db,
+          "SELECT user_id FROM scale_users WHERE scale_id=?",
+          scale.id,
+        )
+      ).map((r) => r.user_id);
+    return page("Scales", scalesWorkspace(scales, csrf, localUsers), "/scales");
   }
   if (path === "/users" || /^\/users\/\d+$/.test(path)) {
     const users = await rows(
@@ -2043,6 +2155,11 @@ async function browserPost(
         formText(form, "label"),
         formText(form, "time_zone") || null,
       );
+      if (scale.model === "WBS13")
+        return go(
+          `/scales#scale-${scale.id}`,
+          "Body Smart saved. Choose its users in Edit Settings before its first sync.",
+        );
       try {
         if (!captureWithings) throw new Error("Withings import is unavailable");
         await fetchAndApplyProfile(db, scale, captureWithings, scale.time_zone);
@@ -2124,10 +2241,7 @@ async function browserPost(
         ...values,
         id,
       );
-      return go(
-        `/scales#scale-${id}`,
-        "Captured scale settings imported",
-      );
+      return go(`/scales#scale-${id}`, "Captured scale settings imported");
     }
     const scalePath = /^\/scales\/(\d+)$/.exec(path);
     if (scalePath) {
@@ -2142,7 +2256,39 @@ async function browserPost(
         if (zone) zoneTriplet(zone);
         // Preserve imported readiness, roster state and response fixtures.
         // Advanced fields are editable only for the model that consumes them.
-        if (scale.model === "WBS03") {
+        if (scale.model === "WBS13") {
+          const ids = [
+            ...new Set(form.getAll("user_ids").map((v) => Number(v))),
+          ];
+          if (
+            !ids.length ||
+            ids.length > 8 ||
+            ids.some((v) => !Number.isSafeInteger(v) || v < 1)
+          )
+            throw new Error("Choose one to eight users for this scale");
+          const available = await rows(
+            db,
+            `SELECT id FROM users WHERE active=1 AND id IN (${ids.map(() => "?").join(",")})`,
+            ...ids,
+          );
+          if (available.length !== ids.length)
+            throw new Error("Choose active household users");
+          await db.batch([
+            db.prepare("DELETE FROM scale_users WHERE scale_id=?").bind(id),
+            ...ids.map((user, rank) =>
+              db
+                .prepare(
+                  "INSERT INTO scale_users(scale_id,user_id,rank) VALUES(?,?,?)",
+                )
+                .bind(id, user, rank),
+            ),
+            db
+              .prepare(
+                "UPDATE scales SET label=?,time_zone=?,settings_ready=1 WHERE id=?",
+              )
+              .bind(label, zone || "UTC", id),
+          ]);
+        } else if (scale.model === "WBS03") {
           await run(
             db,
             "UPDATE scales SET label=?,time_zone=? WHERE id=?",
@@ -2375,10 +2521,7 @@ async function browserPost(
         ...memberships,
         saveSetting(db, "next_local_user_id", String(id + 1)),
       ]);
-      return go(
-        "/users",
-        `User ${user.name} added as stable scale ID ${id}`,
-      );
+      return go("/users", `User ${user.name} added as stable scale ID ${id}`);
     }
     const userDelete = /^\/users\/(\d+)\/delete$/.exec(path);
     if (userDelete) {

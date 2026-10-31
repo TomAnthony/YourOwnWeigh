@@ -5,6 +5,7 @@
  */
 import { bridgeHash } from "./bridge.ts";
 import { firmwareVersion } from "./firmware_observation.ts";
+import { validateStoredMetrics } from "./metrics.ts";
 type Row = Record<string, string | number | null>;
 const columns: Record<string, string[]> = {
   settings: "key value".split(" "),
@@ -18,7 +19,7 @@ const columns: Record<string, string[]> = {
     ),
   scale_users: "scale_id user_id rank".split(" "),
   readings:
-    "id scale_id user_id attribution candidate_ids attribstatus meastime time_quality weight_value weight_unit measures_json payload_hash first_received_at last_received_at attempts".split(
+    "id scale_id user_id attribution candidate_ids attribstatus meastime time_quality weight_value weight_unit measures_json group_json payload_hash first_received_at last_received_at attempts".split(
       " ",
     ),
   health_sync_receipts: "user_id reading_id synced_at".split(" "),
@@ -38,7 +39,11 @@ const columns: Record<string, string[]> = {
 const sections = Object.keys(columns);
 // Operational diagnostics can be regenerated and must never make a household
 // backup too large to restore. Preserve empty sections for v1 compatibility.
-const diagnostics = new Set(["sync_audit", "measure_attempts", "measure_rejections"]);
+const diagnostics = new Set([
+  "sync_audit",
+  "measure_attempts",
+  "measure_rejections",
+]);
 const access = new Set([
   "admin_password",
   "api_password",
@@ -117,6 +122,13 @@ function parse(raw: string): Backup {
     for (const row of data) {
       // Backups from before firmware tracking remain importable. Use the export's
       // original observation time, never the time the backup is restored.
+      if (
+        section === "readings" &&
+        row &&
+        typeof row === "object" &&
+        !("group_json" in row)
+      )
+        row.group_json = null;
       const fields = [
         "firmware_version",
         "firmware_confirmed_at",
@@ -206,7 +218,7 @@ function parse(raw: string): Backup {
   const macs = new Set();
   for (const r of b.sections.scales) {
     if (
-      !["WBS06", "WBS03"].includes(String(r.model)) ||
+      !["WBS06", "WBS03", "WBS13"].includes(String(r.model)) ||
       !/^[A-F0-9]{12}$/.test(String(r.mac)) ||
       macs.has(r.mac) ||
       typeof r.secret !== "string" ||
@@ -243,13 +255,17 @@ function parse(raw: string): Backup {
       Number(r.reference_weight_kg) > 500
     )
       throw new Error("Invalid user profile");
-  for (const r of b.sections.readings)
+  for (const r of b.sections.readings) {
     if (
-      !integer(r.weight_value, 1) ||
-      !integer(r.weight_unit, -12, 12) ||
+      !(
+        (r.weight_value === null && r.weight_unit === null) ||
+        (integer(r.weight_value, 1) && integer(r.weight_unit, -12, 12))
+      ) ||
       !["trusted", "untrusted"].includes(String(r.time_quality))
     )
       throw new Error("Invalid stored reading");
+    validateStoredMetrics(r);
+  }
   for (const r of b.sections.settings)
     if (!preferences.has(String(r.key)) || typeof r.value !== "string")
       throw new Error("Unknown preference");

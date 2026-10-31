@@ -88,3 +88,12 @@ document.querySelectorAll("[data-toggle]").forEach((toggle) => {
   toggle.addEventListener("change", refresh);
   refresh();
 });
+
+// Metric pickers remain ordinary GET forms when JavaScript is unavailable.
+document.addEventListener("change", (event) => {
+  if (
+    event.target instanceof HTMLSelectElement &&
+    event.target.matches("[data-submit-on-change]")
+  )
+    event.target.form.requestSubmit();
+});

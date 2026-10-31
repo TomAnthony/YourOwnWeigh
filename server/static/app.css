@@ -869,3 +869,19 @@ label input[type="checkbox"] {
   color: #53666c;
   font-size: 0.85rem;
 }
+
+.metric-picker {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.metric-picker label {
+  margin: 0;
+  flex: 1;
+  max-width: 24rem;
+}
+.metric-picker button {
+  margin: 0;
+}

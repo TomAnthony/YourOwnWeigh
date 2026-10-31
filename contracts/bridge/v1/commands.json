@@ -12,7 +12,8 @@
       "model": {
         "enum": [
           "WBS06",
-          "WBS03"
+          "WBS03",
+          "WBS13"
         ]
       },
       "durationSeconds": {
@@ -151,7 +152,8 @@
       "model": {
         "enum": [
           "WBS06",
-          "WBS03"
+          "WBS03",
+          "WBS13"
         ]
       }
     },
@@ -199,7 +201,8 @@
       "model": {
         "enum": [
           "WBS06",
-          "WBS03"
+          "WBS03",
+          "WBS13"
         ]
       },
       "size": {
