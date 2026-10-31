@@ -38,7 +38,7 @@ Classic results distinguish **Paired · Not Seen This Scan**, **Seen This Scan**
 
 The WS-30 probe allows its serial reset to settle and retries the read-only identity request once after a short first timeout. OTA and configuration writes are not retried this way.
 
-An unrecognised model that speaks the same WPP identity protocol can supply credentials for the web app's read-only Withings firmware-offer lookup. Device-changing commands stay disabled. Models using different Bluetooth services or probe formats need their own adapter.
+An unrecognised model that speaks the same WPP identity protocol can supply credentials for the web app's read-only Withings firmware-offer lookup. Device-changing commands stay disabled. The newer BLE service used by Body Smart/WBS13 supports identity reads too; it is not enabled for configuration or OTA. A factory-new WBS13 returned an empty secret, so its identity can be displayed but the firmware-offer lookup is unavailable. On macOS, enter the scale's pairing code when prompted; Bluetooth bonding does not register the scale with Withings or complete setup. Other Bluetooth services or probe formats need their own adapter.
 
 ## Progress And Recovery
 

@@ -136,15 +136,21 @@ class ScaleSession:
         identity = decode_probe(reply)
         name, boot = identity["name"], identity["bootloaderVersion"]
         mac = re.sub(r"[:-]", "", identity["mac"]).upper()
-        if not re.fullmatch(r"[0-9A-F]{12}", mac) or not re.fullmatch(
-            r"[0-9a-fA-F]{16}", identity["secret"]
-        ):
+        if not re.fullmatch(r"[0-9A-F]{12}", mac):
             raise ProtocolError("Probe contains an invalid device identity")
         supported = (
             name == "Body" and boot == 4 and identity["hardwareVersion"] == 0xFFFFFF
             if self.model == "WBS06"
             else boot == 15 and bool(re.search(r"WS-?30", name, re.IGNORECASE))
         )
+        supported = supported and not getattr(self.transport, "identity_only", False)
+        # A factory-new Body Smart returned a valid identity with an empty
+        # secret. Show that identity without enabling provisioning or claiming
+        # credentials are available. Supported models still require their key;
+        # a nonempty malformed key is an error on every model.
+        secret = identity["secret"]
+        if not re.fullmatch(r"[0-9a-fA-F]{16}", secret) and (supported or secret):
+            raise ProtocolError("Probe contains an invalid device identity")
         if self.model == "WBS06" and supported:
             reply = await self.request(0x155, tlv(0x990, struct.pack(">H", 512)))
             hints = [
@@ -198,7 +204,7 @@ class ScaleSession:
         self.require_identity()
         return {
             **{key: value for key, value in self.identity.items() if key != "secret"},
-            "secretAvailable": True,
+            "secretAvailable": bool(self.identity["secret"]),
             "capabilities": self.capabilities(),
         }
 

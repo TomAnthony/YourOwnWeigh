@@ -444,6 +444,8 @@ class Application:
             return await self.session.complete_setup()
         if name == "device.reveal_secret":
             self.session.require_identity()
+            if not self.session.identity["secret"]:
+                raise ProtocolError("This scale did not provide a secret in its identity response")
             return dict(secret=self.session.identity["secret"])
         if name == "device.enroll":
             if p.get("approved") is not True:

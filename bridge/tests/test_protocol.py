@@ -18,11 +18,12 @@ from yow_bridge.models.session import ScaleSession, hostname
 
 class FramingTests(unittest.TestCase):
     def test_ble_discovery_filters_unnamed_neighbours(self):
-        from yow_bridge.transports.ble import SERVICE, scale_candidate
+        from yow_bridge.transports.ble import SERVICE, IDENTITY_SERVICE, scale_candidate
 
         self.assertFalse(scale_candidate(None, []))
         self.assertFalse(scale_candidate("Headphones", []))
         self.assertTrue(scale_candidate(None, [SERVICE.upper()]))
+        self.assertTrue(scale_candidate(None, [IDENTITY_SERVICE.upper()]))
         self.assertTrue(scale_candidate("Body BC", []))
 
     def test_golden_probe_and_fragmentation(self):
@@ -72,21 +73,21 @@ class FramingTests(unittest.TestCase):
                 hostname(name, 48)
 
 
-def probe(model):
+def probe(model, *, name=None, secret="0123456789abcdef", boot=None, firmware=None):
     def text(s):
         return bytes([len(s.encode())]) + s.encode()
 
     value = (
         b"\x00" * 4
-        + text("Body" if model == "WBS06" else "WS-30")
+        + text(name if name is not None else "Body" if model == "WBS06" else "WS-30")
         + text("02:00:00:00:00:06")
-        + text("0123456789abcdef")
+        + text(secret)
         + struct.pack(">I", 0xFFFFFF)
         + text("test")
         + struct.pack(
             ">III",
-            4 if model == "WBS06" else 15,
-            126 if model == "WBS06" else 101,
+            boot if boot is not None else 4 if model == "WBS06" else 15,
+            firmware if firmware is not None else 126 if model == "WBS06" else 101,
             0xFFFFFF,
         )
     )
@@ -143,6 +144,57 @@ class MockTransport:
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_body_smart_without_secret_is_identified_without_followup_commands(self):
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        # Synthetic equivalent of the factory-new WBS13 response: an empty
+        # secret plus another TLV, split into notifications by MockTransport.
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        frame = Frame(frame.command, frame.payload + tlv(0x12C, b"\x01"))
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertEqual(identity["name"], "Body Smart")
+        self.assertEqual(identity["firmwareVersion"], 1311)
+        self.assertEqual(identity["bootloaderVersion"], 2)
+        self.assertFalse(identity["secretAvailable"])
+        self.assertFalse(identity["supported"])
+        self.assertNotIn("secret", identity)
+        self.assertEqual(transport.sent, [encode(0x101, tlv(0x12A, b"\x01\x01\x00\x00\x00\x01"))])
+        for capability in ("ota", "serverWrite", "wifiWrite", "completeSetup"):
+            self.assertFalse(identity["capabilities"][capability])
+        for operation in (
+            lambda: transport.session.complete_setup(),
+            lambda: transport.session.connect_wifi("Example", "password123"),
+            lambda: transport.session.set_server("example.net", "https"),
+            lambda: transport.session.set_time(1793000000, 3600, 1800000000, 7200),
+            lambda: transport.session.install(bytes(200), lambda *p: None),
+        ):
+            with self.assertRaises(ProtocolError):
+                await operation()
+        with self.assertRaises(ProtocolError):
+            transport.session.export("Example")
+        self.assertEqual(len(transport.sent), 1)
+
+    async def test_probe_still_rejects_missing_known_model_key_and_malformed_keys(self):
+        for name, secret in (("Body", ""), ("Body", "bad-key"), ("Body Smart", "bad-key")):
+            with self.subTest(name=name, secret=secret):
+                transport = MockTransport("WBS06")
+                frame = probe("WBS06", name=name, secret=secret)
+                with patch(__name__ + ".probe", return_value=frame):
+                    with self.assertRaisesRegex(ProtocolError, "invalid device identity"):
+                        await transport.session.probe()
+                self.assertIsNone(transport.session.identity)
+                self.assertEqual(len(transport.sent), 1)
+
+    async def test_new_service_cannot_enable_wbs06_commands_even_with_matching_identity(self):
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        identity = await transport.session.probe()
+        self.assertFalse(identity["supported"])
+        self.assertTrue(identity["secretAvailable"])
+        self.assertFalse(identity["capabilities"]["ota"])
+        self.assertEqual(len(transport.sent), 1)  # No MTU negotiation either.
+
     async def test_classic_waits_for_reset_then_retries_only_read_only_probe(self):
         transport = MockTransport("WBS03")
         writes = []

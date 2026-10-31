@@ -184,6 +184,17 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["result"]["configuration"]["server"]["available"])
         self.assertIsNone(result["result"]["device"]["owner_host"])
 
+    async def test_unrecognised_identity_without_secret_cannot_reveal_credentials(self):
+        await self.connected()
+        self.app.session.identity.update(supported=False, name="Body Smart", secret="")
+        self.assertFalse(self.app.snapshot()["device"]["secretAvailable"])
+        result = await self.run_command(command(
+            "device.reveal_secret", deviceId="demo-scale",
+            connectionGeneration=1, replyTo="tab1",
+        ))
+        self.assertEqual(result["kind"], "error")
+        self.assertIn("did not provide a secret", result["error"]["message"])
+
     def test_command_contract_matches_dispatcher(self):
         import json
         from pathlib import Path

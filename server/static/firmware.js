@@ -156,10 +156,19 @@
       $(id).hidden =
         !device ||
         (unsupported && id !== "reveal-secret") ||
-        (id === "reveal-secret" && !$("device-secret").hidden);
-      $(id).disabled ||= !device || (unsupported && id !== "reveal-secret");
+        (id === "reveal-secret" &&
+          (device.secretAvailable === false || !$("device-secret").hidden));
+      $(id).disabled ||=
+        !device ||
+        (unsupported && id !== "reveal-secret") ||
+        (id === "reveal-secret" && device.secretAvailable === false);
     });
-    $("check-firmware-offer").disabled ||= !unsupported;
+    $("check-firmware-offer").disabled ||=
+      !unsupported || device?.secretAvailable === false;
+    $("check-firmware-offer").title =
+      device?.secretAvailable === false
+        ? "The Scale Did Not Provide The Secret Required For This Lookup"
+        : "";
     $("connection-state").textContent = linked
       ? `Connected: ${unsupported ? "Unrecognised Scale" : label(device?.model || $("scale-model").value)}${device ? "" : " · Identification Required"}`
       : "Disconnected";
@@ -222,6 +231,9 @@
       ["MAC", d.mac],
       ["Firmware", d.firmwareVersion],
       ["Bootloader", d.bootloaderVersion],
+      ...(d.secretAvailable === false
+        ? [["Secret", "Not Provided By Scale"]]
+        : []),
     ]) {
       const dt = document.createElement("dt"),
         dd = document.createElement("dd");
@@ -721,6 +733,10 @@
       const d = snapshot.device;
       if (!d || d.supported !== false)
         throw new Error("Connect and identify an unrecognised scale first");
+      if (d.secretAvailable === false)
+        throw new Error(
+          "The scale did not provide the secret required for a firmware lookup",
+        );
       const modelCode = $("offer-model-code").value.trim().toUpperCase();
       const currentFirmware = Number($("offer-reported-version").value);
       const manufacturerId = Number($("offer-manufacturer-id").value || 0);
