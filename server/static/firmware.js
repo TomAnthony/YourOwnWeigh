@@ -12,6 +12,7 @@
     connected = false,
     busy = false,
     selectedArtifact = null,
+    flashArtifact = null,
     migration = null,
     offerIdentityKey = null,
     offerReport = "";
@@ -41,9 +42,16 @@
     "download-firmware",
     "check-firmware-offer",
   ];
-  const label = (model) => (model === "WBS03" ? "WS-30 (WBS03)" : "WBS06");
+  const label = (model) =>
+    ({ WBS03: "WS-30 (WBS03)", WBS13: "Body Smart (WBS13)" })[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
+  const unknownFirmware = (artifact) =>
+    !["known_release", "known_stock"].includes(artifact.classification);
+  const flashPhrase = (artifact) =>
+    unknownFirmware(artifact) ? "FLASH UNKNOWN" : "FLASH";
+  const unknownFirmwareWarning =
+    "This image does not match a known YOW release or stock firmware in this bridge. Its container checks passed, but its application has not been verified and could leave the scale unable to boot. Only continue if you trust this image and can recover the scale.";
   // Small, dismissible notices are independent of the persistent OTA progress.
   // Text is never interpreted as HTML; there are no third-party UI dependencies.
   const message = (text, error = false, key = uuid()) => {
@@ -144,10 +152,12 @@
     $("probe").disabled ||= !linked;
     $("probe").hidden = !linked || !!device;
     $("disconnect").disabled ||= !linked;
-    ["complete-setup", "connect-wifi", "set-time"].forEach(
-      (id) => ($(id).disabled ||= !device || unsupported),
-    );
-    $("read-configuration").disabled ||= !device || unsupported;
+    $("complete-setup").disabled ||=
+      !device || unsupported || !caps.completeSetup;
+    $("connect-wifi").disabled ||= !device || unsupported || !caps.wifiWrite;
+    $("set-time").disabled ||= !device || unsupported || caps.setTime === false;
+    $("read-configuration").disabled ||=
+      !device || unsupported || (!caps.serverRead && !caps.wifiRead);
     $("set-server").disabled ||= !caps.serverWrite;
     $("install-firmware").disabled ||=
       !caps.ota || !selectedArtifact || selectedArtifact.model !== model();
@@ -156,10 +166,25 @@
       $(id).hidden =
         !device ||
         (unsupported && id !== "reveal-secret") ||
-        (id === "reveal-secret" && !$("device-secret").hidden);
-      $(id).disabled ||= !device || (unsupported && id !== "reveal-secret");
+        (caps.enrollment === false && id !== "reveal-secret") ||
+        (id === "reveal-secret" &&
+          (device.secretAvailable === false || !$("device-secret").hidden));
+      $(id).disabled ||=
+        !device ||
+        (unsupported && id !== "reveal-secret") ||
+        (caps.enrollment === false && id !== "reveal-secret") ||
+        (id === "reveal-secret" && device.secretAvailable === false);
     });
-    $("check-firmware-offer").disabled ||= !unsupported;
+    $("check-firmware-offer").disabled ||=
+      !unsupported ||
+      device?.secretAvailable === false ||
+      caps.vendorFirmwareOfferRead === false;
+    $("check-firmware-offer").title =
+      caps.vendorFirmwareOfferRead === false
+        ? "This Model Requires A Separate Client-Certificate Firmware Lookup"
+        : device?.secretAvailable === false
+          ? "The Scale Did Not Provide The Secret Required For This Lookup"
+          : "";
     $("connection-state").textContent = linked
       ? `Connected: ${unsupported ? "Unrecognised Scale" : label(device?.model || $("scale-model").value)}${device ? "" : " · Identification Required"}`
       : "Disconnected";
@@ -222,6 +247,9 @@
       ["MAC", d.mac],
       ["Firmware", d.firmwareVersion],
       ["Bootloader", d.bootloaderVersion],
+      ...(d.secretAvailable === false
+        ? [["Secret", "Not Provided By Scale"]]
+        : []),
     ]) {
       const dt = document.createElement("dt"),
         dd = document.createElement("dd");
@@ -236,7 +264,11 @@
     renderIdentity();
     await refreshKnown();
     const known = knownDevices.find((d) => d.mac === snapshot.device.mac);
-    if (known && snapshot.device.supported !== false) {
+    if (
+      known &&
+      snapshot.device.supported !== false &&
+      snapshot.device.capabilities?.enrollment !== false
+    ) {
       const d = snapshot.device;
       await api(`/api/scales/${known.id}/firmware-observation`, {
         mac: d.mac,
@@ -566,11 +598,16 @@
     if (
       d &&
       d.supported !== false &&
+      d.capabilities?.enrollment !== false &&
       !knownDevices.some((s) => s.mac === d.mac) &&
       !prompted.has(d.mac)
     ) {
       prompted.add(d.mac);
       $("device-label").value = `${label(d.model)} ${d.mac.slice(-4)}`;
+      $("enroll-description").textContent =
+        snapshot.device?.model === "WBS13"
+          ? "Save this Body Smart, then choose its local users in Scales → Edit Settings. Withings user import is unavailable for this model."
+          : "Save this scale and check Withings for existing users and settings. You choose which new users to import.";
       $("enroll-dialog").showModal();
     }
   }
@@ -599,9 +636,16 @@
   }
   function showFirmware(artifact) {
     selectedArtifact = artifact;
+    const classification = unknownFirmware(artifact)
+      ? "Unknown Firmware"
+      : artifact.classification === "known_stock"
+        ? "Known Stock Firmware"
+        : "Known YOW Release";
     $("firmware-info").hidden = false;
     $("firmware-info").textContent =
-      `${artifact.filename} · v${artifact.version} · ${artifact.size.toLocaleString()} Bytes · ${artifact.classification.replaceAll("_", " ")}\nSHA-256: ${artifact.sha256}`;
+      `${artifact.filename} · v${artifact.version} · ${artifact.size.toLocaleString()} Bytes · ${classification}\nSHA-256: ${artifact.sha256}`;
+    $("firmware-warning").hidden = !unknownFirmware(artifact);
+    $("firmware-warning").textContent = unknownFirmwareWarning;
     $("download-firmware").hidden = false;
     updateControls();
   }
@@ -721,6 +765,14 @@
       const d = snapshot.device;
       if (!d || d.supported !== false)
         throw new Error("Connect and identify an unrecognised scale first");
+      if (d.capabilities?.vendorFirmwareOfferRead === false)
+        throw new Error(
+          "This model requires a separate client-certificate firmware lookup",
+        );
+      if (d.secretAvailable === false)
+        throw new Error(
+          "The scale did not provide the secret required for a firmware lookup",
+        );
       const modelCode = $("offer-model-code").value.trim().toUpperCase();
       const currentFirmware = Number($("offer-reported-version").value);
       const manufacturerId = Number($("offer-manufacturer-id").value || 0);
@@ -794,6 +846,10 @@
   $("import-device").onclick = () => {
     $("device-label").value =
       `${label(model())} ${snapshot.device.mac.slice(-4)}`;
+    $("enroll-description").textContent =
+      snapshot.device?.model === "WBS13"
+        ? "Save this Body Smart, then choose its local users in Scales → Edit Settings. Withings user import is unavailable for this model."
+        : "Save this scale and check Withings for existing users and settings. You choose which new users to import.";
     $("enroll-dialog").showModal();
   };
   $("confirm-enroll").onclick = () =>
@@ -810,8 +866,12 @@
         label: $("device-label").value,
       });
       await refreshKnown();
-      showRoster(preview);
-      message("Device Saved On Server");
+      if (preview.localRoster) {
+        window.location.href = `/scales#scale-${preview.scaleId}`;
+      } else {
+        showRoster(preview);
+        message("Device Saved On Server");
+      }
     });
   $("export-device").onclick = () =>
     action(async () => {
@@ -852,6 +912,13 @@
       async () => {
         const file = $("manual-firmware").files[0];
         if (!file) return;
+        // Failed inspection must not leave a previously selected image ready to flash.
+        selectedArtifact = null;
+        $("firmware-info").hidden = true;
+        $("firmware-warning").hidden = true;
+        $("download-firmware").hidden = true;
+        $("manual-firmware").value = "";
+        updateControls();
         if (file.size > 2 * 1024 * 1024)
           throw new Error("Firmware exceeds the 2 MiB limit");
         const data = new Uint8Array(await file.arrayBuffer());
@@ -880,29 +947,47 @@
           $("operation-progress").value = (offset + chunk.length) / data.length;
         }
         showFirmware(await command("artifact.finish", { transferId }));
-        message("Manual Image Validated");
+        message(
+          unknownFirmware(selectedArtifact)
+            ? "Unknown Firmware Selected · Review The Warning Before Installing"
+            : "Manual Image Validated",
+        );
       },
       { transientProgress: true },
     );
   $("install-firmware").onclick = () => {
+    if (!selectedArtifact) return;
+    flashArtifact = selectedArtifact;
+    $("flash-title").textContent = unknownFirmware(flashArtifact)
+      ? "Install Unknown Firmware?"
+      : "Install Firmware?";
+    $("flash-warning").hidden = !unknownFirmware(flashArtifact);
+    $("flash-warning").textContent = unknownFirmwareWarning;
     $("flash-summary").textContent =
-      `${selectedArtifact.filename} → ${label(model())} · ${snapshot.device.mac}`;
+      `${flashArtifact.filename} · v${flashArtifact.version} → ${label(model())} · ${snapshot.device.mac}\nSHA-256: ${flashArtifact.sha256}`;
+    $("flash-prompt").textContent = `Type ${flashPhrase(flashArtifact)}`;
     $("flash-confirmation").value = "";
     $("confirm-flash").disabled = true;
     $("flash-dialog").showModal();
   };
   $("flash-confirmation").oninput = () => {
-    $("confirm-flash").disabled = $("flash-confirmation").value !== "FLASH";
+    $("confirm-flash").disabled =
+      !flashArtifact ||
+      $("flash-confirmation").value !== flashPhrase(flashArtifact);
   };
   $("confirm-flash").onclick = () =>
     action(async () => {
-      if ($("flash-confirmation").value !== "FLASH")
-        throw new Error("Type FLASH to confirm");
+      const artifact = flashArtifact;
+      if (!artifact || artifact !== selectedArtifact)
+        throw new Error("Select the firmware again before confirming");
+      const confirmation = flashPhrase(artifact);
+      if ($("flash-confirmation").value !== confirmation)
+        throw new Error(`Type ${confirmation} to confirm`);
       $("flash-dialog").close();
       const result = await command("firmware.install", {
-        artifactId: selectedArtifact.artifactId,
-        sha256: selectedArtifact.sha256,
-        confirmation: "FLASH",
+        artifactId: artifact.artifactId,
+        sha256: artifact.sha256,
+        confirmation,
       });
       snapshot.device = null;
       renderIdentity();
@@ -935,22 +1020,48 @@
   $("read-configuration").onclick = () =>
     action(async () => {
       const r = await command("device.read_configuration");
-      $("server-host").value = r.server.host || "";
-      if (r.server.transport) $("server-transport").value = r.server.transport;
-      $("wifi-ssid").value = r.wifi.ssid || "";
-      $("wifi-password").value = "";
-      $("wifi-password").placeholder = r.wifi.ssid ? "••••••" : "";
-      $("wifi-password-hint").textContent = r.wifi.ssid
-        ? "A network is stored. The password is not exposed; enter it to save or reconnect."
-        : "Enter the password to save or reconnect this network.";
-      $("wifi-status").textContent = "Stored SSID Read · Connection Not Tested";
-      message(
-        r.server.available === false || r.wifi.available === false
-          ? "Some Settings Could Not Be Read. You Can Still Set Them Or Import The Device."
-          : r.server.supported
-            ? "Stored Settings Read"
-            : "Stock Firmware Does Not Support A Custom Server Yet",
-      );
+      const errors = [],
+        status = [];
+      // A successful empty read is different from a failed read. Preserve
+      // entered values on failure and show the bridge's actual explanation.
+      if (r.server.available === false) {
+        errors.push(`Server: ${r.server.error || "Read Timed Out"}`);
+      } else if (!r.server.supported) {
+        status.push("Custom Server Read Not Supported");
+      } else {
+        $("server-host").value = r.server.host || "";
+        $("server-host").placeholder = r.server.unset
+          ? "Not Configured"
+          : "scales.example.com";
+        if (r.server.transport)
+          $("server-transport").value = r.server.transport;
+        status.push(
+          r.server.unset
+            ? "Custom Server Not Configured"
+            : "Server Settings Read",
+        );
+      }
+      if (r.wifi.available === false) {
+        errors.push(`Wi-Fi: ${r.wifi.error || "Read Timed Out"}`);
+        $("wifi-status").textContent = "Wi-Fi Read Failed";
+      } else if (!r.wifi.supported) {
+        status.push("Wi-Fi Read Not Supported");
+      } else {
+        $("wifi-ssid").value = r.wifi.ssid || "";
+        $("wifi-ssid").placeholder = r.wifi.ssid ? "" : "Not Configured";
+        $("wifi-password").value = "";
+        $("wifi-password").placeholder = r.wifi.ssid ? "••••••" : "";
+        $("wifi-password-hint").textContent = r.wifi.ssid
+          ? "A network is stored. The password is not exposed; enter it to save or reconnect."
+          : "Enter the network name and password to configure Wi-Fi.";
+        $("wifi-status").textContent = r.wifi.ssid
+          ? "Stored SSID Read · Connection Not Tested"
+          : "Wi-Fi Not Configured";
+        status.push(
+          r.wifi.ssid ? "Wi-Fi Settings Read" : "Wi-Fi Not Configured",
+        );
+      }
+      message([...errors, ...status].join(" · "), errors.length > 0);
     });
   $("use-this-host").onclick = () => {
     $("server-host").value = location.hostname.replace(/^\[|\]$/g, "");
@@ -967,6 +1078,7 @@
         host: $("server-host").value,
         transport: $("server-transport").value,
       });
+      $("server-host").placeholder = "scales.example.com";
       message(`Stored Server: ${r.transport.toUpperCase()} ${r.host}`);
     });
   };
@@ -1022,6 +1134,7 @@
     snapshot = { ...snapshot, device: null, candidates: [] };
     selectedArtifact = null;
     $("firmware-info").hidden = true;
+    $("firmware-warning").hidden = true;
     $("download-firmware").hidden = true;
     renderCandidates([]);
     updateControls();

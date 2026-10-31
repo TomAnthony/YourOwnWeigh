@@ -121,7 +121,7 @@ class Application:
             helperVersion=__version__,
             os=platform.system(),
             simulated=self.simulate,
-            models=["WBS06", "WBS03"],
+            models=["WBS06", "WBS03", "WBS13"],
             backends=["CoreBluetooth", "IOBluetooth"]
             if platform.system() == "Darwin"
             else ["BlueZ GATT", "BlueZ RFCOMM"] if platform.system() == "Linux" else [],
@@ -289,7 +289,7 @@ class Application:
         finally:
             if name == "firmware.install":
                 self.journal(self.active)
-                if self.session:
+                if self.session and self.session.ota_started:
                     self.session.identity = None
         self.history[command["id"]]["event"] = event
         while len(self.history) > 200:
@@ -444,6 +444,8 @@ class Application:
             return await self.session.complete_setup()
         if name == "device.reveal_secret":
             self.session.require_identity()
+            if not self.session.identity["secret"]:
+                raise ProtocolError("This scale did not provide a secret in its identity response")
             return dict(secret=self.session.identity["secret"])
         if name == "device.enroll":
             if p.get("approved") is not True:
@@ -541,14 +543,21 @@ class Application:
             inspected = inspect(data, descriptor["model"])
             if name == "firmware.inspect":
                 return {**descriptor, **inspected}
+            # Derive consent from the bytes re-inspected here, never from the
+            # browser or cached descriptor. A valid container is not a known release.
+            confirmation = (
+                "FLASH" if inspected.get("classification") in ("known_release", "known_stock")
+                else "FLASH UNKNOWN"
+            )
             if (
-                p.get("confirmation") != "FLASH"
-                or p.get("sha256") != inspected["sha256"]
+                p.get("sha256") != inspected["sha256"]
                 or self.session.model != descriptor["model"]
             ):
                 raise ValueError(
                     "Firmware confirmation does not match this device and image"
                 )
+            if p.get("confirmation") != confirmation:
+                raise ValueError(f"Type {confirmation} to confirm this firmware image")
             self.journal(
                 dict(
                     operationId=command["operationId"],

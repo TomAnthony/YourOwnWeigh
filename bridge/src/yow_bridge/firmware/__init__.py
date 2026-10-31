@@ -20,6 +20,7 @@ from .. import USER_AGENT
 RELEASES = {
     "WBS06": (127, "419aeafa0ab3a60197dfc6909b27381477498ac3688cd147ae0d675cf5a6b808"),
     "WBS03": (102, "97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a"),
+    "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",
@@ -52,6 +53,8 @@ def inspect(data: bytes, model: str) -> dict:
         raise ValueError("Known defective WS-30 image; use the current release")
     if not 0x100 <= len(data) <= p["maxSize"]:
         raise ValueError("Image size outside model bounds")
+    if model == "WBS13":
+        return inspect_wbs13(data, p, h)
 
     def u(offset):
         return struct.unpack_from("<I", data, offset)[0]
@@ -126,6 +129,61 @@ def inspect(data: bytes, model: str) -> dict:
     )
 
 
+def inspect_wbs13(data: bytes, p: dict, digest: str) -> dict:
+    """WBS13 has an 88-byte TLV header, not the legacy scale container.
+
+    Unknown applications are classified as custom after structural validation;
+    installation requires the separate FLASH UNKNOWN confirmation. Every
+    non-application component must independently match the reviewed baseline.
+    """
+    if struct.unpack_from("<HH", data) != (1, 80):
+        raise ValueError("Invalid WBS13 container header")
+    if struct.unpack_from("<I", data, 84)[0] != zlib.crc32(data[:84]):
+        raise ValueError("WBS13 header CRC mismatch")
+    records = [struct.unpack_from("<HHIIII", data, 4 + 20 * i) for i in range(4)]
+    offset = 88
+    for index, (kind, length, start, size, crc, version) in enumerate(records):
+        if (
+            kind != (1, 4, 12, 13)[index] or length != 16
+            or start != offset or size <= 0 or size % 4
+            or start + size > len(data)
+            or zlib.crc32(data[start:start + size]) != crc
+        ):
+            raise ValueError("WBS13 component layout/CRC invalid")
+        offset += size
+        if index:
+            expected = p["resources"][index - 1]
+            if (kind, size, version, sha(data[start:start + size])) != (
+                expected["type"], expected["size"], expected["version"], expected["sha256"]
+            ):
+                raise ValueError("WBS13 bootloader/radio differs from model baseline")
+    if offset != len(data):
+        raise ValueError("WBS13 container has trailing bytes")
+    _, _, start, size, _, version = records[0]
+    stack, reset = struct.unpack_from("<II", data, start)
+    runtime_offset = p["runtimeVersionOffset"]
+    # Expansion leaves the runtime getter at its original offset, while the
+    # bootloader reads the relocated application tail. Both must match the header.
+    if (
+        not 0 < version <= 0xFFFFFF or stack != p["stackPointer"]
+        or not reset & 1 or not 0x08008000 <= (reset & ~1) < 0x08008000 + size
+        or size > p["applicationMaxSize"]
+        or not start <= runtime_offset <= start + size - 4
+        or struct.unpack_from("<I", data, runtime_offset)[0] != version
+        or struct.unpack_from("<I", data, start + size - 4)[0] != version
+    ):
+        raise ValueError("WBS13 application identity/version/bounds mismatch")
+    classification = (
+        "known_release" if digest == p["outputSha256"] else
+        "known_stock" if digest == p["sourceSha256"] else "custom"
+    )
+    return dict(
+        model="WBS13", version=version, size=len(data), sha256=digest,
+        bootloader=p["bootloader"], classification=classification,
+        releaseId=f"WBS13-{version}" if classification == "known_release" else None,
+    )
+
+
 def apply(source: bytes, model: str) -> bytes:
     p = recipe(model)
     if len(source) != p["sourceSize"] or sha(source) != p["sourceSha256"]:
@@ -133,7 +191,9 @@ def apply(source: bytes, model: str) -> bytes:
     inspect(source, model)
     at = p["expansionAt"]
     n = p["expansionSize"]
-    if not 0x84 < at < len(source) - 4 or n not in (4096, 8192):
+    allowed_expansion = (0, 4096, 8192, 16384) if model == "WBS13" else (4096, 8192)
+    minimum = 0x58 if model == "WBS13" else 0x84
+    if not minimum < at < len(source) - 4 or n not in allowed_expansion:
         raise ValueError("Invalid expansion")
     out = bytearray(source[:at] + bytes(n) + source[at:])
     for c in p["sourceCopies"]:

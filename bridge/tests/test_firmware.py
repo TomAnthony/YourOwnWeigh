@@ -3,12 +3,12 @@
 import os
 from pathlib import Path
 import unittest
-from yow_bridge.firmware import apply, inspect, recipe
+from yow_bridge.firmware import RELEASES, apply, inspect, recipe
 
 
 class FirmwareTests(unittest.TestCase):
     def test_recipes_bounded_and_hashed(self):
-        for model in ("WBS06", "WBS03"):
+        for model in RELEASES:
             p = recipe(model)
             end = 0
             self.assertLess(p["outputSize"], 2 * 1024 * 1024)
@@ -28,6 +28,7 @@ class FirmwareTests(unittest.TestCase):
         for model, source, target in [
             ("WBS06", "wbs06_1181_device.bin", "wbs06_yow_127.bin"),
             ("WBS03", "ws30/wbs03_921_dR7wKb.bin", "ws30/wbs03_yow_102.bin"),
+            ("WBS13", "wbs13/wbs13_1311_lb2w93.bin", "wbs13/wbs13_yow_103.bin"),
         ]:
             raw = (root / source).read_bytes()
             out = apply(raw, model)

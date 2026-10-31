@@ -1,4 +1,4 @@
-"""WBS06 GATT transport using Bleak on macOS and Linux.
+"""Withings WPP GATT transport using Bleak on macOS and Linux.
 
 The characteristic is protected: CoreBluetooth handles pairing on macOS;
 Linux pairs through a scoped BlueZ agent before enabling notifications.
@@ -13,11 +13,18 @@ from bleak import BleakClient, BleakScanner
 
 SERVICE = "00000020-5749-5448-0007-000000000000"
 CHARACTERISTIC = "00000024-5749-5448-0007-000000000000"
+# Body Smart/WBS13 answers the same identity request on the newer UUID pair.
+# The session requires a matching Body Smart/bootloader identity before enabling
+# the WBS13 commands; this service must never enable WBS06 OTA.
+IDENTITY_SERVICE = "00000020-5749-5448-0010-000000000000"
+IDENTITY_CHARACTERISTIC = "00000024-5749-5448-0010-000000000000"
+WPP_SERVICES = ((SERVICE, CHARACTERISTIC), (IDENTITY_SERVICE, IDENTITY_CHARACTERISTIC))
 
 
 def scale_candidate(name, service_uuids):
     """Advertisement hints only; an unnamed neighbour is not a scale."""
-    return SERVICE in [x.lower() for x in service_uuids] or bool(
+    advertised = {x.lower() for x in service_uuids}
+    return any(service in advertised for service, _ in WPP_SERVICES) or bool(
         name and name.lower().startswith("body")
     )
 
@@ -79,24 +86,30 @@ class Backend:
                 bluez = await BlueZ().__aenter__()
                 opened_le = await bluez.prepare_ble(device_path)
             await transport.client.connect()
-            service = transport.client.services.get_service(SERVICE)
-            characteristic = (
-                service.get_characteristic(CHARACTERISTIC) if service else None
-            )
+            characteristic = None
+            for service_uuid, characteristic_uuid in WPP_SERVICES:
+                service = transport.client.services.get_service(service_uuid)
+                characteristic = (
+                    service.get_characteristic(characteristic_uuid) if service else None
+                )
+                if characteristic is not None:
+                    break
             if characteristic is None:
                 raise ValueError(
-                    "WBS06 service and protected characteristic were not found"
+                    "A recognised Withings WPP service and characteristic were not found"
                     + ("; remove the scale's old Classic pairing in Linux Bluetooth settings and retry"
                        if bluez else "")
                 )
             transport.characteristic = characteristic
+            transport.identity_only = characteristic_uuid != CHARACTERISTIC
+            transport.wpp_profile = "WBS13" if transport.identity_only else "WBS06"
             # Keep each WPP control frame within one ATT write on both OSes.
             if bluez:
                 # Establish LE before Pair. WBS06 has a dual-mode radio: asking
                 # older BlueZ to pair a disconnected device can select BR/EDR
                 # and expose only its Serial Port service instead of GATT.
                 await bluez.pair(device_path)
-                mtu = await bluez.notify_mtu(device_path, CHARACTERISTIC)
+                mtu = await bluez.notify_mtu(device_path, characteristic_uuid)
                 # Allow BlueZ to release the temporary AcquireNotify fd before
                 # Bleak calls StartNotify on its own D-Bus connection.
                 await asyncio.sleep(0.05)

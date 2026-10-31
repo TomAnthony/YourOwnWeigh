@@ -13,6 +13,93 @@ test("broker command names match the published Python/web contract", () => {
   assert.deepEqual([...BRIDGE_COMMANDS].sort(), Object.keys(commands).sort());
 });
 
+test("broker accepts only the two explicit firmware confirmations and an exact digest", async () => {
+  const broker = new BridgeBroker();
+  const invitation = await broker.invitation(origin);
+  await broker.exchange(
+    { token: invitation.token, attemptId: "flash-test" },
+    "test-ip",
+  );
+  const sent: any[] = [];
+  broker.attach({
+    id: "helper",
+    role: "helper",
+    send: (v) => sent.push(JSON.parse(v)),
+    close: () => {},
+  });
+  broker.attach({
+    id: "ui",
+    role: "ui",
+    adminId: "admin",
+    send: () => {},
+    close: () => {},
+  });
+  for (const [index, confirmation] of [
+    "FLASH",
+    "FLASH UNKNOWN",
+    "",
+    "flash unknown",
+    "FLASH UNKNOWN ",
+  ].entries()) {
+    const response = await broker.command("admin", {
+      id: `flash-${index}`,
+      operationId: `op-${index}`,
+      clientId: "ui",
+      name: "firmware.install",
+      parameters: { artifactId: "image", sha256: "a".repeat(64), confirmation },
+    });
+    assert.equal(response.status, index < 2 ? 202 : 400);
+  }
+  assert.deepEqual(
+    sent
+      .filter((e) => e.name === "firmware.install")
+      .map((e) => e.parameters.confirmation),
+    ["FLASH", "FLASH UNKNOWN"],
+  );
+  assert.equal(
+    (
+      await broker.command("admin", {
+        id: "bad-digest",
+        operationId: "bad-digest",
+        clientId: "ui",
+        name: "firmware.install",
+        parameters: {
+          artifactId: "image",
+          sha256: "bad",
+          confirmation: "FLASH UNKNOWN",
+        },
+      })
+    ).status,
+    400,
+  );
+  const commands = JSON.parse(
+    readFileSync(
+      new URL("../../../contracts/bridge/v1/commands.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const envelope = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../contracts/bridge/v1/command.schema.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const install = envelope.allOf.find(
+    (rule: any) => rule.if.properties.name.const === "firmware.install",
+  );
+  assert.deepEqual(commands["firmware.install"].properties.confirmation.enum, [
+    "FLASH",
+    "FLASH UNKNOWN",
+  ]);
+  assert.deepEqual(
+    install.then.properties.parameters,
+    commands["firmware.install"],
+  );
+});
+
 test("same-process reconnect replaces a half-open socket, another process waits", () => {
   const broker = new BridgeBroker();
   const closed: any[] = [];

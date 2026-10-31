@@ -348,7 +348,7 @@ export class BridgeBroker {
       return response({ error: "Invalid bridge command" }, 400);
     if (
       body.name === "firmware.install" &&
-      (body.parameters.confirmation !== "FLASH" ||
+      (!["FLASH", "FLASH UNKNOWN"].includes(body.parameters.confirmation) ||
         !/^[a-f0-9]{64}$/.test(body.parameters.sha256 ?? ""))
     )
       return response(

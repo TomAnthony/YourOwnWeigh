@@ -1,5 +1,10 @@
-/** Shared WBS06 and WS-30 ingestion, with model-specific authentication/responses. */
+/** Shared scale ingestion, with model-specific authentication/responses. */
 import { ws30MD5 } from "./ws30_md5.ts";
+import { validateMetricJson } from "./metrics.ts";
+import {
+  backfillRecognitionWeights,
+  refreshRecognitionWeight,
+} from "./recognition.ts";
 import {
   firmwareObservation,
   sessionFirmware,
@@ -140,31 +145,44 @@ function audit(
 
 function peer(request: Request): string {
   // Both production entrypoints replace or strip client-supplied peer headers.
-  return request.headers.get("X-YOW-Peer-IP") ??
-    request.headers.get("CF-Connecting-IP") ?? "unknown";
+  return (
+    request.headers.get("X-YOW-Peer-IP") ??
+    request.headers.get("CF-Connecting-IP") ??
+    "unknown"
+  );
 }
 
 async function limitKey(request: Request, purpose: string): Promise<string> {
   return sha256(`${purpose}:${peer(request)}`);
 }
 
-async function once(env: ScaleEnv, request: Request, params: URLSearchParams): Promise<Response> {
+async function once(
+  env: ScaleEnv,
+  request: Request,
+  params: URLSearchParams,
+): Promise<Response> {
   if (params.get("action") !== "get") return error(400, "unsupported action");
   const timestamp = now();
   const key = await limitKey(request, "scale-once");
   const cutoff = timestamp - NONCE_TTL;
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?")
-      .bind(timestamp - AUTH_LIMIT_RETENTION),
+    env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?").bind(
+      timestamp - AUTH_LIMIT_RETENTION,
+    ),
     env.DB.prepare(
       "INSERT INTO browser_auth_limits(key,window_start,attempts) VALUES(?,?,1) " +
-      "ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END," +
-      "window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END",
+        "ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END," +
+        "window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END",
     ).bind(key, timestamp, cutoff, cutoff),
-    env.DB.prepare("DELETE FROM challenges WHERE issued_at<? OR consumed_at IS NOT NULL").bind(cutoff),
+    env.DB.prepare(
+      "DELETE FROM challenges WHERE issued_at<? OR consumed_at IS NOT NULL",
+    ).bind(cutoff),
   ]);
-  const budget = await env.DB.prepare("SELECT attempts FROM browser_auth_limits WHERE key=?")
-    .bind(key).first<{ attempts: number }>();
+  const budget = await env.DB.prepare(
+    "SELECT attempts FROM browser_auth_limits WHERE key=?",
+  )
+    .bind(key)
+    .first<{ attempts: number }>();
   if ((budget?.attempts ?? 0) > MAX_ONCE_PER_PEER)
     return json({ error: "too many challenges" }, 429);
   const nonce = randomHex(12);
@@ -173,7 +191,9 @@ async function once(env: ScaleEnv, request: Request, params: URLSearchParams): P
   const issued = await env.DB.prepare(
     "INSERT INTO challenges(nonce,issued_at) SELECT ?,? " +
       "WHERE (SELECT COUNT(*) FROM challenges)<?",
-  ).bind(nonce, timestamp, MAX_LIVE_CHALLENGES).run();
+  )
+    .bind(nonce, timestamp, MAX_LIVE_CHALLENGES)
+    .run();
   if (issued.meta.changes !== 1)
     return json({ error: "challenge capacity reached" }, 429);
   return json({ status: 0, body: { once: nonce } });
@@ -250,6 +270,43 @@ export async function roster(
   env: ScaleEnv,
   scale: ScaleRow,
 ): Promise<object[]> {
+  if (scale.model === "WBS13") {
+    const { results } = await env.DB.prepare(
+      "SELECT u.* FROM users u JOIN scale_users su ON su.user_id=u.id WHERE su.scale_id=? AND u.active=1 ORDER BY su.rank,u.id",
+    )
+      .bind(scale.id)
+      .all<Record<string, any>>();
+    if (!results.length || results.length > 8)
+      throw new Error("Choose one to eight users for this scale");
+    await backfillRecognitionWeights(env.DB, results);
+    return results.map((u) => {
+      const age = u.birth_date ? ageFromDOB(u.birth_date) : u.age_years;
+      const composition =
+        age >= 18 &&
+        age <= 99 &&
+        u.height_cm >= 90 &&
+        u.height_cm <= 249 &&
+        u.reference_weight_kg >= 29 &&
+        u.reference_weight_kg <= 270;
+      return {
+        id: u.id,
+        sn: u.short_name.toUpperCase(),
+        fn:
+          u.name
+            .normalize("NFKD")
+            .replace(/[^ -~]/g, "")
+            .slice(0, 16) || u.short_name,
+        ht: u.height_cm / 100,
+        agt: age,
+        sx: u.sex,
+        wt: u.reference_weight_kg,
+        fm: 3,
+        cr: u.reference_weight_at ?? u.created_at,
+        att: 0,
+        cs: composition ? "2,1,3" : "2",
+      };
+    });
+  }
   if (!scale.roster_snapshot) throw new Error("Roster baseline missing");
   const baseline = JSON.parse(scale.roster_snapshot) as Array<
     Record<string, any>
@@ -266,6 +323,7 @@ export async function roster(
     .bind(scale.id)
     .all<Record<string, any>>();
   const byId = new Map(results.map((u) => [u.id, u]));
+  await backfillRecognitionWeights(env.DB, results);
   const users = baseline.flatMap((entry) => {
     const user = byId.get(entry.id);
     if (!user) return [entry]; // Not imported locally: keep the scale's person.
@@ -280,6 +338,9 @@ export async function roster(
         agt: user.birth_date ? ageFromDOB(user.birth_date) : user.age_years,
         sx: user.sex,
         wt: user.reference_weight_kg,
+        ...(user.reference_weight_at !== null
+          ? { cr: user.reference_weight_at }
+          : {}),
       },
     ];
   });
@@ -296,8 +357,9 @@ async function authenticationFailure(
     const timestamp = now();
     const key = await limitKey(request, `scale-session-${scale.id}`);
     await env.DB.batch([
-      env.DB.prepare("DELETE FROM browser_auth_limits WHERE window_start<?")
-        .bind(timestamp - AUTH_LIMIT_RETENTION),
+      env.DB.prepare(
+        "DELETE FROM browser_auth_limits WHERE window_start<?",
+      ).bind(timestamp - AUTH_LIMIT_RETENTION),
       env.DB.prepare(
         "INSERT INTO browser_auth_limits(key,window_start,attempts) " +
           "VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET " +
@@ -325,7 +387,7 @@ async function newSession(
   const ws30 = scale?.model === "WBS03";
   const validHash = ws30
     ? /^[0-9a-f]{32}$/i.test(submitted) && !params.has("hashmethod")
-    : scale?.model === "WBS06" &&
+    : ["WBS06", "WBS13"].includes(scale?.model ?? "") &&
       HASH_RE.test(submitted) &&
       params.get("hashmethod") === "sha256";
   if (!validHash) return authenticationFailure(env, scale, request);
@@ -336,7 +398,11 @@ async function newSession(
     )
       .bind(key)
       .first<{ window_start: number; attempts: number }>();
-    if (failure && failure.attempts >= 10 && failure.window_start >= now() - 300) {
+    if (
+      failure &&
+      failure.attempts >= 10 &&
+      failure.window_start >= now() - 300
+    ) {
       return error(403, "session authentication failed");
     }
   }
@@ -379,7 +445,9 @@ async function newSession(
   }
   if (
     !ws30 &&
-    (!scale.settings_ready || !scale.screen_response || !scale.summary_response)
+    (!scale.settings_ready ||
+      (scale.model !== "WBS13" &&
+        (!scale.screen_response || !scale.summary_response)))
   ) {
     await env.DB.batch([
       ...observations,
@@ -400,7 +468,7 @@ async function newSession(
     );
   }
   let users: object[] | undefined;
-  if (!ws30 && scale.roster_enabled) {
+  if (!ws30 && (scale.roster_enabled || scale.model === "WBS13")) {
     try {
       users = await roster(env, scale);
     } catch {
@@ -492,7 +560,9 @@ async function newSession(
     syp: { utc: now() },
   };
   if (ctp) body.ctp = ctp;
-  if (!ws30)
+  if (scale.model === "WBS13")
+    body.ind = { stp: 0, fm: scale.feature_mask, ws: scale.beta_ws };
+  else if (!ws30)
     body.ind = {
       stp: 0,
       fm: scale.feature_mask,
@@ -566,6 +636,29 @@ async function fixture(
     return error(400, "unsupported action");
   const scale = await requireDeviceSession(env, params, endpoint);
   if (!scale) return error(403, "invalid session");
+  if (scale.model === "WBS13") {
+    let body: object = endpoint === "summary" ? [] : {};
+    if (endpoint === "screen") {
+      const users = (await roster(env, scale)) as Array<{
+        id: number;
+        cs: string;
+      }>;
+      body = {
+        device: [],
+        user: users.map((u) => ({
+          userid: u.id,
+          screens: u.cs.split(",").map((id, i) => ({
+            id: Number(id),
+            src: 1,
+            embid: Number(id),
+            rk: i + 1,
+          })),
+        })),
+      };
+    }
+    await audit(env.DB, scale.id, endpoint, "served").run();
+    return json({ status: 0, body });
+  }
   if (endpoint === "weather") {
     // No live provider is configured. Never replay a captured forecast: it may
     // describe an old date/location. An empty series supplies no forecast data.
@@ -664,12 +757,18 @@ async function event(
   return json({ status: 0 });
 }
 
-type MeasureItem = { value: number; type: number; unit: number };
+type MeasureItem = {
+  value: number;
+  type: number;
+  unit: number;
+  [key: string]: unknown;
+};
 type ParsedGroup = {
   index: number;
   meastime: number;
   measures: MeasureItem[];
-  weight: MeasureItem;
+  weight: MeasureItem | undefined;
+  raw: Record<string, unknown>;
 };
 
 function integer(value: unknown): number {
@@ -708,6 +807,7 @@ function parseGroups(params: URLSearchParams): {
     throw new Error("invalid candidate IDs");
   }
   const payload = JSON.parse(params.get("measuregrps") ?? "");
+  validateMetricJson(payload);
   const source = payload.measuregrps;
   if (!Array.isArray(source) || source.length < 1 || source.length > 32) {
     throw new Error("invalid measure groups");
@@ -726,7 +826,8 @@ function parseGroups(params: URLSearchParams): {
       }
       const measures = group.measures.map(
         (item: Record<string, unknown>): MeasureItem => {
-          const normalized = {
+          const normalized: MeasureItem = {
+            ...item,
             value: integer(item.value),
             type: integer(item.type),
             unit: integer(item.unit),
@@ -736,12 +837,34 @@ function parseGroups(params: URLSearchParams): {
           if (normalized.value < -(2 ** 31) || normalized.value >= 2 ** 31) {
             throw new Error("invalid measure value");
           }
+          if (
+            normalized.type < 1 ||
+            normalized.type > 0xffff ||
+            (normalized.position !== undefined &&
+              (!Number.isSafeInteger(normalized.position) ||
+                Number(normalized.position) < 0 ||
+                Number(normalized.position) > 0xffff))
+          )
+            throw new Error("invalid metric metadata");
           return normalized;
         },
       );
       const weight = measures.find((item: MeasureItem) => item.type === 1);
-      if (!weight) throw new Error("weight type 1 absent");
-      return { index, meastime, measures, weight };
+      if (weight && weight.value <= 0) throw new Error("invalid weight");
+      if (
+        group.algo !== undefined &&
+        (!Number.isSafeInteger(group.algo) ||
+          Number(group.algo) < 0 ||
+          Number(group.algo) > 0xffffffff)
+      )
+        throw new Error("invalid metric metadata");
+      return {
+        index,
+        meastime,
+        measures,
+        weight,
+        raw: { ...group, meastime, measures },
+      };
     },
   );
   if (devtype !== 1 || category !== 1)
@@ -792,7 +915,8 @@ async function measure(
       "invalid measures",
       "invalid unit",
       "invalid measure value",
-      "weight type 1 absent",
+      "invalid metric metadata",
+      "invalid weight",
       "unexpected device/category",
     ]);
     const reason =
@@ -831,6 +955,14 @@ async function measure(
   const timestamp = now();
   const digests: string[] = [];
   for (const group of parsed.groups) {
+    const metadata = Object.fromEntries(
+      Object.entries(group.raw).filter(
+        ([key, value]) =>
+          key !== "meastime" &&
+          key !== "measures" &&
+          !(key === "algo" && value === 0),
+      ),
+    );
     digests.push(
       await sha256(
         stableJson({
@@ -842,6 +974,10 @@ async function measure(
           index: group.index,
           meastime: group.meastime,
           measures: group.measures,
+          // Keep the established weight-only hash (including algo:0 uploads).
+          // Nonzero/extended metadata distinguishes richer groups without
+          // creating duplicates when older scales retry after this upgrade.
+          ...(Object.keys(metadata).length ? { group_metadata: metadata } : {}),
         }),
       ),
     );
@@ -868,8 +1004,8 @@ async function measure(
     statements.push(
       env.DB.prepare(
         "INSERT INTO readings(scale_id,user_id,attribution,candidate_ids,attribstatus,meastime," +
-          "time_quality,weight_value,weight_unit,measures_json,payload_hash,first_received_at,last_received_at) " +
-          "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(payload_hash) DO UPDATE SET " +
+          "time_quality,weight_value,weight_unit,measures_json,group_json,payload_hash,first_received_at,last_received_at) " +
+          "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(payload_hash) DO UPDATE SET " +
           "attempts=attempts+1,last_received_at=excluded.last_received_at",
       ).bind(
         scale.id,
@@ -879,9 +1015,10 @@ async function measure(
         parsed.attribstatus,
         group.meastime,
         quality,
-        group.weight.value,
-        group.weight.unit,
+        group.weight?.value ?? null,
+        group.weight?.unit ?? null,
         JSON.stringify(group.measures),
+        JSON.stringify(group.raw),
         digest,
         timestamp,
         timestamp,
@@ -917,6 +1054,8 @@ async function measure(
     ),
   );
   // D1.batch commits all rows together. Never ACK a measure after a partial write.
+  if (userId !== null)
+    statements.push(refreshRecognitionWeight(env.DB, userId));
   await env.DB.batch(statements);
   if (scale.model === "WBS03") {
     return json({
@@ -925,6 +1064,31 @@ async function measure(
     });
   }
   return json({ status: 0 });
+}
+
+/** Minimal update/feature replies qualified by the WBS13 HTTP capture. */
+async function wbs13Query(
+  env: ScaleEnv,
+  params: URLSearchParams,
+  path: string,
+): Promise<Response> {
+  const scale = await requireDeviceSession(env, params, path);
+  if (!scale || scale.model !== "WBS13") return error(403, "invalid session");
+  const action = params.get("action");
+  let body: object;
+  if (
+    path === "/v2/measure" &&
+    action === "getlastupdate" &&
+    params.get("objects") === "devices"
+  )
+    body = { devices: [] };
+  else if (path === "/v2/feature" && action === "getbydevice")
+    body = { device_features: [], user_features: [] };
+  else if (path === "/v2/screen" && action === "getcontentbydeviceid")
+    body = { user_screens: [] };
+  else return error(400, "unsupported action");
+  await audit(env.DB, scale.id, path, "served").run();
+  return json({ status: 0, body });
 }
 
 export async function handleScaleRequest(
@@ -940,12 +1104,20 @@ export async function handleScaleRequest(
     "/v2/weather",
     "/v2/event",
     "/measure",
+    "/v2/measure",
+    "/v2/feature",
   ];
   if (request.method !== "POST" || !paths.includes(url.pathname)) return null;
   const params = await parameters(request, url);
   if (params instanceof Response) return params;
   if (url.pathname === "/once") return once(env, request, params);
   if (url.pathname === "/session") return session(env, request, params);
+  if (
+    ["/v2/measure", "/v2/feature"].includes(url.pathname) ||
+    (url.pathname === "/v2/screen" &&
+      params.get("action") === "getcontentbydeviceid")
+  )
+    return wbs13Query(env, params, url.pathname);
   if (url.pathname === "/v2/screen")
     return fixture(env, params, "screen", "getbydeviceid");
   if (url.pathname === "/v2/summary")

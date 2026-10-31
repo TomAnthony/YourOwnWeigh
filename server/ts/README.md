@@ -3,6 +3,7 @@
 - `app.ts`: browser authentication, enrollment, user/readings/Sync routes, JSON APIs.
 - `ui.ts`, `integrated_ui.ts`, `../static/`: server-rendered views and browser bridge controller.
 - `scale_api.ts`, `ws30_md5.ts`: model-specific Wi-Fi authentication, settings, clock and idempotent readings ingestion.
+- `metrics.ts`: documented metric names, exact decimal values, observed-metric selection and backup validation; unknown sensor fields stay raw.
 - `withings_protocol.ts`, `withings_capture.ts`: one read-only migration exchange and public-HTTPS transport for both runtimes/models.
 - `bridge.ts`: transport-independent pairing/routing. `bridge_node.ts` uses `ws`; `../cloudflare/bridge_do.ts` uses hibernating Worker WebSockets.
 - `backup.ts`: explicit backup schema, validation/staging and transactional merge/replace.

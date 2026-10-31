@@ -1,4 +1,5 @@
 /** Small server-rendered views shared by the Worker and local Node entrypoint. */
+import { METRICS, storedMeasures, type Metric } from "./metrics.ts";
 import { WEB_APP_VERSION } from "./version.ts";
 type Row = Record<string, any>;
 export const escapeHtml = (value: unknown): string =>
@@ -27,6 +28,7 @@ export const timeLabel = (value: unknown): string => {
     : "Unknown";
 };
 export function weightLabel(row: Row, unit: string): string {
+  if (row.weight_value == null || row.weight_unit == null) return "—";
   const kg = n(row.weight_value) * 10 ** n(row.weight_unit);
   if (unit === "lb") return `${(kg * 2.2046226218487757).toFixed(1)} lb`;
   if (unit === "st") {
@@ -34,6 +36,45 @@ export function weightLabel(row: Row, unit: string): string {
     return `${Math.floor(tenths / 140)} st ${((tenths % 140) / 10).toFixed(1)} lb`;
   }
   return `${kg.toFixed(2)} kg`;
+}
+function metricPicker(
+  metrics: Metric[],
+  selected: number,
+  name = "metric",
+  selections: Record<string, number> = {},
+): string {
+  if (metrics.length < 2) return "";
+  const preserved = Object.entries(selections)
+    .filter(([key]) => key !== name)
+    .map(
+      ([key, value]) =>
+        `<input type="hidden" name="${e(key)}" value="${e(value)}">`,
+    )
+    .join("");
+  return `<form method="get" class="metric-picker">${preserved}<label>Measurement<select name="${e(name)}" data-submit-on-change>${metrics.map((m) => option(m.type, m.label, selected)).join("")}</select></label><button class="secondary" type="submit">Show</button></form>`;
+}
+function metricLabel(row: Row, type: number, weightUnit: string): string {
+  if (type === 1) return weightLabel(row, weightUnit);
+  const matches = storedMeasures(row).filter((m) => m.type === type);
+  if (!matches.length) return "—";
+  const metric = METRICS.find((v) => v.type === type)!;
+  return matches
+    .map((m) => {
+      const value =
+        metric.unit === "kg"
+          ? weightLabel(
+              { weight_value: m.value, weight_unit: m.unit },
+              weightUnit,
+            )
+          : `${new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(m.value * 10 ** m.unit)}${metric.unit === "index" ? "" : ` ${e(metric.unit)}`}`;
+      return matches.length > 1
+        ? `${value} (Position ${e(m.position ?? "Unspecified")})`
+        : value;
+    })
+    .join("; ");
+}
+function metricTitle(type: number): string {
+  return METRICS.find((m) => m.type === type)?.label ?? "Weight";
 }
 export function layout(
   title: string,
@@ -86,16 +127,25 @@ function readingTime(row: Row): string {
   return `${timeLabel(trusted ? row.meastime : row.first_received_at)}${trusted ? "" : '<span class="hint">Received Time; Device Date Unverified</span>'}`;
 }
 function healthSyncStatus(row: Row): string {
-  if (!row.user_id) return '<span class="muted">—</span>';
+  if (!row.user_id || row.weight_value == null)
+    return '<span class="muted">—</span>';
   const acknowledgedAt = Number(row.health_sync_acknowledged_at);
   if (!Number.isFinite(acknowledgedAt) || acknowledgedAt <= 0)
     return '<span class="muted">Not Acknowledged</span>';
   return `<span class="badge">Acknowledged</span><time class="hint" datetime="${new Date(acknowledgedAt * 1000).toISOString()}">${timeLabel(acknowledgedAt)}</time>`;
 }
 export function dashboardPage(
-  cards: Array<{ user: Row; readings: Row[] }>,
+  cards: Array<{
+    user: Row;
+    readings: Row[];
+    metrics?: Metric[];
+    metric?: number;
+  }>,
   unit: string,
 ): string {
+  const selections = Object.fromEntries(
+    cards.map(({ user, metric = 1 }) => [`metric_${user.id}`, metric]),
+  );
   return `<section class="page-heading"><div><h1>Dashboard</h1></div><a class="button secondary" href="/readings">View All Readings</a></section>
   ${
     cards.length
@@ -104,12 +154,15 @@ export function dashboardPage(
             ({
               user,
               readings,
+              metrics = [METRICS[0]],
+              metric = 1,
             }) => `<section class="card"><div class="section-heading"><div>
     <h2><a href="/users/${e(user.id)}/readings">${e(user.name)}</a></h2></div><a href="/users/${e(user.id)}/readings">All Readings →</a></div>
+    ${metricPicker(metrics, metric, `metric_${user.id}`, selections)}
     ${
       readings.length
-        ? `<p class="metric">${weightLabel(readings[0], unit)}</p><div class="wide"><table><thead><tr><th>When</th><th>Weight</th><th>Scale</th></tr></thead><tbody>
-    ${readings.map((r) => `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${weightLabel(r, unit)}</td><td>${e(r.scale_label)}</td></tr>`).join("")}</tbody></table></div>`
+        ? `<p class="metric">${metricLabel(readings[0], metric, unit)}</p><div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>Scale</th></tr></thead><tbody>
+    ${readings.map((r) => `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${e(r.scale_label)}</td></tr>`).join("")}</tbody></table></div>`
         : '<p class="empty">No readings recorded yet.</p>'
     }</section>`,
           )
@@ -122,15 +175,17 @@ export function readingsPage(
   users: Row[],
   unit: string,
   csrf: string,
+  metrics: Metric[] = [METRICS[0]],
+  metric = 1,
 ): string {
-  return `<section><h1>Readings</h1>
+  return `<section><h1>Readings</h1>${metricPicker(metrics, metric)}
     ${
       readings.length
-        ? `<div class="wide"><table><thead><tr><th>When</th><th>Weight</th><th>User</th><th>Scale</th><th>Health Sync</th><th>Actions</th></tr></thead><tbody>
+        ? `<div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>User</th><th>Scale</th>${metric === 1 ? "<th>Health Sync</th>" : ""}<th>Actions</th></tr></thead><tbody>
     ${readings
       .map(
         (r) =>
-          `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${weightLabel(r, unit)}</td><td>${r.user_id ? `<a href="/users/${e(r.user_id)}/readings">${e(r.user_name)}</a>` : '<span class="badge warn">Unassigned</span>'}</td><td>${e(r.scale_label)}</td><td>${healthSyncStatus(r)}</td><td>${
+          `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${r.user_id ? `<a href="/users/${e(r.user_id)}/readings">${e(r.user_name)}</a>` : '<span class="badge warn">Unassigned</span>'}</td><td>${e(r.scale_label)}</td>${metric === 1 ? `<td>${healthSyncStatus(r)}</td>` : ""}<td>${
             r.user_id
               ? "—"
               : `<div class="actions">${users.length ? `<form class="inline-form" action="/readings/${e(r.id)}/assign" method="post">${hidden(csrf)}<label class="hint">Assign To</label><select name="user_id" required><option value="">Choose User</option>${users.map((u) => option(u.id, u.name, "")).join("")}</select><button>Assign</button></form>` : ""}
@@ -146,14 +201,16 @@ export function userReadingsPage(
   user: Row,
   readings: Row[],
   unit: string,
+  metrics: Metric[] = [METRICS[0]],
+  metric = 1,
 ): string {
-  return `<section><a href="/">← Dashboard</a><h1>${e(user.name)} Readings</h1>
+  return `<section><a href="/">← Dashboard</a><h1>${e(user.name)} Readings</h1>${metricPicker(metrics, metric)}
     ${
       readings.length
-        ? `<div class="wide"><table><thead><tr><th>When</th><th>Weight</th><th>Scale</th><th>Attribution</th><th>Health Sync</th></tr></thead><tbody>${readings
+        ? `<div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>Scale</th><th>Attribution</th>${metric === 1 ? "<th>Health Sync</th>" : ""}</tr></thead><tbody>${readings
             .map(
               (r) =>
-                `<tr><td>${readingTime(r)}</td><td>${weightLabel(r, unit)}</td><td>${e(r.scale_label)}</td><td>${e(r.attribution)}</td><td>${healthSyncStatus(r)}</td></tr>`,
+                `<tr><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${e(r.scale_label)}</td><td>${e(r.attribution)}</td>${metric === 1 ? `<td>${healthSyncStatus(r)}</td>` : ""}</tr>`,
             )
             .join("")}</tbody></table></div>`
         : '<p class="empty">No readings recorded for this user.</p>'
@@ -169,7 +226,7 @@ function userFields(
     <label>Date of Birth<input name="birth_date" type="date" value="${e(user?.birth_date)}"></label>
     <label>Approximate Age (if DOB unknown)<input name="age_years" type="number" step="0.1" value="${e(user?.age_years)}"></label>
     <label>Sex<select name="sex">${option(0, "Male", user?.sex ?? 0)}${option(1, "Female", user?.sex ?? 0)}</select></label>
-    <label>Recognition Weight (kg)<input name="reference_weight_kg" type="number" step="0.01" value="${e(user?.reference_weight_kg)}" required></label></div>
+    <label>Recognition Weight (kg)<input name="reference_weight_kg" type="number" step="any" value="${e(user?.reference_weight_kg)}" title="Updated from the latest assigned weigh-in and sent on the scale’s next Wi-Fi sync." required></label></div>
     <fieldset><legend>Scales</legend>${scales.map((s) => `<label><input type="checkbox" name="scales" value="${e(s.id)}"${members.has(s.id) ? " checked" : ""}> ${e(s.label)}</label>`).join("")}</fieldset>`;
 }
 export function usersPage(

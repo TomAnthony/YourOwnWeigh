@@ -114,7 +114,8 @@
               "model": {
                 "enum": [
                   "WBS06",
-                  "WBS03"
+                  "WBS03",
+                  "WBS13"
                 ]
               },
               "durationSeconds": {
@@ -409,7 +410,8 @@
               "model": {
                 "enum": [
                   "WBS06",
-                  "WBS03"
+                  "WBS03",
+                  "WBS13"
                 ]
               }
             },
@@ -467,7 +469,7 @@
                 "pattern": "^[a-f0-9]{64}$"
               },
               "confirmation": {
-                "const": "FLASH"
+                "enum": ["FLASH", "FLASH UNKNOWN"]
               }
             },
             "required": [
@@ -496,7 +498,8 @@
               "model": {
                 "enum": [
                   "WBS06",
-                  "WBS03"
+                  "WBS03",
+                  "WBS13"
                 ]
               },
               "size": {

@@ -35,6 +35,7 @@ The below models are currently supported. Pull Requests to add more models are v
 
 | Scale | Stock Firmware | YOW Firmware | Bluetooth | Notes |
 | --- | --- | --- | --- | --- |
+| Body Smart (**WBS13**) | v1311 | v100 | BLE | |
 | Body (**WBS06**) | v1181 | v127 | BLE | |
 | Wireless Scale (**WS-30 / WBS03**) | v921 | v102 | Classic | Scales->YOW is HTTP only |
 
@@ -120,7 +121,7 @@ npm run setup:local -- --scale-host YOUR_MAC_LAN_IP
 
 **Q)** Will this brick my device?
 
-Unlikely, but possible. I flashed lots of firmware attempts to my WBS06 and WS-30 scales whilst researching how to make this work, and that worked fine.
+Unlikely, but possible. I flashed lots of firmware attempts to my WBS06 and WS-30 scales whilst researching how to make this work, and that worked fine. I later added WBS13 without problems.
 
 The models I looked at all have two firmware slots, and updates are always written to the slot with the lowest version. I have deliberately set my version numbers low so one slot should retain a Withings vanilla firmware.
 

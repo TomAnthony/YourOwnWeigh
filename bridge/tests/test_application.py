@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import tempfile
 import unittest
 import uuid
@@ -115,6 +116,147 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.assertIn("STALE_CONNECTION", events[-1]["error"]["message"])
         self.assertNotIn("0123456789abcdef", str(self.app.snapshot()))
 
+    async def test_ble_candidate_becomes_wbs13_after_probe_and_stock_cannot_enroll(self):
+        from types import SimpleNamespace
+        from test_protocol import MockTransport, probe
+
+        self.app.simulate = False
+        self.app.candidates["body-smart"] = dict(
+            deviceId="body-smart", modelCandidate="WBS06", presence="seen",
+        )
+
+        async def connect(device_id, receive, disconnected):
+            transport = MockTransport("WBS06")
+            transport.identity_only = True
+            transport.wpp_profile = "WBS13"
+            transport.session = receive.__self__
+            return transport
+
+        self.app.transport_backend = SimpleNamespace(connect=connect)
+        result = await self.run_command(command("device.connect", deviceId="body-smart"))
+        self.assertEqual(result["kind"], "result")
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        with patch("test_protocol.probe", return_value=frame):
+            result = await self.run_command(command(
+                "device.probe", deviceId="body-smart", connectionGeneration=1,
+            ))
+        self.assertEqual(result["result"]["model"], "WBS13")
+        self.assertEqual(self.app.snapshot()["device"]["model"], "WBS13")
+        self.assertEqual(self.app.session.model, "WBS13")
+        result = await self.run_command(command(
+            "device.enroll", {"approved": True}, deviceId="body-smart", connectionGeneration=1,
+        ))
+        self.assertEqual(result["kind"], "error")
+        self.assertIn("requires supported YOW firmware and a device secret", result["error"]["message"])
+        # The selected model must match the probed identity even if the initial
+        # BLE discovery result used the common WBS06 discovery category.
+        self.app.artifacts["wrong"] = (b"firmware", {"model": "WBS06"})
+        with patch("yow_bridge.application.inspect", return_value={"sha256": "0" * 64, "classification": "known_release"}):
+            result = await self.run_command(command(
+                "firmware.install", {"artifactId": "wrong", "confirmation": "FLASH", "sha256": "0" * 64},
+                deviceId="body-smart", connectionGeneration=1,
+            ))
+        self.assertEqual(result["kind"], "error")
+        self.assertIn("does not match", result["error"]["message"])
+        self.assertFalse(self.app.session.ota_started)
+
+    async def test_wbs13_ota_cannot_cancel_disconnect_or_replay_after_start(self):
+        from test_protocol import MockTransport, probe
+        from yow_bridge.models.protocol import Decoder
+
+        transport = MockTransport("WBS06")
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        with patch("test_protocol.probe", return_value=frame):
+            await transport.session.probe()
+        self.app.session, self.app.connected = transport.session, True
+        self.app.device_id, self.app.generation = "body-smart", 1
+        self.app.artifacts["candidate"] = (bytes(1200), {"model": "WBS13"})
+        started, resume = asyncio.Event(), asyncio.Event()
+        original_write = transport.write
+
+        async def waiting_write(packet):
+            if transport.ota and transport.total:
+                started.set()
+                await resume.wait()
+            await original_write(packet)
+
+        transport.write = waiting_write
+        install = command(
+            "firmware.install", {"artifactId": "candidate", "confirmation": "FLASH", "sha256": "0" * 64},
+            deviceId="body-smart", connectionGeneration=1,
+        )
+        with patch("yow_bridge.application.inspect", return_value={"sha256": "0" * 64, "classification": "known_release"}):
+            await self.app.accept(install)
+            await started.wait()
+            active_task = self.app.task
+            for request in (
+                command("operation.cancel", {"operationId": install["operationId"]}),
+                command("device.disconnect", deviceId="body-smart", connectionGeneration=1),
+            ):
+                await self.app.accept(request)
+                self.assertFalse(active_task.done())
+            # Network reconnect sends snapshots; it must not restart a transfer.
+            self.assertEqual(self.app.snapshot()["activeOperation"]["stage"], "transferring")
+            resume.set()
+            await active_task
+        self.assertEqual(self.app.history[install["id"]]["event"]["kind"], "result")
+        self.assertIsNone(self.app.session.identity)  # Fresh probe required.
+        await self.app.accept(install)
+        self.assertEqual(transport.total, 1200)
+        controls = [Decoder().feed(packet)[0].command for packet in transport.sent[:3]]
+        self.assertEqual(controls, [0x101, 0x155, 0x401])
+
+    async def test_unknown_firmware_upload_and_confirmation_before_any_ota_write(self):
+        from test_protocol import MockTransport, probe
+        from test_wbs13_firmware import fixture, profile, digest
+
+        transport = MockTransport("WBS06")
+        transport.wpp_profile = "WBS13"
+        frame = probe("WBS06", name="Body Smart", secret="", boot=2, firmware=1311)
+        with patch("test_protocol.probe", return_value=frame):
+            await transport.session.probe()
+        self.app.session, self.app.connected = transport.session, True
+        self.app.device_id, self.app.generation = "body-smart", 1
+        stock, known, unknown = fixture(), fixture(100), fixture(101)
+        with patch("yow_bridge.firmware.recipe", return_value=profile(stock, known)):
+            start = await self.run_command(command("artifact.begin", dict(
+                model="WBS13", filename="custom.bin", size=len(unknown), sha256=digest(unknown),
+            )))
+            transfer = start["result"]["transferId"]
+            await self.run_command(command("artifact.chunk", dict(
+                transferId=transfer, offset=0, dataBase64=base64.b64encode(unknown).decode(),
+            )))
+            result = await self.run_command(command("artifact.finish", dict(transferId=transfer)))
+            artifact = result["result"]
+            self.assertEqual(artifact["classification"], "custom")
+            params = dict(artifactId=artifact["artifactId"], sha256=artifact["sha256"])
+            # Even a stale/spoofed descriptor must not downgrade the byte-derived consent.
+            artifact["classification"] = "known_release"
+            before = list(transport.sent)
+            for phrase in ("FLASH", "", "flash unknown", "FLASH UNKNOWN "):
+                result = await self.run_command(command(
+                    "firmware.install", {**params, "confirmation": phrase},
+                    deviceId="body-smart", connectionGeneration=1,
+                ))
+                self.assertEqual(result["kind"], "error")
+                self.assertIn("Type FLASH UNKNOWN", result["error"]["message"])
+                self.assertEqual(transport.sent, before)
+                self.assertFalse(transport.session.ota_started)
+            result = await self.run_command(command(
+                "firmware.install", {**params, "sha256": "0" * 64, "confirmation": "FLASH UNKNOWN"},
+                deviceId="body-smart", connectionGeneration=1,
+            ))
+            self.assertEqual(result["kind"], "error")
+            self.assertEqual(transport.sent, before)
+            result = await self.run_command(command(
+                "firmware.install", {**params, "confirmation": "FLASH UNKNOWN"},
+                deviceId="body-smart", connectionGeneration=1,
+            ))
+            self.assertEqual(result["kind"], "result", result)
+            self.assertTrue(result["result"]["transferred"])
+            self.assertEqual(transport.total, len(unknown))
+
     async def test_upload_rejects_out_of_order(self):
         c = command(
             "artifact.begin",
@@ -183,6 +325,17 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result["result"]["device"]["captured_at"], int)
         self.assertFalse(result["result"]["configuration"]["server"]["available"])
         self.assertIsNone(result["result"]["device"]["owner_host"])
+
+    async def test_unrecognised_identity_without_secret_cannot_reveal_credentials(self):
+        await self.connected()
+        self.app.session.identity.update(supported=False, name="Body Smart", secret="")
+        self.assertFalse(self.app.snapshot()["device"]["secretAvailable"])
+        result = await self.run_command(command(
+            "device.reveal_secret", deviceId="demo-scale",
+            connectionGeneration=1, replyTo="tab1",
+        ))
+        self.assertEqual(result["kind"], "error")
+        self.assertIn("did not provide a secret", result["error"]["message"])
 
     def test_command_contract_matches_dispatcher(self):
         import json

@@ -19,7 +19,7 @@ export function firmwareWorkspace(csrf: string): string {
     <div id="bridge-online" hidden>
       <section id="connect-panel"><div class="section-heading"><h2>Connect</h2><span class="badge" id="connection-state">Disconnected</span></div>
         <p class="hint">Put your scale into setup mode with its hardware button.</p>
-        <div class="action-row"><button id="scan-ble" type="button" title="Find Body WBS06 scales using Bluetooth Low Energy.">Scan BLE</button><button id="scan-classic" type="button" title="Find WS-30 scales using Bluetooth Classic.">Scan Classic</button><span id="scan-status" role="status" aria-live="polite"></span></div>
+        <div class="action-row"><button id="scan-ble" type="button" title="Find Body WBS06 and Body Smart WBS13 scales using Bluetooth Low Energy.">Scan BLE</button><button id="scan-classic" type="button" title="Find WS-30 scales using Bluetooth Classic.">Scan Classic</button><span id="scan-status" role="status" aria-live="polite"></span></div>
         <div id="candidates" class="wide"></div>
         <dl id="device-identity" class="identity-grid"></dl>
         <div id="unsupported-firmware" class="unsupported-firmware form-block" hidden>
@@ -34,10 +34,11 @@ export function firmwareWorkspace(csrf: string): string {
       </section>
       <div class="firmware-grid">
         <section id="firmware-panel"><h2>Firmware</h2>
-          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option></select></label>
+          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option><option value="WBS13">Body Smart (WBS13)</option></select></label>
           <p class="hint">Download stock firmware and generate YourOwnWeigh firmware. Files stay on the computer running the bridge.</p>
           <div class="action-row"><button id="generate-firmware" type="button">Generate Firmware For WBS06</button><label class="text-button file-link">Select Manually<input id="manual-firmware" type="file" accept=".bin" hidden></label></div></div>
           <div id="firmware-info" class="firmware-artifact" hidden></div>
+          <p id="firmware-warning" class="notice" hidden></p>
           <div class="action-row"><button id="install-firmware" type="button" disabled>Send Update To Device</button><button id="download-firmware" type="button" class="text-button" hidden>Download Firmware</button></div>
           <div id="operation-status" class="inline-status" hidden aria-live="polite"><p id="operation-message"></p><progress id="operation-progress" hidden max="1" value="0" aria-label="Firmware Progress"></progress></div>
         </section>
@@ -50,13 +51,13 @@ export function firmwareWorkspace(csrf: string): string {
       </div>
     </div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-relevant="additions" aria-label="Notifications"></div>
-    <dialog id="flash-dialog"><button class="dialog-close" data-close-dialog type="button">×</button><h2>Install Firmware?</h2><p>This replaces an external firmware slot. Keep the scale powered and the Python bridge running until transfer finishes. Keep your original firmware backup and recovery instructions.</p><p id="flash-summary"></p><label>Type FLASH<input id="flash-confirmation" autocomplete="off"></label><div class="dialog-actions"><button id="confirm-flash" type="button" disabled>Confirm Update</button><button type="button" data-close-dialog class="secondary">Cancel</button></div></dialog>
-    <dialog id="enroll-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Device To Server?</h2><p>Save this scale and check Withings for existing users and settings. You choose which new users to import.</p><label>Scale Name<input id="device-label" maxlength="80"></label><div class="dialog-actions"><button id="confirm-enroll" type="button">Import Device</button><button type="button" data-close-dialog class="secondary">Later</button></div></dialog>
+    <dialog id="flash-dialog"><button class="dialog-close" data-close-dialog type="button">×</button><h2 id="flash-title">Install Firmware?</h2><p id="flash-warning" class="notice" hidden></p><p>This replaces an external firmware slot. Keep the scale powered and the Python bridge running until transfer finishes. Keep your original firmware backup and recovery instructions.</p><p id="flash-summary" class="firmware-artifact"></p><label><span id="flash-prompt">Type FLASH</span><input id="flash-confirmation" autocomplete="off" spellcheck="false" aria-describedby="flash-warning flash-summary"></label><div class="dialog-actions"><button id="confirm-flash" type="button" disabled>Confirm Update</button><button type="button" data-close-dialog class="secondary">Cancel</button></div></dialog>
+    <dialog id="enroll-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Device To Server?</h2><p id="enroll-description">Save this scale and check Withings for existing users and settings. You choose which new users to import.</p><label>Scale Name<input id="device-label" maxlength="80"></label><div class="dialog-actions"><button id="confirm-enroll" type="button">Import Device</button><button type="button" data-close-dialog class="secondary">Later</button></div></dialog>
     <dialog id="roster-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Users</h2><p id="roster-message"></p><div id="roster-users"></div><div class="dialog-actions"><button id="confirm-roster" type="button">Import Selected Users</button><button type="button" data-close-dialog class="secondary">Later</button></div></dialog>
   </div><script src="/firmware.js?v=${WEB_APP_VERSION}" defer></script>`;
 }
 
-function editDevice(s: Row, csrf: string): string {
+function editDevice(s: Row, csrf: string, users: Row[]): string {
   const advanced = [
     ["goff", "UTC Offset (Seconds)"],
     ["dst", "Next DST Change (Unix Time)"],
@@ -69,8 +70,9 @@ function editDevice(s: Row, csrf: string): string {
   return `<dialog id="edit-device-${e(s.id)}"><button class="dialog-close" data-close-dialog type="button">×</button><h2>Edit Settings</h2>
     <form action="/scales/${e(s.id)}" method="post">${hidden(csrf)}<input type="hidden" name="purpose" value="device_config">
     <label>Name<input name="label" value="${e(s.label)}" maxlength="80" required></label><label>Time Zone${timeZoneSelect("time_zone", s.time_zone || "")}</label>
-    <details class="advanced-settings"><summary>Advanced</summary><dl class="identity-grid"><dt>Last Sync</dt><dd>${s.last_session_at ? timeLabel(s.last_session_at) : "Not Yet Seen"}</dd></dl><p class="hint">Internal protocol settings. The selected time zone supplies clock offsets automatically.</p><div class="field-list">${s.model === "WBS03" ? "" : advanced.map(([key, label]) => `<label>${label}<input type="number" name="${key}" value="${e(s[key] ?? 0)}"></label>`).join("")}</div>${s.model === "WBS03" ? '<p class="hint">WS-30 retains its internal settings and on-scale users.</p>' : ""}</details>
-    <div class="dialog-actions"><button>Save Settings</button><button class="secondary" type="button" data-close-dialog>Cancel</button></div></form><form action="/users/fetch-withings" method="post" class="modal-secondary-action">${hidden(csrf)}<input type="hidden" name="scale_id" value="${e(s.id)}"><button class="text-button">${s.model !== "WBS03" && !s.settings_ready ? "Finish Device Import" : "Import Users From Withings"}</button></form></dialog>`;
+    ${s.model === "WBS13" ? `<fieldset><legend>Users On This Scale</legend><p>Choose the local users to send on each sync. This replaces the scale’s current roster; Withings import is unavailable for this model.</p>${users.map((u) => `<label><input type="checkbox" name="user_ids" value="${e(u.id)}"${s.userIds?.includes(u.id) ? " checked" : ""}> ${e(u.name)}</label>`).join("") || '<p><a href="/users">Add A User</a> first.</p>'}</fieldset>` : ""}
+    <details class="advanced-settings"><summary>Advanced</summary><dl class="identity-grid"><dt>Last Sync</dt><dd>${s.last_session_at ? timeLabel(s.last_session_at) : "Not Yet Seen"}</dd></dl><p class="hint">Internal protocol settings. The selected time zone supplies clock offsets automatically.</p><div class="field-list">${["WBS03", "WBS13"].includes(s.model) ? "" : advanced.map(([key, label]) => `<label>${label}<input type="number" name="${key}" value="${e(s[key] ?? 0)}"></label>`).join("")}</div>${s.model === "WBS03" ? '<p class="hint">WS-30 retains its internal settings and on-scale users.</p>' : ""}</details>
+    <div class="dialog-actions"><button>Save Settings</button><button class="secondary" type="button" data-close-dialog>Cancel</button></div></form>${s.model === "WBS13" ? "" : `<form action="/users/fetch-withings" method="post" class="modal-secondary-action">${hidden(csrf)}<input type="hidden" name="scale_id" value="${e(s.id)}"><button class="text-button">${s.model !== "WBS03" && !s.settings_ready ? "Finish Device Import" : "Import Users From Withings"}</button></form>`}</dialog>`;
 }
 function firmwareRow(s: Row): string {
   const known = s.firmware_version != null && s.firmware_confirmed_at != null;
@@ -79,7 +81,11 @@ function firmwareRow(s: Row): string {
     : "No firmware version observed yet. Connect and probe this scale, import its device export, or let it sync over Wi-Fi.";
   return `<tr><th>Firmware <span class="info-tip" tabindex="0" aria-label="Firmware Confirmation" aria-describedby="firmware-time-${e(s.id)}"><span aria-hidden="true">ⓘ</span><span role="tooltip" id="firmware-time-${e(s.id)}">${e(hint)}</span></span></th><td>${known ? `v${e(s.firmware_version)}` : "Not Yet Confirmed"}</td></tr>`;
 }
-export function scalesWorkspace(scales: Row[], csrf: string): string {
+export function scalesWorkspace(
+  scales: Row[],
+  csrf: string,
+  users: Row[] = [],
+): string {
   return `<section class="page-heading"><h1>Scales</h1></section>
     <div class="scale-cards">${
       scales.length
@@ -87,8 +93,8 @@ export function scalesWorkspace(scales: Row[], csrf: string): string {
             .map(
               (
                 s,
-              ) => `<section class="scale-card" id="scale-${e(s.id)}"><div class="section-heading"><h2>${e(s.label)}</h2><span class="badge${s.model !== "WBS03" && !s.settings_ready ? " warn" : ""}">${s.model === "WBS03" || s.settings_ready ? "Ready" : "Import Incomplete"}</span></div>
-      <table class="scale-details"><tbody><tr><th>Model</th><td>${s.model === "WBS03" ? "Wireless Scale (WBS03 / WS-30)" : "Body Scale (WBS06)"}</td></tr><tr><th>MAC</th><td><code>${e(
+              ) => `<section class="scale-card" id="scale-${e(s.id)}"><div class="section-heading"><h2>${e(s.label)}</h2><span class="badge${s.model !== "WBS03" && !s.settings_ready ? " warn" : ""}">${s.model === "WBS03" || s.settings_ready ? "Ready" : s.model === "WBS13" ? "Choose Users" : "Import Incomplete"}</span></div>
+      <table class="scale-details"><tbody><tr><th>Model</th><td>${s.model === "WBS03" ? "Wireless Scale (WBS03 / WS-30)" : s.model === "WBS13" ? "Body Smart (WBS13)" : "Body Scale (WBS06)"}</td></tr><tr><th>MAC</th><td><code>${e(
         String(s.mac)
           .replace(/(..)(?=.)/g, "$1:")
           .toUpperCase(),
@@ -98,7 +104,7 @@ export function scalesWorkspace(scales: Row[], csrf: string): string {
             .join("")
         : '<section><p class="empty">No scales yet.</p><a class="button" href="/firmware">Connect A Scale</a></section>'
     }</div>
-    ${scales.map((s) => editDevice(s, csrf)).join("")}
+    ${scales.map((s) => editDevice(s, csrf, users)).join("")}
     <div class="page-footer"><button class="text-button" type="button" data-open-dialog="device-file-dialog">Import Device File</button></div>
     <dialog id="device-file-dialog"><button class="dialog-close" data-close-dialog type="button">×</button><h2>Import Device File</h2><form action="/scales/import-ble" method="post" enctype="multipart/form-data">${hidden(csrf)}<label>Name (Optional)<input name="label" maxlength="80"></label><label>Device Export<input type="file" name="record" accept=".json" required></label><label>Time Zone${timeZoneSelect("time_zone")}</label><button>Import Device</button></form></dialog>`;
 }
@@ -107,7 +113,7 @@ export function syncPage(origin: string, users: Row[]): string {
     <div class="firmware-grid"><section><h2>Apple Health</h2><p>Download the static signed Shortcut, then set its first three Text actions. You can install and configure it on your Mac; iCloud syncs it to Shortcuts on your iPhone. Run it on the iPhone to grant Health access.</p>
     <a class="button" href="/YourOwnWeigh-Sync.shortcut" download="YourOwnWeigh Sync.shortcut">Download YourOwnWeigh Sync</a><dl><dt>Server URL</dt><dd><code>${e(origin)}</code></dd><dt>User ID Or Three-Letter Name</dt><dd>${users.map((u) => `${e(u.name)}: <code>${e(u.id)}</code> / <code>${e(u.short_name)}</code>`).join("<br>") || "Add a user first."}</dd><dt>Password</dt><dd>Your Sync API password (the admin password unless you set a separate one).</dd></dl>
     <p class="hint">For a daily sync, create a Personal Automation in iPhone Shortcuts: Time Of Day → 09:00 → Daily → Run Immediately → Run Shortcut → YourOwnWeigh Sync. Run the Shortcut manually any time too.</p></section>
-    <section><h2>Read Over HTTP</h2><p>Use a numeric user ID or an unambiguous three-letter display name. Requests return JSON and do not mark readings as imported into Apple Health.</p><pre>curl --user reader \\\n  '${e(origin)}/api/users/USER/weights?since=2026-01-01'</pre><p class="hint">curl prompts for the password. Use HTTPS for remote servers. The household credential can read every user; the selected ID controls this request, not access rights.</p><p>The Apple Shortcut uses the separate <code>health-sync/next</code> and <code>health-sync/ack</code> endpoints so it acknowledges a reading only after writing it to Health.</p></section></div>`;
+    <section><h2>Read Over HTTP</h2><p>Use a numeric user ID or an unambiguous three-letter display name. Requests return JSON and do not mark readings as imported into Apple Health.</p><pre>curl --user reader \\\n  '${e(origin)}/api/users/USER/readings?since=2026-01-01'</pre><p class="hint">curl prompts for the password. Use HTTPS for remote servers. The household credential can read every user; the selected ID controls this request, not access rights.</p><p><code>/readings</code> returns all measurement groups, named metrics and raw values. Follow <code>next_cursor</code> using the <code>cursor</code> parameter to paginate. <code>/weights</code> remains available for weight-only clients.</p><p>The Apple Shortcut uses the separate <code>health-sync/next</code> and <code>health-sync/ack</code> endpoints so it acknowledges a reading only after writing it to Health.</p></section></div>`;
 }
 export function settingsWorkspace(
   csrf: string,

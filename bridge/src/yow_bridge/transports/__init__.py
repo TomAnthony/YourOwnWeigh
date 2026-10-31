@@ -8,7 +8,7 @@ def backend(model):
         raise RuntimeError(
             "Bluetooth is supported on macOS and Linux; Windows is not yet supported."
         )
-    if model == "WBS06":
+    if model in ("WBS06", "WBS13"):
         from .ble import Backend
     elif model == "WBS03":
         if sys.platform == "linux":
