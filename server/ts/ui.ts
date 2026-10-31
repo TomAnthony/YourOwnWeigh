@@ -41,9 +41,17 @@ function metricPicker(
   metrics: Metric[],
   selected: number,
   name = "metric",
+  selections: Record<string, number> = {},
 ): string {
   if (metrics.length < 2) return "";
-  return `<form method="get" class="metric-picker"><label>Measurement<select name="${e(name)}" data-submit-on-change>${metrics.map((m) => option(m.type, m.label, selected)).join("")}</select></label><button class="secondary" type="submit">Show</button></form>`;
+  const preserved = Object.entries(selections)
+    .filter(([key]) => key !== name)
+    .map(
+      ([key, value]) =>
+        `<input type="hidden" name="${e(key)}" value="${e(value)}">`,
+    )
+    .join("");
+  return `<form method="get" class="metric-picker">${preserved}<label>Measurement<select name="${e(name)}" data-submit-on-change>${metrics.map((m) => option(m.type, m.label, selected)).join("")}</select></label><button class="secondary" type="submit">Show</button></form>`;
 }
 function metricLabel(row: Row, type: number, weightUnit: string): string {
   if (type === 1) return weightLabel(row, weightUnit);
@@ -135,6 +143,9 @@ export function dashboardPage(
   }>,
   unit: string,
 ): string {
+  const selections = Object.fromEntries(
+    cards.map(({ user, metric = 1 }) => [`metric_${user.id}`, metric]),
+  );
   return `<section class="page-heading"><div><h1>Dashboard</h1></div><a class="button secondary" href="/readings">View All Readings</a></section>
   ${
     cards.length
@@ -147,7 +158,7 @@ export function dashboardPage(
               metric = 1,
             }) => `<section class="card"><div class="section-heading"><div>
     <h2><a href="/users/${e(user.id)}/readings">${e(user.name)}</a></h2></div><a href="/users/${e(user.id)}/readings">All Readings →</a></div>
-    ${metricPicker(metrics, metric, `metric_${user.id}`)}
+    ${metricPicker(metrics, metric, `metric_${user.id}`, selections)}
     ${
       readings.length
         ? `<p class="metric">${metricLabel(readings[0], metric, unit)}</p><div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>Scale</th></tr></thead><tbody>
@@ -215,7 +226,7 @@ function userFields(
     <label>Date of Birth<input name="birth_date" type="date" value="${e(user?.birth_date)}"></label>
     <label>Approximate Age (if DOB unknown)<input name="age_years" type="number" step="0.1" value="${e(user?.age_years)}"></label>
     <label>Sex<select name="sex">${option(0, "Male", user?.sex ?? 0)}${option(1, "Female", user?.sex ?? 0)}</select></label>
-    <label>Recognition Weight (kg)<input name="reference_weight_kg" type="number" step="0.01" value="${e(user?.reference_weight_kg)}" required></label></div>
+    <label>Recognition Weight (kg)<input name="reference_weight_kg" type="number" step="any" value="${e(user?.reference_weight_kg)}" title="Updated from the latest assigned weigh-in and sent on the scale’s next Wi-Fi sync." required></label></div>
     <fieldset><legend>Scales</legend>${scales.map((s) => `<label><input type="checkbox" name="scales" value="${e(s.id)}"${members.has(s.id) ? " checked" : ""}> ${e(s.label)}</label>`).join("")}</fieldset>`;
 }
 export function usersPage(

@@ -24,6 +24,10 @@ omit `group_json`; import supplies `null`. These JSON strings are validated befo
 staging, and richer readings and existing weight-only Health receipts survive
 both merge and replace.
 
+User rows include nullable `reference_weight_at`, the measurement timestamp used
+with the recognition weight. Older backups may omit it; import supplies `null`
+and the next roster sync learns from existing assigned readings.
+
 `POST /api/backup/import` accepts a multipart `backup` file plus `_csrf`, validates
 at most 10 MiB / 25,000 household rows, and stages rows for 15 minutes. It renders a preview
 containing `import_id` and a digest. `POST /api/backup/commit` requires these,

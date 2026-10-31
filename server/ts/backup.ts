@@ -10,7 +10,7 @@ type Row = Record<string, string | number | null>;
 const columns: Record<string, string[]> = {
   settings: "key value".split(" "),
   users:
-    "id name short_name height_cm age_years birth_date sex reference_weight_kg active created_at".split(
+    "id name short_name height_cm age_years birth_date sex reference_weight_kg reference_weight_at active created_at".split(
       " ",
     ),
   scales:
@@ -120,6 +120,13 @@ function parse(raw: string): Backup {
     }
     count += data.length;
     for (const row of data) {
+      if (
+        section === "users" &&
+        row &&
+        typeof row === "object" &&
+        !("reference_weight_at" in row)
+      )
+        row.reference_weight_at = null;
       // Backups from before firmware tracking remain importable. Use the export's
       // original observation time, never the time the backup is restored.
       if (
@@ -252,7 +259,9 @@ function parse(raw: string): Backup {
       Number(r.height_cm) < 80 ||
       Number(r.height_cm) > 250 ||
       Number(r.reference_weight_kg) < 2 ||
-      Number(r.reference_weight_kg) > 500
+      Number(r.reference_weight_kg) > 500 ||
+      (r.reference_weight_at !== null &&
+        !integer(r.reference_weight_at, 946684800, now()))
     )
       throw new Error("Invalid user profile");
   for (const r of b.sections.readings) {

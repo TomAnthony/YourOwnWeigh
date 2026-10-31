@@ -74,6 +74,29 @@ export class LocalSqlite {
     this.database.exec(
       "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=10000; PRAGMA synchronous=FULL;",
     );
+    // Take the writer lock before inspecting the schema. Another process may
+    // finish an upgrade (and accept new readings) while this opener is waiting.
+    try {
+      this.database.exec("BEGIN IMMEDIATE");
+      try {
+        this.initializeSchema();
+        this.database.exec("COMMIT");
+      } catch (error) {
+        this.database.exec("ROLLBACK");
+        throw error;
+      }
+    } catch (error) {
+      this.database.close();
+      throw error;
+    }
+    try {
+      chmodSync(path, 0o600);
+    } catch {
+      /* Windows may not support mode changes. */
+    }
+  }
+  /** Called only while holding the startup transaction's writer lock. */
+  private initializeSchema(): void {
     const schema = readFileSync(
       join(ROOT, "server/migrations/0002_scale_core.sql"),
       "utf8",
@@ -111,24 +134,12 @@ export class LocalSqlite {
         }>
       ).some((c) => c.name === "group_json")
     ) {
-      this.database.exec("BEGIN IMMEDIATE");
-      try {
-        this.database.exec(
-          readFileSync(
-            join(ROOT, "server/migrations/0008_measurement_groups.sql"),
-            "utf8",
-          ),
-        );
-        this.database.exec("COMMIT");
-      } catch (error) {
-        this.database.exec("ROLLBACK");
-        throw error;
-      }
-    }
-    try {
-      chmodSync(path, 0o600);
-    } catch {
-      /* Windows may not support mode changes. */
+      this.database.exec(
+        readFileSync(
+          join(ROOT, "server/migrations/0008_measurement_groups.sql"),
+          "utf8",
+        ),
+      );
     }
   }
   private upgradeOlderDatabase(): void {
@@ -164,19 +175,12 @@ export class LocalSqlite {
         this.database.exec(`ALTER TABLE scales ADD COLUMN ${name} ${kind}`);
     }
     if (!scale.has("firmware_version")) {
-      this.database.exec("BEGIN IMMEDIATE");
-      try {
-        this.database.exec(
-          readFileSync(
-            join(ROOT, "server/migrations/0006_firmware_observations.sql"),
-            "utf8",
-          ),
-        );
-        this.database.exec("COMMIT");
-      } catch (error) {
-        this.database.exec("ROLLBACK");
-        throw error;
-      }
+      this.database.exec(
+        readFileSync(
+          join(ROOT, "server/migrations/0006_firmware_observations.sql"),
+          "utf8",
+        ),
+      );
     }
     if (!columns("readings").has("time_quality")) {
       this.database.exec(
@@ -185,6 +189,13 @@ export class LocalSqlite {
     }
     if (!columns("users").has("birth_date"))
       this.database.exec("ALTER TABLE users ADD COLUMN birth_date TEXT");
+    if (!columns("users").has("reference_weight_at"))
+      this.database.exec(
+        readFileSync(
+          join(ROOT, "server/migrations/0009_recognition_weight.sql"),
+          "utf8",
+        ),
+      );
   }
   prepare(sql: string): LocalStatement {
     return new LocalStatement(this.database, sql);

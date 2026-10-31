@@ -50,6 +50,12 @@ eight household users in **Scales → Edit Settings → Users On This Scale**.
 The server waits for that selection before accepting a session, so an unfinished
 import cannot silently erase the scale's roster. The selected users replace its
 roster on every session; age, height, sex and recognition weight come from Users.
+Assigning a reading updates that person's recognition weight from their latest
+usable weigh-in; recognised uploads keep it current too. The roster includes the
+measurement timestamp, so older queued readings do not replace a newer reference.
+The scale receives the update on its next Wi-Fi sync. Recognition happens before
+uploading, so use Complete Setup to sync first, or expect recognition to change
+on the following weigh-in. Heart-rate-only groups do not change the reference.
 Adult profiles within the firmware's body-composition range receive weight,
 body-composition and heart-rate screens; other profiles receive weight only.
 The tested minimal session, summary, screen and feature responses are generated
@@ -83,5 +89,7 @@ and raw groups. `/weights` and the Apple Health Shortcut remain weight-only.
 Migration `0008_measurement_groups.sql` makes stored weight optional and preserves
 existing reading IDs and Health receipts. Local SQLite applies it automatically;
 apply pending D1 migrations before deploying the updated Worker.
+Migration `0009_recognition_weight.sql` tracks the reference measurement time;
+existing assigned readings are picked up when the scale next requests its roster.
 
 See [Cloudflare deployment](cloudflare/README.md) and [developer module map](ts/README.md).

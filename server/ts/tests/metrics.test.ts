@@ -156,6 +156,194 @@ async function harness() {
   };
 }
 
+test("assigning a WBS13 reading updates recognition on the next session without older or non-weight groups rolling it back", async () => {
+  const h = await harness();
+  try {
+    const t = Math.floor(Date.now() / 1000) - 120;
+    const session = ((await (await h.open()).json()) as any).body.sessionid;
+    const send = async (
+      meastime: number,
+      value: number,
+      type = 1,
+      user = "",
+    ) => {
+      const response = await h.post("/measure", {
+        action: "batchstore",
+        sessionid: session,
+        macaddress: MAC,
+        devtype: "1",
+        category: "1",
+        ...(user ? { userid: user } : {}),
+        measuregrps: JSON.stringify({
+          measuregrps: [
+            {
+              meastime,
+              measures: [{ value, type, unit: type === 1 ? -3 : 0 }],
+            },
+          ],
+        }),
+      });
+      assert.equal(response.status, 200);
+      return (await h.db
+        .prepare("SELECT MAX(id) AS id FROM readings")
+        .first<any>())!.id;
+    };
+    const reference = () =>
+      h.db
+        .prepare(
+          "SELECT reference_weight_kg,reference_weight_at FROM users WHERE id=17",
+        )
+        .first<any>();
+    const assigned = async (id: number, user = "17") => {
+      const response = await h.web(
+        `/readings/${id}/assign`,
+        new URLSearchParams({ user_id: user }),
+      );
+      assert.equal(response.status, 303);
+      return response;
+    };
+    const id = await send(t, 64321);
+    assert.equal((await reference()).reference_weight_kg, 80); // Unassigned does not teach anyone.
+    await assigned(id);
+    assert.deepEqual(
+      { ...(await reference()) },
+      {
+        reference_weight_kg: 64.321,
+        reference_weight_at: t,
+      },
+    );
+    let profile = ((await (await h.open()).json()) as any).body.sp.users[0];
+    assert.equal(profile.wt, 64.321);
+    assert.equal(profile.cr, t);
+    for (const [time, value, type] of [
+      [t - 60, 30000, 1], // Historical assignment.
+      [t + 1, 75, 11], // Heart-rate-only group.
+      [0, 90000, 1], // Unusable device clock.
+      [t + 3600, 90000, 1], // Future device clock.
+      [t + 2, 900000, 1], // Outside the user-profile weight range.
+    ])
+      await assigned(await send(time, value, type));
+    assert.deepEqual(
+      { ...(await reference()) },
+      {
+        reference_weight_kg: 64.321,
+        reference_weight_at: t,
+      },
+    );
+    await send(t + 3, 65000, 1, "17"); // Recognised uploads learn too.
+    profile = ((await (await h.open()).json()) as any).body.sp.users[0];
+    assert.equal(profile.wt, 65);
+    assert.equal(profile.cr, t + 3);
+    await send(t - 10, 50000, 1, "17"); // Old upload retry cannot replace it.
+    const wrongUser = await assigned(id, "18");
+    assert.match(wrongUser.headers.get("Location")!, /already/);
+    assert.equal(
+      (await h.db
+        .prepare("SELECT reference_weight_kg FROM users WHERE id=18")
+        .first<any>())!.reference_weight_kg,
+      70,
+    );
+    // Previously assigned readings in an upgraded household are learned without
+    // reassigning or re-uploading them; only the learning metadata is absent.
+    await h.db
+      .prepare(
+        "UPDATE users SET reference_weight_at=NULL,reference_weight_kg=80 WHERE id=17",
+      )
+      .run();
+    profile = ((await (await h.open()).json()) as any).body.sp.users[0];
+    assert.equal(profile.wt, 65);
+    assert.equal(profile.cr, t + 3);
+    const rollbackId = await send(t + 4, 66000);
+    await h.db
+      .prepare(
+        "CREATE TRIGGER fail_reference BEFORE UPDATE ON users BEGIN SELECT RAISE(ABORT,'test storage failure'); END",
+      )
+      .run();
+    await assigned(rollbackId);
+    assert.equal(
+      (await h.db
+        .prepare("SELECT user_id FROM readings WHERE id=?")
+        .bind(rollbackId)
+        .first<any>())!.user_id,
+      null,
+    );
+    assert.equal((await reference()).reference_weight_kg, 65);
+    await h.db.prepare("DROP TRIGGER fail_reference").run();
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("dashboard metric form submissions preserve other users' current selections", async () => {
+  const h = await harness();
+  try {
+    const sessionid = ((await (await h.open()).json()) as any).body.sessionid;
+    for (const userid of ["17", "18"]) {
+      assert.equal(
+        (
+          await h.post("/measure", {
+            action: "batchstore",
+            sessionid,
+            macaddress: MAC,
+            userid,
+            devtype: "1",
+            category: "1",
+            measuregrps: JSON.stringify({
+              measuregrps: [
+                {
+                  meastime: Math.floor(Date.now() / 1000) - 60,
+                  measures: [
+                    { type: 1, value: 80000, unit: -3 },
+                    { type: 8, value: 2000, unit: -2 },
+                    { type: 11, value: 72, unit: 0 },
+                  ],
+                },
+              ],
+            }),
+          })
+        ).status,
+        200,
+      );
+    }
+    let html = await (await h.web("/")).text();
+    // Submit the actual rendered hidden fields and changed selector, as a GET
+    // form does with either auto-submit or the Show button (no JS required).
+    const choose = async (name: string, value: string) => {
+      const form = [
+        ...html.matchAll(
+          /<form method="get" class="metric-picker">([\s\S]*?)<\/form>/g,
+        ),
+      ]
+        .map((m) => m[1])
+        .find((s) => s.includes(`<select name="${name}"`));
+      assert.ok(form);
+      assert.match(form, new RegExp(`<option value="${value}"(?: selected)?>`));
+      const fields = new URLSearchParams(
+        [
+          ...form.matchAll(
+            /<input type="hidden" name="([^"]+)" value="([^"]*)">/g,
+          ),
+        ].map((m) => [m[1], m[2]]),
+      );
+      fields.append(name, value);
+      assert.equal(fields.getAll(name).length, 1);
+      html = await (await h.web(`/?${fields}`)).text();
+      return fields;
+    };
+    await choose("metric_17", "11");
+    const second = await choose("metric_18", "8");
+    assert.equal(second.get("metric_17"), "11");
+    assert.match(html, /72 bpm/);
+    assert.match(html, /20\.00 kg/);
+    const third = await choose("metric_17", "1");
+    assert.equal(third.get("metric_18"), "8");
+    assert.match(html, /80\.00 kg/);
+    assert.match(html, /20\.00 kg/);
+  } finally {
+    h.cleanup();
+  }
+});
+
 test("WBS13 authenticates, receives its local roster every session and stores mixed measurement groups atomically", async () => {
   const h = await harness();
   try {
@@ -291,7 +479,7 @@ test("WBS13 authenticates, receives its local roster every session and stores mi
     const html = await (await h.web("/")).text();
     assert.match(html, /80\.00 kg/);
     assert.match(html, />Heart Rate</);
-    assert.doesNotMatch(html.split('name="metric_18"')[1] ?? "", /Heart Rate/); // Sam has no new metric.
+    assert.doesNotMatch(html, /<select name="metric_18"/); // Sam has no new metric.
     const heart = await (await h.web("/?metric_17=11")).text();
     assert.match(heart, /72 bpm/);
     assert.doesNotMatch(heart, /0\.00 kg/);

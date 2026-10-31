@@ -1,5 +1,6 @@
 /** One HTTP application for Cloudflare Workers and the local Node listener. */
 import { namedMetrics, observedMetrics, storedMeasures } from "./metrics.ts";
+import { refreshRecognitionWeight } from "./recognition.ts";
 import { exportBackup, stageBackup, commitBackup } from "./backup.ts";
 import {
   firmwareObservation,
@@ -2640,14 +2641,17 @@ async function browserPost(
         userId = formInteger(form, "user_id");
       if (!(await one(db, "SELECT id FROM users WHERE id=?", userId)))
         throw new Error("Unknown user");
-      const result = await run(
-        db,
-        "UPDATE readings SET user_id=?,attribution='manual' WHERE id=? AND user_id IS NULL",
-        userId,
-        id,
-      );
+      const [result] = await db.batch([
+        db
+          .prepare(
+            "UPDATE readings SET user_id=?,attribution='manual' WHERE id=? AND user_id IS NULL",
+          )
+          .bind(userId, id),
+        refreshRecognitionWeight(db, userId),
+      ]);
       if (result.meta.changes !== 1)
         throw new Error("Reading is missing or already assigned");
+      await queueRosterEdits(db, userId);
       return go("/readings", "Reading assigned");
     }
     const readingDelete = /^\/readings\/(\d+)\/delete$/.exec(path);

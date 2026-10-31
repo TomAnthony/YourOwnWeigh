@@ -136,12 +136,64 @@ test("older backups with many diagnostic rows remain restorable within the byte 
     await seed(store);
     const backup = await exportBackup(store.asD1());
     backup.sections.sync_audit = Array.from({ length: 26000 }, (_, i) => ({
-      id: i + 1, scale_id: null, endpoint: "once", outcome: "issued",
-      received_at: 1, detail: null,
+      id: i + 1,
+      scale_id: null,
+      endpoint: "once",
+      outcome: "issued",
+      received_at: 1,
+      detail: null,
     }));
-    const preview = await stageBackup(store.asD1(), JSON.stringify(backup), "admin");
+    const preview = await stageBackup(
+      store.asD1(),
+      JSON.stringify(backup),
+      "admin",
+    );
     assert.equal(preview.counts.sync_audit, 0);
     assert.equal(preview.counts.readings, 1);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("recognition measurement time survives backup and older backups default it to null", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-recognition-backup-"));
+  const store = new LocalSqlite(join(dir, "db"));
+  try {
+    await seed(store);
+    await store
+      .prepare("UPDATE users SET reference_weight_at=1793000000 WHERE id=101")
+      .run();
+    const backup = await exportBackup(store.asD1());
+    assert.equal(backup.sections.users[0].reference_weight_at, 1793000000);
+    const invalid = structuredClone(backup);
+    invalid.sections.users[0].reference_weight_at = -1;
+    await assert.rejects(
+      stageBackup(store.asD1(), JSON.stringify(invalid), "admin"),
+      /Invalid user profile/,
+    );
+    for (const legacy of [false, true]) {
+      const copy = structuredClone(backup);
+      if (legacy) delete copy.sections.users[0].reference_weight_at;
+      const stage = await stageBackup(
+        store.asD1(),
+        JSON.stringify(copy),
+        "admin",
+      );
+      await commitBackup(
+        store.asD1(),
+        stage.id,
+        stage.digest,
+        "admin",
+        "replace",
+        false,
+      );
+      assert.equal(
+        (await store
+          .prepare("SELECT reference_weight_at FROM users WHERE id=101")
+          .first<any>())!.reference_weight_at,
+        legacy ? null : 1793000000,
+      );
+    }
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

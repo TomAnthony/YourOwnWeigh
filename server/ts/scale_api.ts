@@ -2,6 +2,10 @@
 import { ws30MD5 } from "./ws30_md5.ts";
 import { validateMetricJson } from "./metrics.ts";
 import {
+  backfillRecognitionWeights,
+  refreshRecognitionWeight,
+} from "./recognition.ts";
+import {
   firmwareObservation,
   sessionFirmware,
 } from "./firmware_observation.ts";
@@ -274,6 +278,7 @@ export async function roster(
       .all<Record<string, any>>();
     if (!results.length || results.length > 8)
       throw new Error("Choose one to eight users for this scale");
+    await backfillRecognitionWeights(env.DB, results);
     return results.map((u) => {
       const age = u.birth_date ? ageFromDOB(u.birth_date) : u.age_years;
       const composition =
@@ -296,7 +301,7 @@ export async function roster(
         sx: u.sex,
         wt: u.reference_weight_kg,
         fm: 3,
-        cr: u.created_at,
+        cr: u.reference_weight_at ?? u.created_at,
         att: 0,
         cs: composition ? "2,1,3" : "2",
       };
@@ -318,6 +323,7 @@ export async function roster(
     .bind(scale.id)
     .all<Record<string, any>>();
   const byId = new Map(results.map((u) => [u.id, u]));
+  await backfillRecognitionWeights(env.DB, results);
   const users = baseline.flatMap((entry) => {
     const user = byId.get(entry.id);
     if (!user) return [entry]; // Not imported locally: keep the scale's person.
@@ -332,6 +338,9 @@ export async function roster(
         agt: user.birth_date ? ageFromDOB(user.birth_date) : user.age_years,
         sx: user.sex,
         wt: user.reference_weight_kg,
+        ...(user.reference_weight_at !== null
+          ? { cr: user.reference_weight_at }
+          : {}),
       },
     ];
   });
@@ -638,14 +647,12 @@ async function fixture(
         device: [],
         user: users.map((u) => ({
           userid: u.id,
-          screens: u.cs
-            .split(",")
-            .map((id, i) => ({
-              id: Number(id),
-              src: 1,
-              embid: Number(id),
-              rk: i + 1,
-            })),
+          screens: u.cs.split(",").map((id, i) => ({
+            id: Number(id),
+            src: 1,
+            embid: Number(id),
+            rk: i + 1,
+          })),
         })),
       };
     }
@@ -1047,6 +1054,8 @@ async function measure(
     ),
   );
   // D1.batch commits all rows together. Never ACK a measure after a partial write.
+  if (userId !== null)
+    statements.push(refreshRecognitionWeight(env.DB, userId));
   await env.DB.batch(statements);
   if (scale.model === "WBS03") {
     return json({
