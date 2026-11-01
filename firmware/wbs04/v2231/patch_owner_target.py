@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""WBS04 2231 owner-target injection — EXPERIMENTAL / UNTESTED ON HARDWARE.
+"""WBS04 2231 owner-target injection — HTTP-only build, tested on a Body Cardio (HTTPS unfinished).
 
 Ported from firmware/wbs06/v1181/patch_owner_target.py. The WBS04 is the same
 compiler build as WBS06 and every site was located statically + emulated
 (see analysis/FINDINGS.md, validate_wbs04.py, emu_wbs04.py), but this builder
-has NOT been emulated end to end or run on a device. Do not flash its output.
+has been emulated and flashed on a Body Cardio over HTTP; the HTTPS variant is unfinished.
 
 Layout: the application is extended by EXTRA bytes at APP_END. The WPP command
 table is relocated to the start of that region and extended with command 0x170;

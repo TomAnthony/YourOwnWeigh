@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline Thumb emulation of the WBS04 owner-target additions. EXPERIMENTAL.
+"""Offline Thumb emulation of the WBS04 owner-target additions.
 
 Ported from firmware/wbs06/v1181/test_owner_target.py. Stock DBLIB/WPP functions
 are replaced with explicit stubs. Exercises the WPP 0x170 handler ABI, lengths,

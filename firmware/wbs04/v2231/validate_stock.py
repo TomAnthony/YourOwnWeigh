@@ -3,7 +3,7 @@
 
 Emits no firmware and no device command. Asserts the pinned source and the exact
 instruction/bytes at every patch site, so the builder can rely on them. Mirror of
-the WBS06 validate_stock.py role. EXPERIMENTAL / UNTESTED ON HARDWARE.
+the WBS06 validate_stock.py role. HTTP-only build, tested on a Body Cardio (HTTPS unfinished).
 """
 from __future__ import annotations
 

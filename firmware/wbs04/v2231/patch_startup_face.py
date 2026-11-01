@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WBS04 startup-face swap (same-size, in-place). EXPERIMENTAL / UNTESTED.
+"""WBS04 startup-face swap (same-size, in-place). Tested on a Body Cardio.
 
 The WBS04 "Hello" boot bitmap is byte-identical to WBS06's, so the approved
 37x26 smiley drops in unchanged. This swaps it and recomputes the application

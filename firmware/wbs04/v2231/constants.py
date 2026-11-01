@@ -3,8 +3,8 @@
 
 Every address is a Thumb VA in the application section, located statically from
 the stock image and cross-checked against the WBS06 v1181 patch. See
-analysis/FINDINGS.md for how each was derived. EXPERIMENTAL / UNTESTED ON
-HARDWARE. No value here has been validated on a device.
+analysis/FINDINGS.md for how each was derived. The HTTP-only build has been
+flashed and verified on a Body Cardio; the HTTPS path is unfinished.
 
 App mapping (same as WBS06): file_off = APP_FILE + VA - APP_VA.
 """

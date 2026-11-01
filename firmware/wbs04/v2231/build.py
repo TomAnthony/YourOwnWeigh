@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build an EXPERIMENTAL WBS04 v100 candidate from hash-pinned stock v2231.
+"""Build the WBS04 v100 candidate from hash-pinned stock v2231.
 
-NOT A RELEASE. This builder has not been emulated end to end or tested on a
-device; its output must never be flashed. It currently applies the owner-target
-injection and the startup-face swap. The HTTPS robustness stages (TLS fragment
+The HTTP-only build has been emulated and flashed on a Body Cardio. It applies
+the owner-target injection and the startup-face swap. The HTTPS robustness stages
+(TLS fragment
 negotiation and bounded HTTP read) still need porting from WBS06.
 
 Usage:
@@ -38,7 +38,7 @@ def main() -> None:
     source = read_pinned(args.source) if args.source else download_source()
     candidate = build(source, http_only=args.http_only)
     digest = hashlib.sha256(candidate).hexdigest()
-    print("*** EXPERIMENTAL WBS04 candidate — NOT validated on hardware, do NOT flash ***")
+    print("*** WBS04 HTTP-only build — flashed and working on a Body Cardio; HTTPS unfinished ***")
     print(f"WBS04 v100 ({'HTTP-only' if args.http_only else 'HTTPS'}): "
           f"{len(candidate):,} bytes; SHA-256 {digest}")
     if args.check_only:

@@ -21,7 +21,7 @@ RELEASES = {
     "WBS06": (127, "419aeafa0ab3a60197dfc6909b27381477498ac3688cd147ae0d675cf5a6b808"),
     "WBS03": (102, "97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a"),
     "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
-    # EXPERIMENTAL / UNTESTED ON HARDWARE — HTTP-only Body Cardio build.
+    # HTTP-only Body Cardio build, flashed and working on hardware; HTTPS pending.
     "WBS04": (100, "a16bc12a14c927f1d08da3037538ed0b888b08a6e892f54a8a68544728864e3f"),
 }
 BLOCKED = {
