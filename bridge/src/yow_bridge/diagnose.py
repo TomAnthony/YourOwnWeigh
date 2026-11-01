@@ -3,6 +3,7 @@
 Examples (with the selected scale in hardware-button setup mode):
     python -m yow_bridge.diagnose --model WBS06 --probe
     python -m yow_bridge.diagnose --model WBS03 --probe --read-configuration
+    python -m yow_bridge.diagnose --model WS50 --probe --read-configuration
     python -m yow_bridge.diagnose --model WBS13 --probe
 
 Scans by default. --probe connects only to the selected --device, or the sole
@@ -17,6 +18,7 @@ import json
 import logging
 import sys
 
+from .models.registry import MODELS
 from .models.session import ScaleSession
 from .transports import backend
 
@@ -70,7 +72,7 @@ async def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", choices=("WBS06", "WBS03", "WBS13"), required=True)
+    parser.add_argument("--model", choices=tuple(MODELS), required=True)
     parser.add_argument("--device", help="Device ID printed by discovery")
     parser.add_argument("--scan-seconds", type=int, default=15)
     parser.add_argument("--probe", action="store_true")

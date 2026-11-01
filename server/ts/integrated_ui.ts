@@ -1,4 +1,5 @@
 /** Household and firmware views; all Bluetooth operations belong to the bridge. */
+import { SCALE_MODELS, scaleModel } from "./models.ts";
 import { escapeHtml as e, hidden, timeLabel } from "./ui.ts";
 import { WEB_APP_VERSION } from "./version.ts";
 type Row = Record<string, any>;
@@ -19,7 +20,7 @@ export function firmwareWorkspace(csrf: string): string {
     <div id="bridge-online" hidden>
       <section id="connect-panel"><div class="section-heading"><h2>Connect</h2><span class="badge" id="connection-state">Disconnected</span></div>
         <p class="hint">Put your scale into setup mode with its hardware button.</p>
-        <div class="action-row"><button id="scan-ble" type="button" title="Find Body WBS06 and Body Smart WBS13 scales using Bluetooth Low Energy.">Scan BLE</button><button id="scan-classic" type="button" title="Find WS-30 scales using Bluetooth Classic.">Scan Classic</button><span id="scan-status" role="status" aria-live="polite"></span></div>
+        <div class="action-row"><button id="scan-ble" type="button" title="Find Body WBS06 and Body Smart WBS13 scales using Bluetooth Low Energy.">Scan BLE</button><button id="scan-classic" type="button" title="Find WS-30 and WS-50 scales using Bluetooth Classic.">Scan Classic</button><span id="scan-status" role="status" aria-live="polite"></span></div>
         <div id="candidates" class="wide"></div>
         <dl id="device-identity" class="identity-grid"></dl>
         <div id="unsupported-firmware" class="unsupported-firmware form-block" hidden>
@@ -34,7 +35,7 @@ export function firmwareWorkspace(csrf: string): string {
       </section>
       <div class="firmware-grid">
         <section id="firmware-panel"><h2>Firmware</h2>
-          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option><option value="WBS13">Body Smart (WBS13)</option><option value="WBS04">Body Cardio (WBS04)</option></select></label>
+          <div class="form-block"><label>Target Model<select id="scale-model">${Object.entries(SCALE_MODELS).map(([v, m]) => `<option value="${v}">${m.label}</option>`).join("")}</select></label>
           <p class="hint">Download stock firmware and generate YourOwnWeigh firmware. Files stay on the computer running the bridge.</p>
           <div class="action-row"><button id="generate-firmware" type="button">Generate Firmware For WBS06</button><label class="text-button file-link">Select Manually<input id="manual-firmware" type="file" accept=".bin" hidden></label></div></div>
           <div id="firmware-info" class="firmware-artifact" hidden></div>
@@ -71,8 +72,8 @@ function editDevice(s: Row, csrf: string, users: Row[]): string {
     <form action="/scales/${e(s.id)}" method="post">${hidden(csrf)}<input type="hidden" name="purpose" value="device_config">
     <label>Name<input name="label" value="${e(s.label)}" maxlength="80" required></label><label>Time Zone${timeZoneSelect("time_zone", s.time_zone || "")}</label>
     ${s.model === "WBS13" ? `<fieldset><legend>Users On This Scale</legend><p>Choose the local users to send on each sync. This replaces the scale’s current roster; Withings import is unavailable for this model.</p>${users.map((u) => `<label><input type="checkbox" name="user_ids" value="${e(u.id)}"${s.userIds?.includes(u.id) ? " checked" : ""}> ${e(u.name)}</label>`).join("") || '<p><a href="/users">Add A User</a> first.</p>'}</fieldset>` : ""}
-    <details class="advanced-settings"><summary>Advanced</summary><dl class="identity-grid"><dt>Last Sync</dt><dd>${s.last_session_at ? timeLabel(s.last_session_at) : "Not Yet Seen"}</dd></dl><p class="hint">Internal protocol settings. The selected time zone supplies clock offsets automatically.</p><div class="field-list">${["WBS03", "WBS13"].includes(s.model) ? "" : advanced.map(([key, label]) => `<label>${label}<input type="number" name="${key}" value="${e(s[key] ?? 0)}"></label>`).join("")}</div>${s.model === "WBS03" ? '<p class="hint">WS-30 retains its internal settings and on-scale users.</p>' : ""}</details>
-    <div class="dialog-actions"><button>Save Settings</button><button class="secondary" type="button" data-close-dialog>Cancel</button></div></form>${s.model === "WBS13" ? "" : `<form action="/users/fetch-withings" method="post" class="modal-secondary-action">${hidden(csrf)}<input type="hidden" name="scale_id" value="${e(s.id)}"><button class="text-button">${s.model !== "WBS03" && !s.settings_ready ? "Finish Device Import" : "Import Users From Withings"}</button></form>`}</dialog>`;
+    <details class="advanced-settings"><summary>Advanced</summary><dl class="identity-grid"><dt>Last Sync</dt><dd>${s.last_session_at ? timeLabel(s.last_session_at) : "Not Yet Seen"}</dd></dl><p class="hint">Internal protocol settings. The selected time zone supplies clock offsets automatically.</p><div class="field-list">${scaleModel(s.model)?.transport === "classic" || s.model === "WBS13" ? "" : advanced.map(([key, label]) => `<label>${label}<input type="number" name="${key}" value="${e(s[key] ?? 0)}"></label>`).join("")}</div>${scaleModel(s.model)?.classicGates ? '<p class="hint">This model retains its internal settings and on-scale users.</p>' : ""}</details>
+    <div class="dialog-actions"><button>Save Settings</button><button class="secondary" type="button" data-close-dialog>Cancel</button></div></form>${s.model === "WBS13" ? "" : `<form action="/users/fetch-withings" method="post" class="modal-secondary-action">${hidden(csrf)}<input type="hidden" name="scale_id" value="${e(s.id)}"><button class="text-button">${!scaleModel(s.model)?.classicGates && !s.settings_ready ? "Finish Device Import" : "Import Users From Withings"}</button></form>`}</dialog>`;
 }
 function firmwareRow(s: Row): string {
   const known = s.firmware_version != null && s.firmware_confirmed_at != null;
@@ -93,8 +94,8 @@ export function scalesWorkspace(
             .map(
               (
                 s,
-              ) => `<section class="scale-card" id="scale-${e(s.id)}"><div class="section-heading"><h2>${e(s.label)}</h2><span class="badge${s.model !== "WBS03" && !s.settings_ready ? " warn" : ""}">${s.model === "WBS03" || s.settings_ready ? "Ready" : s.model === "WBS13" ? "Choose Users" : "Import Incomplete"}</span></div>
-      <table class="scale-details"><tbody><tr><th>Model</th><td>${s.model === "WBS03" ? "Wireless Scale (WBS03 / WS-30)" : s.model === "WBS13" ? "Body Smart (WBS13)" : s.model === "WBS04" ? "Body Cardio (WBS04)" : "Body Scale (WBS06)"}</td></tr><tr><th>MAC</th><td><code>${e(
+              ) => `<section class="scale-card" id="scale-${e(s.id)}"><div class="section-heading"><h2>${e(s.label)}</h2><span class="badge${!scaleModel(s.model)?.classicGates && !s.settings_ready ? " warn" : ""}">${scaleModel(s.model)?.classicGates || s.settings_ready ? "Ready" : s.model === "WBS13" ? "Choose Users" : "Import Incomplete"}</span></div>
+      <table class="scale-details"><tbody><tr><th>Model</th><td>${scaleModel(s.model)?.fullLabel ?? s.model}</td></tr><tr><th>MAC</th><td><code>${e(
         String(s.mac)
           .replace(/(..)(?=.)/g, "$1:")
           .toUpperCase(),

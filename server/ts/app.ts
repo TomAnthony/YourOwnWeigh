@@ -12,12 +12,8 @@ import {
   settingsWorkspace,
   syncPage,
 } from "./integrated_ui.ts";
-import {
-  handleScaleRequest,
-  zoneTriplet,
-  roster,
-  screenIds,
-} from "./scale_api.ts";
+import { scaleModel } from "./models.ts";
+import { handleScaleRequest, zoneTriplet, roster } from "./scale_api.ts";
 import {
   dashboardPage,
   escapeHtml,
@@ -46,6 +42,9 @@ export interface AppEnv {
 const SCALE_PATHS = new Set([
   "/once",
   "/session",
+  "/cgi-bin/once",
+  "/cgi-bin/session",
+  "/cgi-bin/measure",
   "/measure",
   "/v2/screen",
   "/v2/summary",
@@ -462,24 +461,13 @@ function parseDeviceRecord(raw: string): Row {
   if (utf8.encode(raw).length < 1 || utf8.encode(raw).length > 4096)
     throw new Error("Device record must be at most 4 KB");
   const record = parseJson(raw);
-  const isBody =
-    record.format === "YOW-BLE-device-v1" &&
-    record.model === "WBS06" &&
-    record.name === "Body";
-  const isWS30 =
-    record.format === "YOW-Classic-device-v1" &&
-    record.model === "WBS03" &&
-    typeof record.name === "string" &&
-    /WS-?30/i.test(record.name);
-  const isBodySmart =
-    record.format === "YOW-BLE-device-v1" &&
-    record.model === "WBS13" &&
-    record.name === "Body Smart";
-  const isBodyCardio =
-    record.format === "YOW-BLE-device-v1" &&
-    record.model === "WBS04" &&
-    record.name === "Body Cardio";
-  if (!isBody && !isWS30 && !isBodySmart && !isBodyCardio)
+  const model = scaleModel(record.model);
+  if (
+    !model ||
+    record.format !== model.exportFormat ||
+    typeof record.name !== "string" ||
+    !new RegExp(model.namePattern, "i").test(record.name)
+  )
     throw new Error("Unsupported device enrollment record");
   record.mac = canonicalMac(record.mac);
   if (!/^[a-f0-9]{16}$/i.test(record.session_secret ?? ""))
@@ -501,33 +489,29 @@ function parseDeviceRecord(raw: string): Row {
   if (record.captured_at < 1 || record.captured_at > now() + 300)
     throw new Error("Invalid device capture time");
   if (
-    isBody &&
+    model.transport === "ble" &&
+    model.bootloader === 4 &&
     (record.hardware_version !== 0xffffff ||
-      record.bootloader_version !== 4 ||
-      ![1181, 123, 124, 125, 126, 127].includes(record.firmware_version))
+      record.bootloader_version !== model.bootloader ||
+      !model.enrolledFirmware.includes(record.firmware_version))
   ) {
     throw new Error("BLE identity is outside the reviewed WBS06 profile");
   }
   if (
-    isBodySmart &&
+    model.bootloader === 2 &&
     (record.hardware_version !== 0xffffff ||
       record.bootloader_version !== 2 ||
       record.firmware_version !== 100)
   )
     throw new Error("BLE identity is outside the reviewed WBS13 profile");
   if (
-    isBodyCardio &&
-    (record.hardware_version !== 0xffffff ||
-      record.bootloader_version !== 12 ||
-      ![2231, 100, 101, 102].includes(record.firmware_version))
-  )
-    throw new Error("BLE identity is outside the reviewed WBS04 profile");
-  if (
-    isWS30 &&
-    (record.bootloader_version !== 15 ||
-      ![921, 100, 101, 102].includes(record.firmware_version))
+    model.transport === "classic" &&
+    (record.bootloader_version !== model.bootloader ||
+      !model.enrolledFirmware.includes(record.firmware_version))
   ) {
-    throw new Error("Classic identity is outside the reviewed WS-30 profile");
+    throw new Error(
+      `Classic identity is outside the reviewed ${model.label} profile`,
+    );
   }
   if (
     record.wifi_ssid != null &&
@@ -539,12 +523,12 @@ function parseDeviceRecord(raw: string): Row {
     if (
       typeof record.owner_host !== "string" ||
       !new RegExp(
-        `^[a-z0-9.-]{1,${isBodySmart ? 48 : isWS30 ? 59 : 63}}$`,
-        isWS30 ? "" : "i",
+        `^[a-z0-9.-]{1,${model.hostnameLimit}}$`,
+        model.transport === "classic" ? "" : "i",
       ).test(record.owner_host) ||
-      (isWS30
+      (model.transport === "classic"
         ? record.owner_transport !== "http" ||
-          ![100, 101, 102].includes(record.firmware_version)
+          !model.ownerFirmware.includes(record.firmware_version)
         : !["http", "https"].includes(record.owner_transport))
     )
       throw new Error("Invalid owner target");
@@ -1238,7 +1222,7 @@ async function previewProfile(db: D1Database, id: number) {
   return {
     scaleId: id,
     model: scale?.model,
-    settingsReady: scale?.model === "WBS03" || scale?.settings_ready === 1,
+    settingsReady: scaleModel(scale?.model)?.classicGates || scale?.settings_ready === 1,
     digest: stored?.digest,
     users:
       stored?.capture
@@ -1262,7 +1246,7 @@ async function enrollDevice(
 ): Promise<Row> {
   label =
     label.trim() ||
-    `${record.model === "WBS03" ? "WS-30" : record.model === "WBS13" ? "Body Smart" : record.model === "WBS04" ? "Body Cardio" : "Body"} ${record.mac.slice(-4)}`;
+    `${scaleModel(record.model)?.label.replace(/ \(.*\)$/, "") ?? record.model} ${record.mac.slice(-4)}`;
   if (label.length > 80) throw new Error("Scale label is too long");
   if (zone) zoneTriplet(zone);
   const existing = await one(
@@ -2335,7 +2319,7 @@ async function browserPost(
               )
               .bind(label, zone || "UTC", id),
           ]);
-        } else if (scale.model === "WBS03") {
+        } else if (scaleModel(scale.model)?.classicGates) {
           await run(
             db,
             "UPDATE scales SET label=?,time_zone=? WHERE id=?",
@@ -2411,9 +2395,9 @@ async function browserPost(
             throw new Error("Invalid IANA time zone");
           zoneTriplet(timeZone);
         }
-        if (scale.model === "WBS03") {
+        if (scaleModel(scale.model)?.classicGates) {
           if (formText(form, "roster_enabled") === "1")
-            throw new Error("WS-30 roster delivery is not implemented yet");
+            throw new Error("On-scale roster delivery is not implemented for this model");
           await run(
             db,
             "UPDATE scales SET label=?,time_zone=? WHERE id=?",
@@ -2423,7 +2407,7 @@ async function browserPost(
           );
           return go(
             `/scales#scale-${id}`,
-            "WS-30 name and time zone saved; other on-scale settings are retained",
+            "Name and time zone saved; other on-scale settings are retained",
           );
         }
         const goff = formInteger(form, "goff"),

@@ -2,6 +2,7 @@
 
 import asyncio
 
+from .models.registry import MODELS, spec
 from .models.session import ScaleSession, timestamp
 
 
@@ -10,7 +11,7 @@ _DEMO_NAME = {"WBS06": "Demo Body", "WBS03": "Demo WS-30", "WBS04": "Demo Body C
 
 class Backend:
     def __init__(self, model):
-        if model not in ("WBS06", "WBS03", "WBS04"):
+        if model not in MODELS:
             raise ValueError("Unsupported model")
         self.model, self.stop = model, asyncio.Event()
 
@@ -19,7 +20,7 @@ class Backend:
         found(
             dict(
                 deviceId="demo-scale",
-                name=_DEMO_NAME[self.model],
+                name=f"Demo {spec(self.model).display}",
                 rssi=-45,
                 modelCandidate=self.model,
                 presence="seen",
@@ -49,15 +50,15 @@ class Session(ScaleSession):
         self.firmware = _INSTALLED.get(model, _SIM_PROFILE[model]["firmware"])
 
     async def probe(self):
-        p = _SIM_PROFILE[self.model]
+        s = spec(self.model)
         self.identity = dict(
-            name=p["name"],
+            name=s.display,
             model=self.model,
-            mac=p["mac"],
+            mac="02" + "0" * 8 + self.model[-2:],
             secret="0123456789abcdef",
-            hardwareVersion=0xFFFFFF,
-            firmwareVersion=self.firmware,
-            bootloaderVersion=p["boot"],
+            hardwareVersion=0xFFFFFF if s.hardware is not None else 0,
+            firmwareVersion=s.owner_firmware[-1],
+            bootloaderVersion=s.bootloader,
             rescueVersion=0xFFFFFF,
             identifier="simulation",
             observedAt=timestamp(),

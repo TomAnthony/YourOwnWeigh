@@ -1,4 +1,4 @@
-"""Application commands for WBS06/WBS13 (BLE) and WS-30/WBS03 (RFCOMM).
+"""Application commands for WBS06/WBS13 (BLE) and WS-30/WBS03, WS-50 (RFCOMM).
 
 Transport objects provide write(bytes), disconnect(), max_write, and deliver raw
 bytes through receive(). No Wi-Fi password or device secret is logged here.
@@ -13,6 +13,7 @@ import secrets
 import struct
 from datetime import UTC, datetime
 
+from .registry import MODELS, classic_model_for, spec
 from .protocol import (
     Decoder,
     ProtocolError,
@@ -57,14 +58,15 @@ def hostname(value, limit):
 
 class ScaleSession:
     def __init__(self, model, transport):
-        if model not in ("WBS06", "WBS03", "WBS13", "WBS04"):
+        if model not in MODELS:
             raise ValueError("Unsupported model")
         self.model, self.transport = model, transport
+        self.spec = spec(model)
         self.serial_reset = asyncio.Event()
-        self.decoder = SerialDecoder(self.serial_reset.set) if model == "WBS03" else Decoder()
+        self.decoder = SerialDecoder(self.serial_reset.set) if self.spec.transport == "classic" else Decoder()
         self.inbox = asyncio.Queue()
         self.identity = None
-        self.mtu = 252 if model == "WBS03" else 20
+        self.mtu = self.spec.mtu
         self.ota_started = False
 
     def receive(self, data):
@@ -78,7 +80,7 @@ class ScaleSession:
         self.inbox.put_nowait(ConnectionError("Scale disconnected"))
 
     async def send(self, data):
-        packet = serial_packet(data) if self.model == "WBS03" else data
+        packet = serial_packet(data) if self.spec.transport == "classic" else data
         if len(packet) > self.transport.max_write:
             raise ProtocolError("Command exceeds the Bluetooth write limit")
         await self.transport.write(packet)
@@ -106,7 +108,7 @@ class ScaleSession:
         packet = encode(command, payload)
         # The proven BLE path sends each control frame in one ATT write. Do
         # not assume the scale reassembles arbitrarily split control frames.
-        if self.model != "WBS03" and len(packet) > self.mtu:
+        if self.spec.transport != "classic" and len(packet) > self.mtu:
             raise ProtocolError("Control frame exceeds the scale's negotiated MTU")
         await self.send(packet)
         return await self.wait(command, timeout)
@@ -116,7 +118,7 @@ class ScaleSession:
         # successful probe's write capabilities on the same connection.
         self.identity = None
         payload = tlv(0x12A, b"\x01\x01\x00\x00\x00\x01")
-        if self.model == "WBS03":
+        if self.spec.transport == "classic":
             self.serial_reset.clear()
             await self.transport.write(b"\x01\x00")
             try:
@@ -129,7 +131,7 @@ class ScaleSession:
             try:
                 reply = await self.request(0x101, payload, CLASSIC_PROBE_FIRST_TIMEOUT)
             except TimeoutError:
-                LOG.info("WS-30 first identity probe timed out; retrying the read-only probe once")
+                LOG.info("Classic first identity probe timed out; retrying the read-only probe once")
                 # The first reset/probe can race startup on WS-30 (also seen in
                 # the native app). Repeat ONLY this read-only identity request,
                 # on the existing stream, not reset/OTA/provisioning commands.
@@ -146,20 +148,22 @@ class ScaleSession:
         # identity and service profile, never another device on the same UUIDs.
         modern = getattr(self.transport, "wpp_profile", None) == "WBS13"
         cardio = getattr(self.transport, "wpp_profile", None) == "WBS04"
-        if self.model != "WBS03" and modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF:
-            self.model = "WBS13"
-        # Body Cardio (WBS04): its own WPP service (…0006…); never enables the
-        # WBS06/WBS13 OTA paths. Boot 12, hardware 0xFFFFFF, probe name below.
-        if self.model != "WBS03" and cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF:
-            self.model = "WBS04"
-        supported = (
-            modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF
-            if self.model == "WBS13" else
-            cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF
-            if self.model == "WBS04" else
-            name == "Body" and boot == 4 and identity["hardwareVersion"] == 0xFFFFFF
-            if self.model == "WBS06"
-            else boot == 15 and bool(re.search(r"WS-?30", name, re.IGNORECASE))
+        if self.spec.transport != "classic" and modern:
+            self.model, self.spec = "WBS13", MODELS["WBS13"]
+        if self.spec.transport != "classic" and cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF:
+            self.model, self.spec = "WBS04", MODELS["WBS04"]
+        classic = self.spec.transport == "classic"
+        if classic:
+            # Normalize the candidate model from the observed probe identity.
+            matched = classic_model_for(boot, name)
+            if matched:
+                self.model, self.spec = matched, MODELS[matched]
+        s = self.spec
+        supported = bool(
+            s.name.search(name)
+            and boot == s.bootloader
+            and (s.hardware is None or identity["hardwareVersion"] == s.hardware)
+            and (not s.require_modern or modern)
         )
         supported = supported and (self.model in ("WBS13", "WBS04") or not getattr(self.transport, "identity_only", False))
         # A factory-new Body Smart returned a valid identity with an empty
@@ -169,7 +173,7 @@ class ScaleSession:
         secret = identity["secret"]
         if not re.fullmatch(r"[0-9a-fA-F]{16}", secret) and ((supported and self.model != "WBS13") or secret):
             raise ProtocolError("Probe contains an invalid device identity")
-        if self.model != "WBS03" and supported:
+        if not classic and supported:
             reply = await self.request(0x155, tlv(0x990, struct.pack(">H", 512)))
             if self.model == "WBS13":
                 # Original v1311 handler: 0x990 maximum packet, 0x992 ATT MTU
@@ -213,12 +217,12 @@ class ScaleSession:
             )
         version = self.identity["firmwareVersion"]
         if self.model == "WBS13":
-            owner = version in (100, 101, 102, 103)
+            owner = version in self.spec.owner_firmware
             return dict(
-                ota=version in (1311, 100, 101, 102, 103),
+                ota=version in self.spec.known_firmware,
                 serverRead=owner, serverWrite=owner,
                 serverTransports=["http", "https"] if owner else [],
-                hostnameMaxBytes=48 if owner else 0,
+                hostnameMaxBytes=self.spec.hostname_limit if owner else 0,
                 wifiWrite=owner, wifiRead="ssid-only" if owner else False,
                 wifiConnectionResult="device-reported" if owner else False,
                 completeSetup=owner, setTime=owner,
@@ -246,14 +250,14 @@ class ScaleSession:
                 otaDestinationRead=False,
             )
         body = self.model == "WBS06"
-        owner = version in ((123, 124, 125, 126, 127) if body else (100, 101, 102))
-        known = version in ((1181, 123, 124, 125, 126, 127) if body else (921, 100, 101, 102))
+        owner = version in self.spec.owner_firmware
+        known = version in self.spec.known_firmware
         return dict(
             ota=known,
             serverRead=owner,
             serverWrite=owner,
             serverTransports=["http", "https"] if body and version >= 124 else ["http"],
-            hostnameMaxBytes=48 if body else 59,
+            hostnameMaxBytes=self.spec.hostname_limit if owner else (59 if not body else 48),
             wifiWrite=True,
             wifiRead="ssid-only",
             wifiConnectionResult="device-reported",
@@ -276,9 +280,7 @@ class ScaleSession:
             raise ProtocolError("WBS13 import requires supported YOW firmware and a device secret")
         i = self.identity
         return dict(
-            format="YOW-BLE-device-v1"
-            if self.model in ("WBS06", "WBS13", "WBS04")
-            else "YOW-Classic-device-v1",
+            format=self.spec.export_format,
             model=self.model,
             name=i["name"],
             mac=i["mac"],
@@ -305,7 +307,7 @@ class ScaleSession:
     async def read_server(self):
         if not self.capabilities()["serverRead"]:
             return dict(supported=False)
-        if self.model == "WBS03":
+        if self.spec.transport == "classic":
             data = await self.owner(bytes([1, 0, 0]))
             if len(data) < 4 or data[:2] != b"\x01\x00" or len(data) != 4 + data[3]:
                 raise ProtocolError("Invalid owner target response")
@@ -357,7 +359,7 @@ class ScaleSession:
         if transport not in caps["serverTransports"]:
             raise ValueError("This firmware does not support the requested transport")
         raw = host.encode("ascii")
-        if self.model == "WBS03":
+        if self.spec.transport == "classic":
             reply = await self.owner(bytes([1, 1, len(raw)]) + raw)
             if reply != bytes([1, 1, 0, len(raw)]) + raw:
                 raise ProtocolError("Owner target write rejected")
@@ -468,21 +470,21 @@ class ScaleSession:
         if len(reply.payload) != 4 or reply.payload[0] != 0:
             raise ProtocolError("OTA START rejected or malformed")
         offered, batch = struct.unpack_from(">HB", reply.payload, 1)
-        maximum = 252 if self.model == "WBS03" else 512
+        maximum = self.spec.mtu if self.spec.transport == "classic" else 512
         if not 1 <= offered <= maximum or not 1 <= batch <= 32:
             raise ProtocolError("Invalid OTA packet/window size")
         if self.model == "WBS13" and batch != 15:
             raise ProtocolError("WBS13 OTA window differs from the reviewed BLE protocol")
-        if self.model == "WBS03" and offered + 4 > self.transport.max_write:
-            # WS-30's START reply specifies the packet size; silently reducing
-            # it would change the acknowledgment window compared with Swift.
-            raise ProtocolError("WS-30 OTA packet exceeds the RFCOMM MTU")
+        if self.spec.transport == "classic" and offered + 4 > self.transport.max_write:
+            # The classic START reply specifies the packet size; silently reducing
+            # it would change the acknowledgment window compared with the vendor app.
+            raise ProtocolError("Classic OTA packet exceeds the RFCOMM MTU")
         size = min(
             offered,
-            self.transport.max_write - (4 if self.model == "WBS03" else 0),
+            self.transport.max_write - (4 if self.spec.transport == "classic" else 0),
             self.mtu,
         )
-        if self.model != "WBS03" and size < 20:
+        if self.spec.transport != "classic" and size < 20:
             raise ProtocolError("BLE negotiated write size is too small")
         sent, packets = 0, 0
         while sent < len(image):
@@ -495,7 +497,7 @@ class ScaleSession:
                 ack = await self.wait(0x402, 60)
                 if ack.payload:
                     raise ProtocolError("Invalid OTA progress acknowledgment")
-                await asyncio.sleep(0.005 if self.model == "WBS03" else 0.03)
+                await asyncio.sleep(0.005 if self.spec.transport == "classic" else 0.03)
         # A final full batch may emit progress before the COMPLETE response.
         async with asyncio.timeout(90):
             while True:
