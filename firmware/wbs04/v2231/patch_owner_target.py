@@ -179,7 +179,8 @@ def build(original: bytes, *, http_only: bool = False) -> tuple[bytes, dict]:
 
     meta = {"table_va": TABLE_NEW_VA, "handler_va": handler_va,
             "url_va": CODE_VA + syms["owner_url_target"],
-            "wrapper_va": wrapper_va, "code_size": len(code),
+            "wrapper_va": wrapper_va, "wrapper_size": len(wrapper),
+            "code_size": len(code),
             "yow_version": C.YOW_VERSION, "http_only": http_only}
     if not http_only:
         meta["tls_va"] = CODE_VA + syms["owner_tls_accept_ed25519_leaf"]
