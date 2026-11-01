@@ -8,12 +8,11 @@ TLS stages (certificate-check bypass + common signature schemes, fragment
 negotiation, and a larger receive buffer). On the HTTP path the TLS code is never
 exercised.
 
-EXPERIMENTAL: the HTTPS addresses were verified by disassembly against the
-byte-identical WBS06 firmware, but HTTPS has NOT been tested on real WBS04
-hardware. Like WBS06, it does not authenticate the server certificate (fine
-behind your own reverse proxy). WBS04 has no UART recovery, so flash at your own
-risk — the dual-slot design keeps a vanilla firmware in the other bank, so a
-failed sync is recoverable by reflashing.
+The HTTPS path is verified on a real Body Cardio (flashed, configured for
+HTTPS, weigh-in synced over HTTPS). Like WBS06 it does not authenticate the
+server certificate (fine behind your own reverse proxy). WBS04 has no UART
+recovery, so the dual-slot design keeps a vanilla firmware in the other bank and
+a bad write is recoverable by reflashing.
 
 Usage:
   build.py --source PATH_TO_STOCK_wbs04_2231.bin [--output OUT.bin] [--check-only]
@@ -52,10 +51,10 @@ def main() -> None:
     source = read_pinned(args.source) if args.source else download_source()
     candidate = build(source)
     digest = hashlib.sha256(candidate).hexdigest()
-    print("*** WBS04 firmware (HTTP + HTTPS) — HTTP flashed and working on a Body")
-    print("    Cardio; the HTTPS path is EXPERIMENTAL and NOT hardware-tested.")
-    print("    Addresses verified against WBS06; server cert is not authenticated.")
-    print("    No UART recovery on WBS04; the other flash bank keeps stock firmware.")
+    print("*** WBS04 firmware (HTTP + HTTPS) — verified on a real Body Cardio")
+    print("    (HTTP and HTTPS both synced end to end). Server cert is not")
+    print("    authenticated (use behind your own proxy). No UART recovery on")
+    print("    WBS04; the other flash bank keeps stock firmware.")
     print(f"WBS04 v{C.YOW_VERSION}: {len(candidate):,} bytes; SHA-256 {digest}")
     if args.check_only:
         print("Built in memory; no file written.")

@@ -1,17 +1,16 @@
-# WBS04 (Body Cardio) v2231 → v100 — one firmware, HTTP + HTTPS
+# WBS04 (Body Cardio) v2231 → v101 — one firmware, HTTP + HTTPS
 
 > **Status:** a single firmware that speaks **both HTTP and HTTPS** — you pick
-> the transport in the dashboard's Configure step. The **HTTP** path has been
-> flashed and runs end to end on a real Body Cardio (adopts the configured
-> server over Wi-Fi and uploads weight, body composition, heart rate, pulse wave
-> velocity and vascular age). The **HTTPS** path is **EXPERIMENTAL**: its
-> addresses were verified by disassembly against the byte-identical WBS06
-> firmware, but it has not yet been tested on real WBS04 hardware. Like WBS06 it
-> does not authenticate the server certificate (intended for your own reverse
-> proxy). There is still no UART recovery for this model, so the dual-slot design
-> is the only safety net — flash at your own risk and keep a vanilla bank (YOW
-> uses a low version so the other slot is preserved); a failed HTTPS sync is
-> recoverable by reflashing.
+> the transport in the dashboard's Configure step. Both paths are verified on a
+> real Body Cardio: it adopts the configured server over Wi-Fi and uploads
+> weight, body composition, heart rate, pulse wave velocity and vascular age.
+> The **HTTPS** path was flashed, configured for HTTPS, and a weigh-in synced
+> over HTTPS to the server end to end. Its patches were ported from the
+> byte-identical WBS06 firmware. Like WBS06 it does not authenticate the server
+> certificate (intended for your own reverse proxy). There is still no UART
+> recovery for this model, so the dual-slot design is the safety net — keep a
+> vanilla bank (YOW uses a low version so the other slot is preserved); a bad
+> write is recoverable by reflashing.
 
 The WBS04 is the same compiler build as WBS06 v1181, so nearly every WBS06 patch
 site relocates cleanly. Addresses were located statically, verified with
@@ -34,7 +33,7 @@ and the recipe round-trips through the bridge's `firmware.apply()`/`inspect()`.
 | **HTTPS: `patch_tls` (cert bypass + common sig schemes)** | ✅ ported from WBS06; byte-identical dispatcher, addresses verified |
 | **HTTPS: `patch_tls_fragments`** | ✅ ported; 3 patches byte-identical to WBS06 |
 | **HTTPS: `patch_tls_http_read` + `tls_http_read.c`** | ✅ ported; hook/resume/fns located, build self-validates |
-| **Hardware test (HTTPS path)** | ❌ not yet tested on a real WBS04 |
+| **Hardware test (HTTPS path)** | ✅ flashed; https Configure + weigh-in synced over HTTPS |
 | UART recovery | ❌ WBS04 pads unknown; dual-slot is the only safety net |
 
 ## Key deviation from WBS06
