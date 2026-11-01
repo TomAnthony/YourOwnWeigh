@@ -23,7 +23,7 @@ RELEASES = {
     "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
     # Body Cardio: one firmware speaking HTTP + HTTPS (transport chosen at
     # configure time). HTTP flashed and working; the HTTPS path is experimental.
-    "WBS04": (100, "cb18fa109f800fbebcf460cf9af32c908dd4c84cd79f8c83c1c2aaecca5bd56d"),
+    "WBS04": (101, "1596278ebdf4ba09bc22e7b519087add8f2e5548f630fad235cbdb2f24681a6d"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",

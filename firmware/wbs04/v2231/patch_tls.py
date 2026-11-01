@@ -99,9 +99,16 @@ def recalculate_crcs(result: bytearray) -> None:
 
 
 def build(original: bytes) -> tuple[bytes, dict]:
-    base, meta = build_owner(original, http_only=True)
+    # Build the owner with https allowed (MAX_TRANSPORT=1 so the scale accepts a
+    # transport=https owner write). That owner variant also wires the Ed25519
+    # leaf-accept hook, which we do not use — the dispatcher bypass below handles
+    # certificate acceptance — so revert that hook to stock, exactly as WBS06's
+    # patch_tls does with its earlier experiment.
+    base, meta = build_owner(original, http_only=False)
     result = bytearray(base)
     ao = C.app_offset
+    result[ao(C.TLS_VERIFY_HOOK_VA):ao(C.TLS_VERIFY_HOOK_VA) + 4] = \
+        original[ao(C.TLS_VERIFY_HOOK_VA):ao(C.TLS_VERIFY_HOOK_VA) + 4]
 
     # Signature-scheme table goes right after the owner wrapper, before the
     # app-expansion trailer (which holds the version word).
@@ -159,6 +166,8 @@ def _validate(candidate: bytes, base: bytes, writer: bytes, table_va: int) -> No
     allowed = set()
     allowed.update(range(ao(table_va), ao(table_va) + len(SIGNATURE_SCHEMES)))
     allowed.update(range(ao(C.WRITER_VA), ao(C.WRITER_VA) + WRITER_LEN))
+    # the Ed25519 verify hook reverted to stock (see build())
+    allowed.update(range(ao(C.TLS_VERIFY_HOOK_VA), ao(C.TLS_VERIFY_HOOK_VA) + 4))
     for va, (length, _e, _r) in TLS_PATCHES.items():
         allowed.update(range(ao(va), ao(va) + length))
     for offset in (0x14, 0x28, 0x3C, 0x80, len(candidate) - 4):

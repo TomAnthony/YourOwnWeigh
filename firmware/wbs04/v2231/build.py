@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the WBS04 v100 firmware from hash-pinned stock v2231.
+"""Build the WBS04 YOW firmware from hash-pinned stock v2231.
 
 ONE firmware that speaks both HTTP and HTTPS — you choose the transport later in
 the dashboard's Configure step (there is no separate HTTP-only or HTTPS-only
@@ -24,6 +24,7 @@ import argparse
 import hashlib
 from pathlib import Path
 
+import constants as C
 from patch_startup_face import FACE, build as add_face
 from patch_tls import build as build_tls
 from patch_tls_fragments import build as build_fragments
@@ -55,7 +56,7 @@ def main() -> None:
     print("    Cardio; the HTTPS path is EXPERIMENTAL and NOT hardware-tested.")
     print("    Addresses verified against WBS06; server cert is not authenticated.")
     print("    No UART recovery on WBS04; the other flash bank keeps stock firmware.")
-    print(f"WBS04 v100: {len(candidate):,} bytes; SHA-256 {digest}")
+    print(f"WBS04 v{C.YOW_VERSION}: {len(candidate):,} bytes; SHA-256 {digest}")
     if args.check_only:
         print("Built in memory; no file written.")
         return

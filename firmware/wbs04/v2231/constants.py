@@ -24,7 +24,7 @@ APP_END = 0x880BC  # file offset of section 2 start == end of application bytes
 
 # Proposed YOW version. Kept far below 2231 so the OTHER firmware bank retains a
 # vanilla Withings image (dual-slot "lowest version wins"; see README FAQ).
-YOW_VERSION = 100
+YOW_VERSION = 101
 
 # --- stock helper functions used by the owner injection (thumb VAs) ---
 DB_GET = 0x2E33D        # db_get(uint16 item, void* buf, uint16 len)
