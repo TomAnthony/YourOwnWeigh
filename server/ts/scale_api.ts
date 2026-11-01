@@ -636,7 +636,11 @@ async function fixture(
     return error(400, "unsupported action");
   const scale = await requireDeviceSession(env, params, endpoint);
   if (!scale) return error(403, "invalid session");
-  if (scale.model === "WBS13") {
+  if (scale.model === "WBS13" || scale.model === "WBS04") {
+    // WBS04 (Body Cardio) builds its screen config dynamically from the roster
+    // `cs` screen IDs, like WBS13, instead of a captured Withings fixture. This
+    // supplies the heart-rate / PWV / vascular-age screens so the scale runs the
+    // full measurement sequence rather than weight only.
     let body: object = endpoint === "summary" ? [] : {};
     if (endpoint === "screen") {
       const users = (await roster(env, scale)) as Array<{
