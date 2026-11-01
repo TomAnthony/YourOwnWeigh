@@ -1,6 +1,7 @@
 # Owner-specific firmware, captures, research notes, logs, and credentials.
 /local/
 /server/data/
+/docker/data/
 /server/.venv/
 /.venv/
 /.venv-workers/

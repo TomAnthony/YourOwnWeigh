@@ -14,8 +14,12 @@ RUN npm ci --omit=dev
 COPY server ./server
 COPY connectors ./connectors
 
-RUN mkdir -p /data
+# Run as the base image's unprivileged `node` user (uid 1000), never root
+# (server/ts/local.ts says so, and it avoids root-owned files in the bind mount).
+# The bind-mounted ./data on the host must be writable by uid 1000 — see README.
+RUN mkdir -p /data && chown node:node /data
 VOLUME /data
+USER node
 
 # One plain-HTTP listener. YOW_TRUST_PROXY=1 lets it bind 0.0.0.0 inside the
 # container (no TLS here — the reverse proxy in front terminates it) and makes

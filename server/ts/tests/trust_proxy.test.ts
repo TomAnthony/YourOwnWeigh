@@ -22,14 +22,20 @@ test("peer address trusts X-Forwarded-For only when YOW_TRUST_PROXY is set", () 
     peerAddress("198.51.100.4", "203.0.113.7", false),
     "198.51.100.4",
   );
-  // With trust, the forwarded last hop is used regardless of the peer address —
-  // a containerised proxy reaches Node from a Docker bridge IP, not loopback.
+  // With trust, the forwarded last hop is used when the immediate peer is
+  // loopback or private — a containerised proxy reaches Node from a Docker
+  // bridge IP (172.16/12), not loopback.
   assert.equal(peerAddress("127.0.0.1", "203.0.113.7", true), "203.0.113.7");
   assert.equal(
     peerAddress("::ffff:127.0.0.1", "2001:db8::1", true),
     "2001:db8::1",
   );
   assert.equal(peerAddress("172.18.0.1", "203.0.113.7", true), "203.0.113.7");
+  assert.equal(peerAddress("10.1.2.3", "203.0.113.7", true), "203.0.113.7");
+  assert.equal(peerAddress("fd00::1", "203.0.113.7", true), "203.0.113.7");
+  // A direct public peer is never trusted, so it cannot spoof X-Forwarded-For.
+  assert.equal(peerAddress("203.0.113.1", "10.0.0.5", true), "203.0.113.1");
+  assert.equal(peerAddress("2001:db8::9", "10.0.0.5", true), "2001:db8::9");
   assert.equal(
     peerAddress("127.0.0.1", "1.1.1.1, 203.0.113.7", true),
     "203.0.113.7",

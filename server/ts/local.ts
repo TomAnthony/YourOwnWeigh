@@ -71,19 +71,49 @@ export function assets(): AppEnv["ASSETS"] {
     },
   };
 }
+/** A loopback or private/link-local address: either the local reverse proxy or
+ * the Docker bridge gateway it reaches Node through. A public peer is never one
+ * of these, so a request arriving directly from the internet cannot spoof
+ * X-Forwarded-For to poison the login limits. */
+function isTrustedProxyPeer(ip: string): boolean {
+  const v4 = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+  if (isIP(v4) === 4) {
+    const o = v4.split(".").map(Number);
+    if (
+      o.length !== 4 ||
+      o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)
+    )
+      return false;
+    return (
+      o[0] === 127 || // loopback
+      o[0] === 10 || // 10.0.0.0/8
+      (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || // 172.16.0.0/12 (Docker)
+      (o[0] === 192 && o[1] === 168) || // 192.168.0.0/16
+      (o[0] === 169 && o[1] === 254) // 169.254.0.0/16 link-local
+    );
+  }
+  const l = ip.toLowerCase();
+  return (
+    l === "::1" || // loopback
+    /^f[cd]/.test(l) || // fc00::/7 unique-local
+    /^fe[89ab]/.test(l) // fe80::/10 link-local
+  );
+}
 /** Client address used for failed-password limits. With YOW_TRUST_PROXY=1 the
  * container is reachable only through the operator's reverse proxy (its port is
  * published to loopback), and that proxy may reach Node from a Docker bridge
- * address rather than loopback, so trust the last hop of its X-Forwarded-For.
- * Without it every request from a same-host proxy looks identical, so one
- * stranger could lock everyone out. */
+ * address rather than loopback. Trust the last hop of its X-Forwarded-For, but
+ * only when the immediate peer is itself loopback/private — never from a public
+ * address — so one stranger cannot lock everyone out and a direct internet
+ * client cannot spoof the header. */
 export function peerAddress(
   remote: string | undefined,
   forwarded: string | string[] | undefined,
   trustProxy: boolean,
 ): string {
   const peer = remote ?? "unknown";
-  if (!trustProxy || forwarded === undefined) return peer;
+  if (!trustProxy || forwarded === undefined || !isTrustedProxyPeer(peer))
+    return peer;
   const last = (Array.isArray(forwarded) ? forwarded.join(",") : forwarded)
     .split(",")
     .pop()!
