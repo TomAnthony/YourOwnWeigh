@@ -4,7 +4,7 @@
  * input.
  */
 export type ScaleTransport = "ble" | "classic";
-export type SessionHash = "md5" | "sha1" | "sha256";
+export type SessionHash = "md5" | "sha256";
 
 export interface ScaleModel {
   transport: ScaleTransport;
@@ -78,9 +78,9 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
   },
   WS50: {
     transport: "classic",
-    hash: "sha1",
-    hashParam: { name: "method", value: "sha" },
-    hashLength: 40,
+    hash: "md5",
+    hashParam: null,
+    hashLength: 32,
     label: "WS-50 (WS50)",
     fullLabel: "Smart Body Analyzer (WS50)",
     namePattern: "WS-?50",

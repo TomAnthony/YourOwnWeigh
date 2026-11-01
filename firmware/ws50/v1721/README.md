@@ -56,8 +56,10 @@ Thumb entry points, not interior instructions.
 - HTTP only, fixed port 80; hostname **1–59 ASCII bytes**.
 - Native owner URLs use `/once`, `/session` and `/measure` when the saved host
   has no path prefix. The local server also accepts the `/cgi-bin/*` aliases.
-  Legacy authentication remains SHA-1 with `method=sha`; the vendor-profile
-  importer is separate and unchanged.
+  An owner v1022 packet capture confirmed 32-hex MD5 authentication with no
+  `method` or `hashmethod` marker, using `<auth>:<secret>:<once>`. The server
+  hashes `auth` exactly as sent; canonicalization is only for device lookup.
+  The vendor-profile importer is separate and unchanged.
 - The injected code (1,340 bytes) lives in a 4 KiB expansion appended after the
   app section; the pinned runtime version word stays at its original address.
 

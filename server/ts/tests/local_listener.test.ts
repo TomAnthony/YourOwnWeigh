@@ -41,10 +41,18 @@ test("scale-only HTTP listener ingests WS50 CGI uploads without exposing applica
     assert.ok(challengeBody && typeof challengeBody === "object" && "once" in challengeBody);
     const nonce = challengeBody.once;
     assert.ok(typeof nonce === "string");
-    const opened = await post("/cgi-bin/session?appname=WS50&appliver=1021", {
-      action: "new", auth: mac, method: "sha", keyonly: "1", currentfw: "1021",
-      hash: createHash("sha1").update(`${mac}:${secret}:${nonce}`).digest("hex"),
-    });
+    // Sanitized native WS50 v1022 request shape from an owner packet capture:
+    // root /session, MD5, no query parameters or hash-method marker.
+    const sessionFields = {
+      action: "new", auth: mac, currentfw: "1022", mfgid: "0",
+      batterylvl: "64", duration: "300", zreboot: "1", trigger: "weather", enrich: "t",
+      hash: createHash("md5").update(`${mac}:${secret}:${nonce}`).digest("hex"),
+    };
+    const wrongHash = (sessionFields.hash[0] === "0" ? "1" : "0") + sessionFields.hash.slice(1);
+    const invalid = await post("/session", { ...sessionFields, hash: wrongHash });
+    assert.equal(invalid.status, 403);
+    await invalid.arrayBuffer();
+    const opened = await post("/session", sessionFields);
     assert.equal(opened.status, 200);
     const openedResult: unknown = await opened.json();
     assert.ok(openedResult && typeof openedResult === "object" && "body" in openedResult);
@@ -52,6 +60,9 @@ test("scale-only HTTP listener ingests WS50 CGI uploads without exposing applica
     assert.ok(openedBody && typeof openedBody === "object" && "sessionid" in openedBody);
     const session = openedBody.sessionid;
     assert.ok(typeof session === "string");
+    const replay = await post("/cgi-bin/session", sessionFields);
+    assert.equal(replay.status, 403);
+    await replay.arrayBuffer();
     const timestamp = Math.floor(Date.now() / 1000);
     const measures = [
       { type: 1, value: 72350, unit: -3 },

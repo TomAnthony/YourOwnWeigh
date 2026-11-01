@@ -78,16 +78,6 @@ async function sha256(value: string): Promise<string> {
   );
 }
 
-/** SHA-1 hex, solely for the WS-50's existing device challenge protocol. */
-async function sha1Hex(value: string): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-1", encoder.encode(value)),
-  );
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
-}
-
 function sameHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let difference = 0;
@@ -439,9 +429,7 @@ async function newSession(
       const expected =
         model?.hash === "md5"
           ? ws30MD5(material)
-          : model?.hash === "sha1"
-            ? await sha1Hex(material)
-            : await sha256(material);
+          : await sha256(material);
       if (sameHex(expected, submitted.toLowerCase())) {
         matched = challenge.nonce;
         break;
