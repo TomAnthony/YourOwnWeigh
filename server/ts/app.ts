@@ -1182,6 +1182,19 @@ async function fetchAndApplyProfile(
         .bind(...values, scale.id),
     );
   }
+  if (scale.model === "WBS04" && !scale.settings_ready) {
+    // Body Cardio uses a WBS13-style minimal session: Withings supplies the
+    // user roster but not WBS06 screen/summary display fixtures, so mark the
+    // import complete without them. (Whether the scale accepts a fixture-free
+    // session is confirmed on hardware after flashing.)
+    statements.push(
+      db
+        .prepare(
+          "UPDATE scales SET settings_ready=1 WHERE id=? AND settings_ready=0",
+        )
+        .bind(scale.id),
+    );
+  }
   // Existing IDs mean the same person. Associate them without replacing edits.
   for (const [rank, user] of capture.sp!.users.entries())
     statements.push(

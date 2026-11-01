@@ -446,7 +446,7 @@ async function newSession(
   if (
     !ws30 &&
     (!scale.settings_ready ||
-      (scale.model !== "WBS13" &&
+      (!["WBS13", "WBS04"].includes(scale.model) &&
         (!scale.screen_response || !scale.summary_response)))
   ) {
     await env.DB.batch([
