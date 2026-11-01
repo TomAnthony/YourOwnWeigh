@@ -39,8 +39,7 @@ The below models are currently supported. Pull Requests to add more models are v
 | Body (**WBS06**) | v1181 | v127 | BLE | |
 | Wireless Scale (**WS-30 / WBS03**) | v921 | v102 | Classic | Scales->YOW is HTTP only |
 
-You can check your model under the batteries. “Body Smart” and other Withings models are not all the same.
-
+You can check your model under the batteries. Not all models with the same name (e.g. "Body Smart") are equivalent to one another, so please check the actual model number.
 
 ## Supported Platforms
 
@@ -164,3 +163,15 @@ I'm time poor, doing this for fun in my spare time, and wanted to actually relea
 - The firmware currently supports hostnames over a limited length. WBS06 is max 48 chars. WS-30 is  59 chars.
 - WBS06 HTTPS encrypts traffic but does not authenticate the server certificate or `CertificateVerify` signature. WS-30 uses plaintext HTTP. The bridge, browser and Withings migration client use ordinary verified HTTPS for remote services.
 - Save original firmware/device backups and a recovery plan before OTA. Bluetooth does not read full firmware or expose/control the destination bank. An inactive bank can still supply radio resources; do not erase it casually. [UART recovery tools](tools/README.md).
+
+## Related Projects
+
+There are a few other community projects that relate to this
+
+- [withings-local](https://github.com/pierosavi/withings-local) - supports syncing Withings scales to Homekit over Bluetooth. Doesn't require updating the firmware.
+- [esphome-withings-wpp](https://github.com/NavistAuLabs/esphome-withings-wpp) - allows syncing Withings scales via an ESPHome sensor. Doesn't require updating the firmware.
+- [openScale](https://github.com/oliexdev/openScale) - Open-source weight and body metrics tracker, with support for Bluetooth scales, but no Withings support currently.
+
+## Legal
+
+Withings is a trademark of Withings SA. This project is not affiliated with, endorsed by or supported by Withings. Use it at your own risk.
