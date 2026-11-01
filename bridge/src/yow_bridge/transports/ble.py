@@ -18,7 +18,27 @@ CHARACTERISTIC = "00000024-5749-5448-0007-000000000000"
 # the WBS13 commands; this service must never enable WBS06 OTA.
 IDENTITY_SERVICE = "00000020-5749-5448-0010-000000000000"
 IDENTITY_CHARACTERISTIC = "00000024-5749-5448-0010-000000000000"
-WPP_SERVICES = ((SERVICE, CHARACTERISTIC), (IDENTITY_SERVICE, IDENTITY_CHARACTERISTIC))
+# Body+/WBS05 (issue #7) and Body Cardio/WBS04 (issue #8) answer the same WPP
+# identity request on their own service/characteristic pairs. Listed as
+# identity-only: they never enable the WBS06/WBS13 OTA or command paths. The
+# 0005 pair is confirmed on WBS05 hardware, the 0006 pair on WBS04 hardware.
+WBS05_SERVICE = "00000020-5749-5448-0005-000000000000"
+WBS05_CHARACTERISTIC = "00000024-5749-5448-0005-000000000000"
+WBS04_SERVICE = "00000020-5749-5448-0006-000000000000"
+WBS04_CHARACTERISTIC = "00000024-5749-5448-0006-000000000000"
+WPP_SERVICES = (
+    (SERVICE, CHARACTERISTIC),
+    (IDENTITY_SERVICE, IDENTITY_CHARACTERISTIC),
+    (WBS05_SERVICE, WBS05_CHARACTERISTIC),
+    (WBS04_SERVICE, WBS04_CHARACTERISTIC),
+)
+# Each pair's profile; only SERVICE (WBS06) is a full-command transport.
+WPP_PROFILES = {
+    CHARACTERISTIC: "WBS06",
+    IDENTITY_CHARACTERISTIC: "WBS13",
+    WBS05_CHARACTERISTIC: "WBS05",
+    WBS04_CHARACTERISTIC: "WBS04",
+}
 
 
 def scale_candidate(name, service_uuids):
@@ -102,7 +122,7 @@ class Backend:
                 )
             transport.characteristic = characteristic
             transport.identity_only = characteristic_uuid != CHARACTERISTIC
-            transport.wpp_profile = "WBS13" if transport.identity_only else "WBS06"
+            transport.wpp_profile = WPP_PROFILES[characteristic_uuid]
             # Keep each WPP control frame within one ATT write on both OSes.
             if bluez:
                 # Establish LE before Pair. WBS06 has a dual-mode radio: asking
