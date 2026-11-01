@@ -1,5 +1,5 @@
-/** Offline WS-30 import regression using a sanitized real upstream response.
- * Runs against a disposable SQLite database; no device or Withings connection.
+/** Offline vendor compatibility and WS-30 import regressions using a sanitized
+ * WS-30 upstream response; WS50 replay does not establish live compatibility.
  * Optional YOW_WITHINGS_TEST_CAPTURE selects a private baseline for a local check.
  */
 import test from "node:test";
@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { captureWithingsSession } from "../withings_protocol.ts";
+import { captureWithings } from "../withings_capture.ts";
 import { handleApp, type AppEnv } from "../app.ts";
 import { LocalSqlite } from "../sqlite.ts";
 
@@ -19,29 +19,37 @@ const baseline = JSON.parse(readFileSync(process.env.YOW_WITHINGS_TEST_CAPTURE ?
 // A private baseline may be tested without copying its real identity into the DB.
 baseline.mac = MAC;
 
-test("WS-30 capture reuses the shared WBS06 upstream exchange without losing zero/empty fields", async () => {
+for (const [model, firmware] of [["WBS03", 102], ["WS50", 1021]] as const) {
+test(`${model} vendor capture keeps compatibility authentication independent of owner firmware`, async (t) => {
   const calls: string[] = [];
-  const raw = await captureWithingsSession({ model: "WBS03", mac: MAC, secret: SECRET }, async (path, fields) => {
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin, "https://scalews.withings.net");
+    assert.deepEqual(Object.fromEntries(url.searchParams), {
+      appliver: "1181", appname: "WBS06", apppfm: "device",
+    });
+    const path = url.pathname.slice(1);
     calls.push(path);
-    const form = new URLSearchParams(fields);
-    if (path === "once") return { status: 0, body: { once: "synthetic-challenge" } };
+    const form = new URLSearchParams(String(init?.body));
+    if (path === "once") return Response.json({ status: 0, body: { once: "synthetic-challenge" } });
     if (path === "session") {
       assert.equal(form.get("auth"), MAC);
       assert.equal(form.get("hashmethod"), "sha256");
       assert.equal(form.get("hash"), createHash("sha256").update(`${MAC}:${SECRET}:synthetic-challenge`).digest("hex"));
-      // These upstream compatibility fields are independent of WS-30's MD5
-      // owner-server sessions and its actual running firmware version.
+      // Vendor compatibility parameters are independent of the model's
+      // owner-server authentication and its observed running firmware.
       assert.equal(form.get("currentfw"), "1181");
       assert.equal(form.get("mfgid"), "0");
       assert.equal(form.get("feature_mask"), "0");
-      return { status: 0, body: { sessionid: "synthetic-session", ctp: baseline.ctp,
-        ind: baseline.ind, sp: baseline.sp, syp: { utc: 1, blc: "https://example.invalid/unused.bin" } } };
+      return Response.json({ status: 0, body: { sessionid: "synthetic-session", ctp: baseline.ctp,
+        ind: baseline.ind, sp: baseline.sp, syp: { utc: 1, blc: "https://example.invalid/unused.bin" } } });
     }
     assert.equal(form.get("sessionid"), "synthetic-session");
-    if (path === "v2/screen") return baseline.screen_response;
-    if (path === "v2/summary") return baseline.summary_response;
+    if (path === "v2/screen") return Response.json(baseline.screen_response);
+    if (path === "v2/summary") return Response.json(baseline.summary_response);
     throw new Error(`Unexpected upstream call: ${path}`);
   });
+  const raw = await captureWithings({ model, mac: MAC, secret: SECRET, ble_firmware_version: firmware });
   assert.deepEqual(calls, ["once", "session", "v2/screen", "v2/summary"]);
   const capture = JSON.parse(raw);
   assert.deepEqual(capture, baseline);
@@ -52,6 +60,7 @@ test("WS-30 capture reuses the shared WBS06 upstream exchange without losing zer
   assert.equal(capture.syp, undefined);
   assert.equal(raw.includes(SECRET), false);
 });
+}
 
 test("WS-30 captured users pass the current importer and leave the minimal v101 sync path intact", async () => {
   const directory = mkdtempSync(join(tmpdir(), "yow-ws30-import-"));

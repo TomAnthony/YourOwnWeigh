@@ -6,16 +6,13 @@ analysis of the hash-pinned stock image:
 
 - Same legacy container: u32 size/type/version header, 4 section records at
   0x30, app at 0x84 (vector 0x20010000), bootloader record version 12.
-- App section ends at 0x755dc; a 4 KiB expansion is inserted at APP_END-4 so
-  the pinned runtime version word stays at its original address, matching the
-  WS-30 approach (CODE_VA = 0x4000 + APP_END - 0x84 + 4 after expansion).
-- WPP command dispatcher at 0x1e534; the unknown-command fallthrough at
-  0x1e5be (b 0x1e6b0) is redirected to the injected owner dispatcher.
-- URL host copy: 0x26c50 loads the RAM host buffer pointer global (0x1fff081f)
-  and strcpy's it into the request buffer; redirect that load site's BL to the
-  injected owner_url_target_copy.
-- Reply path: FRAG_SEND 0x55ac2(ctx+0x200, frame, len), RESET_TX via the
-  dispatcher tail's 0x22eec pump.
+- App section ends at 0x755dc; a 4 KiB expansion follows the pinned runtime
+  version word. Injected code starts at VA 0x79558.
+- The call at 0x1e746 in the WPP dispatcher (0x1e5b8) is redirected to the
+  owner dispatcher, which forwards other commands to the original 0x1efa4.
+- Setup DNS item-2 lookup at 0x1eeec and HTTP host copy at 0x26cd8 both read
+  the owner hostname from the current DBLIB bank.
+- Replies use RESET_TX 0x1e121 and FRAG_SEND 0x55b47(ctx+0x200, frame, len).
 """
 from __future__ import annotations
 
@@ -48,9 +45,11 @@ APP_END = 0x755DC
 # 0x4000, so va2off(va) = va - 0x4000 + 0x84)
 DISPATCH_FALLTHROUGH = 0x1E746       # bl #0x1efa4 (preimage 00f02dfc)
 URL_HOST_COPY = 0x26CD8               # bl #0x631e6 (preimage 3cf085fa)
+DNS_HOST_GET = 0x1EEEC                # bl #0x2a928 (default-bank getter)
 
 DISPATCH_PREIMAGE = bytes.fromhex("00f02dfc")       # bl 0x1efa4 at 0x1e746
 URL_HOST_COPY_PREIMAGE = bytes.fromhex("3cf085fa")  # bl 0x631e6 at 0x26cd8
+DNS_HOST_GET_PREIMAGE = bytes.fromhex("0bf01cfd")
 
 SOURCE_C = Path(__file__).with_name("owner_patch.c")
 
@@ -115,11 +114,13 @@ def source_bytes(path: Path | None) -> bytes:
     if hashlib.sha1(b).hexdigest() != SOURCE_SHA1:
         raise ValueError("source SHA-1 differs from the vendor-offered image")
     validate_container(b, version=1721)
-    # Patch preimages: dispatcher fallthrough and URL host-copy call.
+    # All hooks are calls in the hash-pinned application.
     if b[va2off(DISPATCH_FALLTHROUGH):va2off(DISPATCH_FALLTHROUGH) + 4] != DISPATCH_PREIMAGE:
         raise ValueError("WS-50 dispatcher preimage differs")
     if b[va2off(URL_HOST_COPY):va2off(URL_HOST_COPY) + 4] != URL_HOST_COPY_PREIMAGE:
         raise ValueError("WS-50 URL host-copy preimage differs")
+    if b[va2off(DNS_HOST_GET):va2off(DNS_HOST_GET) + 4] != DNS_HOST_GET_PREIMAGE:
+        raise ValueError("WS-50 DNS host-get preimage differs")
     return b
 
 
@@ -152,7 +153,9 @@ def elf_text_and_symbols(path: Path) -> tuple[bytes, dict[str, int]]:
             name, value, _size, _info, _other, index = struct.unpack_from("<IIIBBH", b, off)
             if index == code_idx and name:
                 symbols[cstring(strings, name)] = value & ~1
-    if "owner_wpp_dispatch" not in symbols or "owner_url_target_copy" not in symbols:
+    if any(name not in symbols for name in (
+        "owner_wpp_dispatch", "owner_url_target_copy", "owner_target_read"
+    )):
         raise ValueError("compiled owner entry points missing")
     return code, symbols
 
@@ -173,7 +176,7 @@ def thumb_bl(source: int, target: int) -> bytes:
     if d & 1 or not -(1 << 24) <= d < (1 << 24):
         raise ValueError("Thumb BL out of range")
     s = (d >> 24) & 1
-    imm10 = (d >> 14) & 0x3FF
+    imm10 = (d >> 12) & 0x3FF
     imm11 = (d >> 1) & 0x7FF
     i1, i2 = (d >> 23) & 1, (d >> 22) & 1
     j1, j2 = (~(i1 ^ s)) & 1, (~(i2 ^ s)) & 1
@@ -213,12 +216,16 @@ def build(stock: bytes) -> tuple[bytes, dict]:
                        code + bytes(EXTRA - len(code)) + stock[APP_END:])
     dispatch_va = CODE_VA + symbols["owner_wpp_dispatch"]
     url_va = CODE_VA + symbols["owner_url_target_copy"]
+    dns_va = CODE_VA + symbols["owner_target_read"]
     # Hook 1: unknown-command handler call -> owner dispatcher (BL32).
     result[va2off(DISPATCH_FALLTHROUGH):va2off(DISPATCH_FALLTHROUGH) + 4] = \
         thumb_bl(DISPATCH_FALLTHROUGH, dispatch_va)
-    # Hook 2: URL host copy -> owner override of the RAM host buffer.
+    # Hook 2: HTTP URL host copy -> current-bank owner hostname.
     result[va2off(URL_HOST_COPY):va2off(URL_HOST_COPY) + 4] = \
         thumb_bl(URL_HOST_COPY, url_va)
+    # Hook 3: setup DNS lookup must use the same persisted hostname as HTTP.
+    result[va2off(DNS_HOST_GET):va2off(DNS_HOST_GET) + 4] = \
+        thumb_bl(DNS_HOST_GET, dns_va)
     # Container bookkeeping: new size/version words and shifted sections.
     put32(result, 0, len(result))
     put32(result, 8, VERSION)
@@ -251,7 +258,8 @@ def build(stock: bytes) -> tuple[bytes, dict]:
                 "bootloaderVersion": 12, "ownerConfigProtocolVersion": 2,
                 "sourceSha256": SOURCE_HASH,
                 "codeSize": len(code),
-                "ownerCommandAddress": hex(dispatch_va), "ownerUrlAddress": hex(url_va)}
+                "ownerCommandAddress": hex(dispatch_va), "ownerUrlAddress": hex(url_va),
+                "ownerDnsAddress": hex(dns_va)}
     if "owner_reply_read" in symbols:
         metadata["ownerReplyCallbacks"] = {
             name: hex(CODE_VA + symbols[name])

@@ -46,13 +46,15 @@ async function seed(db: LocalSqlite, scaleId = 7, readingId = 11) {
     .bind(scaleId)
     .run();
 }
-test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge deduplicates", async () => {
+test("WS50 backup merge remaps linked readings, preserves local edits/receipts, and replace restores IDs", async () => {
   const dir = mkdtempSync(join(tmpdir(), "yow-backup-")),
     source = new LocalSqlite(join(dir, "source.db")),
     target = new LocalSqlite(join(dir, "target.db"));
   try {
     await seed(source);
     await seed(target, 2, 3);
+    await source.prepare("UPDATE scales SET model='WS50'").run();
+    await target.prepare("UPDATE scales SET model='WS50'").run();
     await target
       .prepare("UPDATE users SET name='Edited Locally' WHERE id=101")
       .run();
@@ -61,6 +63,15 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
     assert.deepEqual(backup.sections.sync_audit, []);
     assert.equal(backup.accessSettings.length, 1);
     assert.equal("admin_sessions" in backup.sections, false);
+    assert.equal(backup.sections.scales[0].model, "WS50");
+    for (const model of ["UNKNOWN", "__proto__", "constructor"]) {
+      const invalid = structuredClone(backup);
+      invalid.sections.scales[0].model = model;
+      await assert.rejects(
+        stageBackup(target.asD1(), JSON.stringify(invalid), "admin"),
+        /Invalid or duplicate scale identity/,
+      );
+    }
     for (let n = 0; n < 2; n++) {
       const preview = await stageBackup(
         target.asD1(),
@@ -76,6 +87,16 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
         false,
       );
     }
+    assert.deepEqual(
+      {
+        ...(await target
+          .prepare(
+            "SELECT scales.model,readings.scale_id,readings.id,readings.weight_value FROM readings JOIN scales ON scales.id=readings.scale_id",
+          )
+          .first()),
+      },
+      { model: "WS50", scale_id: 2, id: 3, weight_value: 70000 },
+    );
     assert.equal(
       (await target.prepare("SELECT count(*) n FROM readings").first<any>()).n,
       1,
@@ -118,6 +139,16 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
     assert.equal(
       (await target.prepare("SELECT name FROM users").first<any>()).name,
       "Alex",
+    );
+    assert.deepEqual(
+      {
+        ...(await target
+          .prepare(
+            "SELECT scales.model,readings.scale_id,readings.id,readings.weight_value FROM readings JOIN scales ON scales.id=readings.scale_id",
+          )
+          .first()),
+      },
+      { model: "WS50", scale_id: 7, id: 11, weight_value: 70000 },
     );
     await assert.rejects(
       commitBackup(target.asD1(), p.id, p.digest, "admin", "replace", true),

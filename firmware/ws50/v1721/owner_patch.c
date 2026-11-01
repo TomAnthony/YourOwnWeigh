@@ -1,27 +1,40 @@
 /* WS-50 (wbs02) v1721-only owner HTTP patch, linked at 0x79558.
  *
- * Two hooks redirect the factory server target to the owner hostname stored
- * in the RAM buffer at 0x1fff081f (same role as the WS-30 DBLIB item 2):
- *   - 0x1e642: WPP dispatcher unknown-command fallthrough -> owner_wpp_dispatch
- *   - 0x26cd8: strcpy(dst, host) inside the URL host-copy helper ->
- *              owner_url_target_copy, which substitutes the owner host.
- * Reply path uses FRAG_SEND 0x55ac2 on ctx+0x200, matching the WS-30 build.
+ * The owner hostname lives in current-bank DBLIB item 2, as on the WS-30.
+ * Hooks replace the WPP fallback call at 0x1e746, the setup DNS item-2
+ * getter at 0x1eeec and the HTTP URL host copy at 0x26cd8.
+ * Reply helpers and database entry points below apply only to stock v1721.
  */
 #include <stdint.h>
 
-/* RAM buffer holding the owner host (factory default: the wbs02-ws string). */
-#define OWNER_HOST ((const char *)0x1fff081f)
+typedef struct {
+    uint16_t item;
+    uint16_t capacity;
+    int32_t cursor;
+    uint16_t value_length;
+    uint16_t found;
+} db_query_t;
+typedef int (*db_query_open_t)(db_query_t *, uint16_t, uint16_t);
+typedef int (*db_query_read_t)(db_query_t *, void *);
+typedef int (*db_query_close_t)(db_query_t *);
+typedef int (*db_set_t)(uint16_t, const void *, uint16_t);
 
 typedef int (*frag_send_t)(void *, const void *, uint32_t);
 typedef void (*reset_tx_t)(void *);
 typedef int (*fallback_t)(void *, uint16_t, const uint8_t *, uint32_t);
 
-#define FRAG_SEND ((frag_send_t)0x55ac2)
-#define RESET_TX ((reset_tx_t)0x22eec)
-/* Original unknown-command path at 0x1e734 (true VA of the fallback head). */
-#define STOCK_FALLBACK ((fallback_t)0x1e734)
+/* Query reads use the current-bank pointer at 0x1fff1988; the stock
+ * item getter at 0x2a929 reads the default-bank context instead. */
+#define DB_QUERY_OPEN ((db_query_open_t)0x2a1a1)
+#define DB_QUERY_READ ((db_query_read_t)0x2a235)
+#define DB_QUERY_CLOSE ((db_query_close_t)0x2a20d)
+#define DB_SET ((db_set_t)0x2a509)
+#define FRAG_SEND ((frag_send_t)0x55b47)
+#define RESET_TX ((reset_tx_t)0x1e121)
+#define STOCK_FALLBACK ((fallback_t)0x1efa5)
 
 static __attribute__((always_inline)) inline int valid_host(const uint8_t *s, uint32_t n) {
+    if (n < 1 || n > 59) return 0;
     for (uint32_t i = 0; i < n; ++i) {
         uint8_t c = s[i];
         int ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
@@ -32,21 +45,31 @@ static __attribute__((always_inline)) inline int valid_host(const uint8_t *s, ui
 }
 
 static __attribute__((always_inline)) inline uint8_t load_host(char *dst) {
-    const char *src = OWNER_HOST;
+    for (uint32_t i = 0; i < 64; ++i) dst[i] = 0;
+    db_query_t query;
+    if (DB_QUERY_OPEN(&query, 2, 64) != 0) return 0;
+    int result = DB_QUERY_READ(&query, dst);
+    int close_result = DB_QUERY_CLOSE(&query);
+    if (result != 0 || close_result != 0) { dst[0] = 0; return 0; }
     uint8_t n = 0;
-    while (src[n] && n < 63) { dst[n] = src[n]; ++n; }
-    dst[n] = 0;
+    while (n < 60 && dst[n]) ++n;
+    if (!valid_host((const uint8_t *)dst, n) || dst[n] != 0) {
+        dst[0] = 0;
+        return 0;
+    }
     return n;
 }
 
 __attribute__((section(".text.owner"), used, noinline))
+int owner_target_read(uint16_t item, char *dst, uint16_t capacity) {
+    if (item != 2 || capacity != 64) return 1;
+    return load_host(dst) ? 0 : 1;
+}
+
+__attribute__((section(".text.owner"), used, noinline))
 char *owner_url_target_copy(char *dst, const char *unused_source) {
-    /* The stock helper strcpy's the factory host global into dst; substitute
-     * the owner buffer instead. Return dst like strcpy would. */
     (void)unused_source;
-    char *p = dst;
-    const char *src = OWNER_HOST;
-    while ((*p++ = *src++) != 0) {}
+    load_host(dst);
     return dst;
 }
 
@@ -94,16 +117,17 @@ int owner_wpp_dispatch(void *context, uint16_t command,
     } else if (arg[5] == 1 && length >= 8 &&
                (uint32_t)arg[6] + 7 == length &&
                valid_host(arg + 7, arg[6])) {
-        /* Persist the owner host into the RAM buffer the URL helper reads. */
-        char *dst = (char *)OWNER_HOST;
+        char host[64];
         uint8_t requested = arg[6];
-        for (uint32_t i = 0; i < requested; ++i) dst[i] = (char)arg[7 + i];
-        dst[requested] = 0;
-        char check[64];
-        uint8_t read_len = load_host(check);
-        int saved = read_len == requested;
-        for (uint32_t i = 0; saved && i < requested; ++i)
-            if ((uint8_t)check[i] != arg[7 + i]) saved = 0;
+        for (uint32_t i = 0; i < requested; ++i) host[i] = (char)arg[7 + i];
+        host[requested] = 0;
+        int saved = DB_SET(2, host, (uint16_t)(requested + 1)) == 0;
+        if (saved) {
+            uint8_t read_len = load_host(host);
+            saved = read_len == requested;
+            for (uint32_t i = 0; saved && i < requested; ++i)
+                if ((uint8_t)host[i] != arg[7 + i]) saved = 0;
+        }
         if (saved)
             __asm__ volatile ("ldr %0, =0xA1B2C3D5" : "=r"(callback));
         else

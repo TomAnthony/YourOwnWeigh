@@ -6,7 +6,6 @@ import {
   lookupWithingsFirmware,
   type FirmwareLookupIdentity,
 } from "./withings_protocol.ts";
-import { scaleModel } from "./models.ts";
 export const WITHINGS_ORIGIN = "https://scalews.withings.net";
 const MAX_RESPONSE = 2_000_000;
 
@@ -14,12 +13,11 @@ export async function withingsPost(
   path: string,
   fields: string,
   fetcher: typeof fetch = fetch,
-  query: { appName: string; currentFirmware: number; origin?: string; cgiBin?: boolean } = {
+  query: { appName: string; currentFirmware: number } = {
     appName: "WBS06",
     currentFirmware: 1181,
   },
 ): Promise<Record<string, any>> {
-  const base = query.cgiBin ? "cgi-bin" : "";
   if (!["once", "session", "v2/screen", "v2/summary"].includes(path))
     throw new Error("Unsupported migration endpoint");
   if (
@@ -30,7 +28,7 @@ export async function withingsPost(
   )
     throw new Error("Invalid scale model or firmware version");
   const response = await fetcher(
-    `${query.origin ?? WITHINGS_ORIGIN}/${base ? base + "/" : ""}${path}?appliver=${query.currentFirmware}&appname=${query.appName}&apppfm=device`,
+    `${WITHINGS_ORIGIN}/${path}?appliver=${query.currentFirmware}&appname=${query.appName}&apppfm=device`,
     {
       method: "POST",
       redirect: "error",
@@ -90,7 +88,6 @@ export async function withingsPost(
   }
   return document;
 }
-export const captureWithings = (scale: Record<string, any>): Promise<string> => {
   // Identify the session as the actual model so the query string (appname /
   // appliver) and the session form agree. Body Cardio ships stock 2231.
   const query =
@@ -100,7 +97,6 @@ export const captureWithings = (scale: Record<string, any>): Promise<string> => 
   return captureWithingsSession(scale, (path, fields) =>
     withingsPost(path, fields, fetch, query),
   );
-};
 
 export const firmwareOffer = (identity: Record<string, any>) =>
   lookupWithingsFirmware(identity as FirmwareLookupIdentity, (path, fields) =>

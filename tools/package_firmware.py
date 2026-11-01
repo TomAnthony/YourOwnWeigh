@@ -45,6 +45,21 @@ PROFILES = {
         hostLimit=59,
         maxSize=0xE0000,
     ),
+    "WS50": dict(
+        version=1021,
+        stockVersion=1721,
+        bootloader=12,
+        sourceSize=752448,
+        outputSize=756544,
+        expansionAt=0x755DC,
+        expansionSize=4096,
+        sourceSha256="4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86",
+        outputSha256="ae01bf525bb39add7e8bcee655a92a5f6de691088514f1b1454cd41b0833d9e2",
+        url="http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin",
+        ownerProtocol=2,
+        hostLimit=59,
+        maxSize=0xE0000,
+    ),
     "WBS13": dict(
         version=103,
         stockVersion=1311,
@@ -130,6 +145,7 @@ def package(model, source, target):
     p["releaseSource"] = {
         "WBS06": "firmware/wbs06/v1181/build.py",
         "WBS03": "firmware/ws30/v921/build.py",
+        "WS50": "firmware/ws50/v1721/build.py",
         "WBS13": "firmware/wbs13/v1311/build.py",
     }[model]
     return p

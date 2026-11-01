@@ -82,6 +82,10 @@ Use Settings → Export Database. The versioned JSON includes household users, d
 
 Import uploads to bounded temporary staging (10 MiB / 25,000 rows), shows counts, then commits one SQLite transaction or D1 batch. Merge adds missing data, deduplicates readings and keeps existing user edits. Replace is explicit. Current passwords remain unless Restore Access Settings is selected; restoring them signs out sessions and revokes the bridge. Invalid rows or final-batch failures roll back. Staging expires after 15 minutes.
 
+Backup import validates device models against the shared model registry,
+including WS-50 (`WS50`). Merge and Replace retain its linked readings and raw
+metrics; unknown model identifiers are rejected.
+
 The Sync API uses HTTP Basic `reader:password`, sharing the admin password by default. It accepts a numeric user ID or unique three-letter name. See Sync in the app and [Apple Health](../connectors/Apple%20Health/README.md). Unknown users and errors return JSON. Readings API access covers all household users; the requested user is a filter, not an authorization boundary.
 
 Use [`/api/users/USER/readings`](../contracts/readings/v1/README.md) for all metrics
