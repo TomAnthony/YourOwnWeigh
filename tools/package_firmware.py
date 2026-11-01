@@ -46,7 +46,7 @@ PROFILES = {
         maxSize=0xE0000,
     ),
     "WS50": dict(
-        version=1021,
+        version=1022,
         stockVersion=1721,
         bootloader=12,
         sourceSize=752448,
@@ -54,7 +54,7 @@ PROFILES = {
         expansionAt=0x755DC,
         expansionSize=4096,
         sourceSha256="4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86",
-        outputSha256="ae01bf525bb39add7e8bcee655a92a5f6de691088514f1b1454cd41b0833d9e2",
+        outputSha256="a6db2b8855c726ac9a54066ce4aeb5f36dda0becdae631db4cccef090c24d4a9",
         url="http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin",
         ownerProtocol=2,
         hostLimit=59,

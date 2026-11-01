@@ -14,6 +14,13 @@ The dashboard is `http://127.0.0.1:8080`. Setup creates a token under `local/dat
 
 For scale traffic, install [Caddy](https://caddyserver.com/docs/install) and run the generated Caddyfile using the command setup prints. Only the Caddy process needs access to ports 80/443; Node and Python must not run as root. Stop foreground processes with Ctrl-C. The generated proxy sends only scale traffic to the separate listener, whose route allowlist excludes admin, bootstrap, Sync and bridge paths. No firewall or router changes are made by setup.
 
+The scale-only listener accepts WS-50 POST requests to `/cgi-bin/once`,
+`/cgi-bin/session` and `/cgi-bin/measure`, alongside the other models' existing
+routes. This does not expose arbitrary `/cgi-bin/*` paths. WS-50 uses HTTP on
+port 80. After updating the server code, restart the Node process using your
+existing launch command/environment; the generated Caddy configuration needs
+no change for these routes.
+
 Caddy's [`tls internal`](https://caddyserver.com/docs/caddyfile/directives/tls) supplies the scale-facing certificate, with automatic trust-store installation disabled. The patched WBS06 does not authenticate that certificate. This does not make it trusted for iPhone or browser access. The local recipe deliberately uses loopback for administration; use a properly trusted HTTPS application endpoint for remote clients.
 
 For dashboard-only development, `npm run server:start` needs no certificate or proxy. Use the main [README](../README.md) for enrollment, firmware and Wi-Fi setup.

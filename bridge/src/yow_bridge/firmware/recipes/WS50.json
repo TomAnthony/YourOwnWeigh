@@ -1,5 +1,5 @@
 {
-  "version": 1021,
+  "version": 1022,
   "stockVersion": 1721,
   "bootloader": 12,
   "sourceSize": 752448,
@@ -7,7 +7,7 @@
   "expansionAt": 480732,
   "expansionSize": 4096,
   "sourceSha256": "4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86",
-  "outputSha256": "ae01bf525bb39add7e8bcee655a92a5f6de691088514f1b1454cd41b0833d9e2",
+  "outputSha256": "a6db2b8855c726ac9a54066ce4aeb5f36dda0becdae631db4cccef090c24d4a9",
   "url": "http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin",
   "ownerProtocol": 2,
   "hostLimit": 59,
@@ -26,7 +26,7 @@
       "offset": 8,
       "length": 2,
       "beforeSha256": "bf64bd828dc3e53fd9f3c65945592bcb8de93722eaea0f82060d41fa6b94e627",
-      "hex": "fd03"
+      "hex": "fe03"
     },
     {
       "offset": 17,
@@ -38,7 +38,7 @@
       "offset": 20,
       "length": 4,
       "beforeSha256": "7ccde88cc46f89e716482e2ebb2e4142d1e438759b665cc24c7d15d31d3d144b",
-      "hex": "c9e76800"
+      "hex": "0f6a3f6b"
     },
     {
       "offset": 25,
@@ -56,7 +56,7 @@
       "offset": 40,
       "length": 4,
       "beforeSha256": "099b7951bec5652b49535c9695f2ea4e3117f0164cbeeb6a344d325f7573cf60",
-      "hex": "97ac221a"
+      "hex": "a0f44217"
     },
     {
       "offset": 57,
@@ -68,7 +68,7 @@
       "offset": 60,
       "length": 6,
       "beforeSha256": "bb8213280ca3efe96c8696d668749ac6a66a520e3bb61b8d428ae3e0cff68a77",
-      "hex": "c9e76800fd03"
+      "hex": "0f6a3f6bfe03"
     },
     {
       "offset": 73,
@@ -92,7 +92,7 @@
       "offset": 128,
       "length": 4,
       "beforeSha256": "8103e01dcb717eed858c6ce96af2ffb690d44726459209e6d44e0c6eef9a5c9f",
-      "hex": "62ba26b5"
+      "hex": "b8e37d08"
     },
     {
       "offset": 108490,
@@ -131,10 +131,16 @@
       "hex": "92fc"
     },
     {
+      "offset": 142824,
+      "length": 2,
+      "beforeSha256": "2ab222ea802367eca888125fb15317eb00b7dc81f410aa1da907b793d9ff5117",
+      "hex": "02fc"
+    },
+    {
       "offset": 480728,
       "length": 2,
       "beforeSha256": "bf64bd828dc3e53fd9f3c65945592bcb8de93722eaea0f82060d41fa6b94e627",
-      "hex": "fd03"
+      "hex": "fe03"
     },
     {
       "offset": 480732,
@@ -650,13 +656,13 @@
       "offset": 484824,
       "length": 2,
       "beforeSha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
-      "hex": "fd03"
+      "hex": "fe03"
     },
     {
       "offset": 756540,
       "length": 4,
       "beforeSha256": "dc025d88fbcb0bbb06ce7bc389fe601c4f2d4e5bd870c1999eb2e588266af2e2",
-      "hex": "1d09f4fe"
+      "hex": "86ea1529"
     }
   ],
   "resources": [

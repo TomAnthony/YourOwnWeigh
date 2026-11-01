@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build WS-50 v1021 from hash-pinned stock wbs02 v1721.
+"""Build WS-50 v1022 from hash-pinned stock wbs02 v1721.
 
 The exact output hash rejects unexpected toolchain or patch-code changes.
 
@@ -20,13 +20,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--offline-source", type=Path)
     p.add_argument("--output", type=Path,
-                   default=Path.cwd() / "local/firmware/ws50/wbs02_yow_1021.bin")
+                   default=Path.cwd() / f"local/firmware/ws50/wbs02_yow_{base.VERSION}.bin")
     p.add_argument("--check-only", action="store_true")
     args = p.parse_args()
     try:
         stock = base.source_bytes(args.offline_source)
         image, manifest = base.build(stock)
-        manifest["imageFile"] = "wbs02_yow_1021.bin"
         manifest["ownerConfigProtocolVersion"] = 2
         print(f"Pinned source SHA-256: {base.SOURCE_HASH}")
         print(f"Generated v{base.VERSION} SHA-256: {manifest['sha256']}; {len(image)} bytes")

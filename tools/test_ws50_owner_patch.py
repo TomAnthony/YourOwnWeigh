@@ -1,8 +1,8 @@
 """Execute the WS-50 owner patch and stock WPP/DBLIB wrappers under Unicorn.
 
 Requires Clang, unicorn, and YOW_WS50_STOCK pointing to the private pinned v1721
-image. Only the physical DB transaction/read and serial-send boundaries are
-modelled; the generated patch, bank selection/swap and reply framing execute.
+image. Physical DB transactions/reads, serial-send and logging boundaries are
+modelled; the patch, stock URL formatter, bank swap and reply framing execute.
 No device access, downloads, or firmware outputs.
 """
 import importlib.util
@@ -70,6 +70,8 @@ class Machine:
         )]
         if address in (0x2acf4, 0x2ad08, 0x2ab58, 0x2ab74):
             self.ret()  # scheduler/interrupt exclusion, not storage
+        elif address == 0x51d7c:
+            self.ret()  # debug output; keep native URL formatting unmodified
         elif address in (0x29d50, 0x29d90):
             # Real current-bank setter supplies destination, source, item, data,
             # and the length as the fifth ABI argument. Reject factory contexts.
@@ -167,6 +169,19 @@ class WS50OwnerPatchTests(unittest.TestCase):
         reboot.uc.mem_write(DEST, b"x" * 64)
         self.assertEqual(reboot.call(0x26cd8, DEST, 0, end=0x26cdc), DEST)
         self.assertEqual(bytes(reboot.uc.mem_read(DEST, len(host) + 1)), host + b"\0")
+
+    def test_native_url_builder_uses_http_even_when_callers_request_tls(self):
+        m = self.machine()
+        m.owner(b"10.0.1.90")
+        # Run the entire stock URL builder, including its format-string branch
+        # and snprintf. A hostname-only check misses HTTPS selected by callers.
+        for mode, path in ((1, b"once"), (0, b"cgi-bin/measure")):
+            with self.subTest(mode=mode, path=path):
+                m.uc.mem_write(ARG, path + b"\0")
+                m.uc.mem_write(DEST, b"x" * 220)
+                m.call(0x26cc0, DEST, ARG, mode)
+                url = bytes(m.uc.mem_read(DEST, 220)).split(b"\0", 1)[0]
+                self.assertEqual(url, b"http://10.0.1.90/" + path)
 
     def test_write_failure_keeps_committed_host_and_reports_failure(self):
         m = self.machine()

@@ -12,6 +12,9 @@ analysis of the hash-pinned stock image:
   owner dispatcher, which forwards other commands to the original 0x1efa4.
 - Setup DNS item-2 lookup at 0x1eeec and HTTP host copy at 0x26cd8 both read
   the owner hostname from the current DBLIB bank.
+- The URL builder's HTTPS format literal at 0x26d64 is redirected to the
+  existing HTTP format at 0x6fc02, overriding native TLS requests for this
+  HTTP-only owner firmware without changing endpoint paths.
 - Replies use RESET_TX 0x1e121 and FRAG_SEND 0x55b47(ctx+0x200, frame, len).
 """
 from __future__ import annotations
@@ -29,11 +32,10 @@ CDN = "http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin"
 SOURCE_HASH = "4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86"
 SOURCE_SHA1 = "6f3af68e8a9b063322eb0ff45245fa2e8c5357bc"
 SOURCE_SIZE = 752_448
-# YOW build numbers stay BELOW stock so the two-slot updater always writes the
-# lower-version slot and keeps vanilla vendor firmware as the recovery image
-# (README "I have deliberately set my version numbers low"). 1021 < 1721.
-VERSION = 1021
-SOURCE_VERSIONS = [1721]
+# Keep owner versions below stock so they follow the existing two-slot update
+# convention. Actual WS-50 recovery/slot selection is not hardware-qualified.
+VERSION = 1022
+SOURCE_VERSIONS = [1721, 1021, 1022]
 APP_BASE = 0x4000
 EXTRA = 0x1000
 # Injected code lands at the file offset where the 4 KiB expansion begins:
@@ -46,10 +48,13 @@ APP_END = 0x755DC
 DISPATCH_FALLTHROUGH = 0x1E746       # bl #0x1efa4 (preimage 00f02dfc)
 URL_HOST_COPY = 0x26CD8               # bl #0x631e6 (preimage 3cf085fa)
 DNS_HOST_GET = 0x1EEEC                # bl #0x2a928 (default-bank getter)
+URL_SCHEME_LITERAL = 0x26D64          # URL builder's "https://%s/%s" pointer
+HTTP_URL_FORMAT = 0x6FC02             # existing "http://%s/%s" format
 
 DISPATCH_PREIMAGE = bytes.fromhex("00f02dfc")       # bl 0x1efa4 at 0x1e746
 URL_HOST_COPY_PREIMAGE = bytes.fromhex("3cf085fa")  # bl 0x631e6 at 0x26cd8
 DNS_HOST_GET_PREIMAGE = bytes.fromhex("0bf01cfd")
+URL_SCHEME_PREIMAGE = bytes.fromhex("91f80600")
 
 SOURCE_C = Path(__file__).with_name("owner_patch.c")
 
@@ -114,13 +119,15 @@ def source_bytes(path: Path | None) -> bytes:
     if hashlib.sha1(b).hexdigest() != SOURCE_SHA1:
         raise ValueError("source SHA-1 differs from the vendor-offered image")
     validate_container(b, version=1721)
-    # All hooks are calls in the hash-pinned application.
+    # Check the call hooks and URL-format literal in the pinned application.
     if b[va2off(DISPATCH_FALLTHROUGH):va2off(DISPATCH_FALLTHROUGH) + 4] != DISPATCH_PREIMAGE:
         raise ValueError("WS-50 dispatcher preimage differs")
     if b[va2off(URL_HOST_COPY):va2off(URL_HOST_COPY) + 4] != URL_HOST_COPY_PREIMAGE:
         raise ValueError("WS-50 URL host-copy preimage differs")
     if b[va2off(DNS_HOST_GET):va2off(DNS_HOST_GET) + 4] != DNS_HOST_GET_PREIMAGE:
         raise ValueError("WS-50 DNS host-get preimage differs")
+    if b[va2off(URL_SCHEME_LITERAL):va2off(URL_SCHEME_LITERAL) + 4] != URL_SCHEME_PREIMAGE:
+        raise ValueError("WS-50 URL scheme preimage differs")
     return b
 
 
@@ -211,7 +218,7 @@ def build(stock: bytes) -> tuple[bytes, dict]:
         raise ValueError("owner code exceeds app expansion")
     # Keep the pinned runtime version word at stock APP_END-4; inject the
     # owner code into the expansion that follows it. The app-tail word is
-    # rewritten to VERSION so the running firmware probes as v1021.
+    # rewritten to VERSION so the running firmware reports the release version.
     result = bytearray(stock[:APP_END - 4] + struct.pack("<I", VERSION) +
                        code + bytes(EXTRA - len(code)) + stock[APP_END:])
     dispatch_va = CODE_VA + symbols["owner_wpp_dispatch"]
@@ -226,6 +233,9 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     # Hook 3: setup DNS lookup must use the same persisted hostname as HTTP.
     result[va2off(DNS_HOST_GET):va2off(DNS_HOST_GET) + 4] = \
         thumb_bl(DNS_HOST_GET, dns_va)
+    # Every native sync caller requests TLS. Both URL branches must select the
+    # existing HTTP format, not just substitute the owner hostname.
+    put32(result, va2off(URL_SCHEME_LITERAL), HTTP_URL_FORMAT)
     # Container bookkeeping: new size/version words and shifted sections.
     put32(result, 0, len(result))
     put32(result, 8, VERSION)
@@ -243,8 +253,7 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     put32(result, len(result) - 4, zlib.crc32(result[:-4]))
     output = bytes(result)
     validate_container(output, version=VERSION)
-    # The runtime version word at stock offset APP_END-4 now reports VERSION,
-    # so a flashed scale probes as v1021 (below stock 1721).
+    # The fixed runtime word and relocated application tail must agree.
     if u32(output, APP_END - 4) != VERSION:
         raise ValueError("WS-50 runtime version word not updated")
     for i in range(1, 4):
@@ -253,7 +262,7 @@ def build(stock: bytes) -> tuple[bytes, dict]:
         if output[s + EXTRA:s + EXTRA + size] != stock[s:s + size]:
             raise ValueError(f"non-application section {i + 1} changed")
     metadata = {"format": "YOW-image-v1", "model": "WS50",
-                "imageFile": "wbs02_yow_1021.bin", "sha256": sha(output),
+                "imageFile": f"wbs02_yow_{VERSION}.bin", "sha256": sha(output),
                 "firmwareVersion": VERSION, "sourceFirmwareVersions": SOURCE_VERSIONS,
                 "bootloaderVersion": 12, "ownerConfigProtocolVersion": 2,
                 "sourceSha256": SOURCE_HASH,
