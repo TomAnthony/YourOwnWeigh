@@ -183,18 +183,26 @@ test("WBS04 screens follow cs and fall back to weight when a baseline lacks it",
     const info = await h.enroll();
     assert.equal(info.migrationIncomplete, undefined, JSON.stringify(info));
     assert.deepEqual(await h.screens(), [[11, 3, 12, 6, 1]]);
+    const setCs = async (value: unknown) => {
+      const snapshot = JSON.parse(
+        (await h.db
+          .prepare("SELECT roster_snapshot FROM scales")
+          .first<{ roster_snapshot: string }>())!.roster_snapshot,
+      );
+      if (value === undefined) delete snapshot[0].cs;
+      else snapshot[0].cs = value;
+      await h.db
+        .prepare("UPDATE scales SET roster_snapshot=?")
+        .bind(JSON.stringify(snapshot))
+        .run();
+    };
+    // An explicit empty selection (the user turned every screen off) is kept,
+    // not replaced by the weight screen.
+    await setCs("");
+    assert.deepEqual(await h.screens(), [[]]);
     // A baseline from an older import, backup or manual edit without `cs`
-    // must not break every screen request.
-    const snapshot = JSON.parse(
-      (await h.db
-        .prepare("SELECT roster_snapshot FROM scales")
-        .first<{ roster_snapshot: string }>())!.roster_snapshot,
-    );
-    delete snapshot[0].cs;
-    await h.db
-      .prepare("UPDATE scales SET roster_snapshot=?")
-      .bind(JSON.stringify(snapshot))
-      .run();
+    // must not break every screen request: it falls back to the weight screen.
+    await setCs(undefined);
     assert.deepEqual(await h.screens(), [[2]]);
   } finally {
     h.cleanup();

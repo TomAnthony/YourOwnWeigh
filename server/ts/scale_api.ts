@@ -659,17 +659,16 @@ async function fixture(
         device: [],
         user: users.map((u) => ({
           userid: u.id,
-          // A baseline without usable `cs` (older snapshot, manual edit or
+          // A missing or malformed `cs` (older snapshot, manual edit or
           // restored backup) falls back to the weight screen instead of
-          // failing every screen request.
-          screens: (screenIds(u.cs)?.length ? screenIds(u.cs)! : [2]).map(
-            (id, i) => ({
-              id,
-              src: 1,
-              embid: id,
-              rk: i + 1,
-            }),
-          ),
+          // failing every screen request. An explicit empty selection (the
+          // user turned every screen off) is preserved as-is.
+          screens: (screenIds(u.cs) ?? [2]).map((id, i) => ({
+            id,
+            src: 1,
+            embid: id,
+            rk: i + 1,
+          })),
         })),
       };
     }
