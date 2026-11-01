@@ -12,6 +12,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "docker/**"
+      - ".dockerignore"
       - ".github/workflows/yow-image.yml"
   workflow_dispatch:
 

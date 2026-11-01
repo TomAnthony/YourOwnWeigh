@@ -76,7 +76,12 @@ export class NodeBridge {
           // and the handshake is rejected as 403 behind a TLS proxy.
           const url = new URL(
             incoming.url ?? "/",
-            `${forwardedScheme(secure, trustProxy, incoming.headers["x-forwarded-proto"])}://${authority}`,
+            `${forwardedScheme(
+              secure,
+              trustProxy,
+              incoming.socket.remoteAddress,
+              incoming.headers["x-forwarded-proto"],
+            )}://${authority}`,
           );
           if (
             !["/api/bridge/socket", "/api/bridge/ui/socket"].includes(

@@ -208,20 +208,31 @@ test("without X-Forwarded-Proto a non-loopback plain-HTTP GET still upgrades to 
   }
 });
 
-test("forwardedScheme honours a trusted proxy and clamps malformed values", () => {
+test("forwardedScheme honours a trusted proxy from a private peer only", () => {
   // native TLS is always https
-  assert.equal(forwardedScheme(true, false, undefined), "https");
+  assert.equal(forwardedScheme(true, false, undefined, undefined), "https");
   // no trusted proxy: plain http
-  assert.equal(forwardedScheme(false, false, "https"), "http");
-  // trusted proxy: explicit http stays http, anything else -> https
-  assert.equal(forwardedScheme(false, true, "http"), "http");
-  assert.equal(forwardedScheme(false, true, "https"), "https");
-  assert.equal(forwardedScheme(false, true, "https,http"), "https");
-  assert.equal(forwardedScheme(false, true, ["https", "http"]), "https");
-  // missing or malformed header defaults to https and never throws downstream
+  assert.equal(forwardedScheme(false, false, "127.0.0.1", "https"), "http");
+  // trusted proxy + loopback/private peer: explicit http stays http, else https
+  assert.equal(forwardedScheme(false, true, "127.0.0.1", "http"), "http");
+  assert.equal(forwardedScheme(false, true, "127.0.0.1", "https"), "https");
+  assert.equal(forwardedScheme(false, true, "172.18.0.1", "https"), "https");
+  assert.equal(
+    forwardedScheme(false, true, "127.0.0.1", "https,http"),
+    "https",
+  );
+  assert.equal(
+    forwardedScheme(false, true, "::ffff:127.0.0.1", ["https", "http"]),
+    "https",
+  );
+  // trusted proxy but a PUBLIC peer: ignore the forwarded scheme, so a direct
+  // internet client cannot claim https to be served admin over plaintext.
+  assert.equal(forwardedScheme(false, true, "203.0.113.5", "https"), "http");
+  assert.equal(forwardedScheme(false, true, "2001:db8::1", "https"), "http");
+  // missing or malformed header (from a trusted peer) defaults to https, never throws
   for (const bad of [undefined, "", "/", "ht!tp", "javascript:"])
     assert.equal(
-      forwardedScheme(false, true, bad as any),
+      forwardedScheme(false, true, "127.0.0.1", bad as any),
       "https",
       String(bad),
     );
