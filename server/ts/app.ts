@@ -718,7 +718,10 @@ async function importCaptureUsers(
   }
   await db.batch(statements);
 }
-function captureSettings(capture: Capture): { values: Value[] } {
+function captureSettings(
+  capture: Capture,
+  requireFixtures = true,
+): { values: Value[] } {
   const ctp = capture.ctp,
     ind = capture.ind;
   if (!ctp || !ind) throw new Error("Capture has no time or device settings");
@@ -741,18 +744,17 @@ function captureSettings(capture: Capture): { values: Value[] } {
     throw new Error("Captured routing selector points to a Withings beta host");
   const tmp = integer(ind.tmp, 0, 255, "ind.tmp");
   const weight = integer(ind.w, 0, 255, "ind.w");
-  const screen = validatedFixture(
-    JSON.stringify(capture.screen_response ?? null),
-    "screen",
-  );
-  const summary = validatedFixture(
-    JSON.stringify(capture.summary_response ?? null),
-    "summary",
-  );
+  const screen = capture.screen_response
+    ? validatedFixture(JSON.stringify(capture.screen_response), "screen")
+    : null;
+  const summary = capture.summary_response
+    ? validatedFixture(JSON.stringify(capture.summary_response), "summary")
+    : null;
   const weather = capture.weather_response
     ? validatedFixture(JSON.stringify(capture.weather_response), "weather")
     : null;
-  if (!screen || !summary) throw new Error("Capture lacks display responses");
+  if (requireFixtures && (!screen || !summary))
+    throw new Error("Capture lacks display responses");
   return {
     values: [
       goff,
@@ -1183,16 +1185,24 @@ async function fetchAndApplyProfile(
     );
   }
   if (scale.model === "WBS04" && !scale.settings_ready) {
-    // Body Cardio uses a WBS13-style minimal session: Withings supplies the
-    // user roster but not WBS06 screen/summary display fixtures, so mark the
-    // import complete without them. (Whether the scale accepts a fixture-free
-    // session is confirmed on hardware after flashing.)
+    // Body Cardio: import the captured clock + device settings (ctp/ind) so the
+    // session sends the real offsets, unit codes and feature flags — but mark
+    // ready without the WBS06 screen/summary display fixtures, which Withings
+    // does not supply for this model (confirmed on hardware after flashing).
+    const { values } = captureSettings(capture, false);
+    if (
+      scale.reported_feature_mask != null &&
+      scale.reported_feature_mask !== values[3]
+    )
+      throw new Error(
+        "Captured settings do not match this scale's reported feature mask",
+      );
     statements.push(
       db
         .prepare(
-          "UPDATE scales SET settings_ready=1 WHERE id=? AND settings_ready=0",
+          "UPDATE scales SET goff=?,dst=?,ngoff=?,feature_mask=?,debug_mask=?,beta_ws=?,temp_code=?,weight_code=?,screen_response=?,summary_response=?,weather_response=?,settings_ready=1 WHERE id=? AND settings_ready=0",
         )
-        .bind(scale.id),
+        .bind(...values, scale.id),
     );
   }
   // Existing IDs mean the same person. Associate them without replacing edits.
@@ -1304,7 +1314,7 @@ async function enrollDevice(
 async function queueRosterEdits(db: D1Database, userId: number) {
   for (const scale of await rows(
     db,
-    "SELECT * FROM scales WHERE model='WBS06' AND settings_ready=1 AND roster_snapshot IS NOT NULL",
+    "SELECT * FROM scales WHERE model IN ('WBS06','WBS04') AND settings_ready=1 AND roster_snapshot IS NOT NULL",
   )) {
     const baseline = JSON.parse(scale.roster_snapshot);
     if (!baseline.some((u: Row) => u.id === userId)) continue;
@@ -2656,7 +2666,7 @@ async function browserPost(
       await queueRosterEdits(db, id);
       return go(
         "/users",
-        "User updated; supported WBS06 roster edits will be sent on its next connection",
+        "User updated; roster edits will be sent to supported scales on their next connection",
       );
     }
     const readingAssign = /^\/readings\/(\d+)\/assign$/.exec(path);

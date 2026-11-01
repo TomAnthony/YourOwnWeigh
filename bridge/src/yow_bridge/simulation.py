@@ -21,8 +21,7 @@ class Backend:
                 deviceId="demo-scale",
                 name=_DEMO_NAME[self.model],
                 rssi=-45,
-                # WBS04 is discovered as a BLE candidate like WBS06; probe reclassifies.
-                modelCandidate="WBS06" if self.model == "WBS04" else self.model,
+                modelCandidate=self.model,
                 presence="seen",
             )
         )
