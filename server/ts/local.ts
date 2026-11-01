@@ -17,6 +17,7 @@ import { LocalSqlite } from "./sqlite.ts";
 import { handleApp, type AppEnv } from "./app.ts";
 import { captureWithings, firmwareOffer } from "./withings_capture.ts";
 import { NodeBridge } from "./bridge_node.ts";
+import { forwardedScheme } from "./proxy.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const SCALE_PATHS = new Set([
@@ -70,20 +71,19 @@ export function assets(): AppEnv["ASSETS"] {
     },
   };
 }
-const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-/** Client address used for failed-password limits. Behind a reverse proxy on
- * the same machine every request comes from loopback, so one stranger could
- * lock everyone out. With YOW_TRUST_PROXY=1, a loopback peer's X-Forwarded-For
- * is used instead; its last entry is the one the proxy itself added.
- */
+/** Client address used for failed-password limits. With YOW_TRUST_PROXY=1 the
+ * container is reachable only through the operator's reverse proxy (its port is
+ * published to loopback), and that proxy may reach Node from a Docker bridge
+ * address rather than loopback, so trust the last hop of its X-Forwarded-For.
+ * Without it every request from a same-host proxy looks identical, so one
+ * stranger could lock everyone out. */
 export function peerAddress(
   remote: string | undefined,
   forwarded: string | string[] | undefined,
   trustProxy: boolean,
 ): string {
   const peer = remote ?? "unknown";
-  if (!trustProxy || !LOOPBACK.has(peer) || forwarded === undefined)
-    return peer;
+  if (!trustProxy || forwarded === undefined) return peer;
   const last = (Array.isArray(forwarded) ? forwarded.join(",") : forwarded)
     .split(",")
     .pop()!
@@ -107,22 +107,14 @@ export function localListener(
       outgoing.end("Unrecognized Host header");
       return;
     }
-    // Behind a trusted reverse proxy that terminates TLS, the request reaches
-    // this plain-HTTP listener as http. Honour X-Forwarded-Proto so the app
-    // treats it as https (no self-redirect loop, Secure session cookies). With
-    // no such header the proxy is still terminating TLS, so default to https.
-    const forwardedProto = trustProxy
-      ? String(incoming.headers["x-forwarded-proto"] ?? "")
-          .split(",")[0]
-          .trim()
-          .toLowerCase()
-      : "";
-    const scheme = secure
-      ? "https"
-      : trustProxy
-        ? forwardedProto || "https"
-        : "http";
-    const url = new URL(incoming.url ?? "/", `${scheme}://${authority}`);
+    // Behind a trusted reverse proxy the request arrives over plain HTTP; treat
+    // it by the forwarded scheme so there is no redirect loop and session
+    // cookies stay Secure. forwardedScheme clamps the header to http/https so a
+    // malformed value cannot crash new URL().
+    const url = new URL(
+      incoming.url ?? "/",
+      `${forwardedScheme(secure, trustProxy, incoming.headers["x-forwarded-proto"])}://${authority}`,
+    );
     if (
       scaleOnly &&
       !(incoming.method === "POST" && SCALE_PATHS.has(url.pathname))
@@ -252,7 +244,7 @@ export async function startLocal() {
         listener,
       )
     : createHttpServer(listener);
-  bridge.attach(server, env, secure, allowedHosts);
+  bridge.attach(server, env, secure, allowedHosts, trustProxy);
   server.listen(port, host, () => {
     console.log(`YourOwnWeigh: ${origin.origin}`);
     if (!initialized) console.log(`First-run bootstrap token: ${bootstrap}`);

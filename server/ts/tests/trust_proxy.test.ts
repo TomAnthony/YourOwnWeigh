@@ -8,23 +8,28 @@ import { join } from "node:path";
 import { LocalSqlite } from "../sqlite.ts";
 import type { AppEnv } from "../app.ts";
 import { localListener, peerAddress } from "../local.ts";
+import { forwardedScheme } from "../proxy.ts";
 
 // Hash of "admin-password-123", as in app.test.ts.
 const HASH =
   "pbkdf2_sha256$600000$000102030405060708090a0b0c0d0e0f$" +
   "5e470be3aac01b9df58840e2db41d217a2e240bc493fcb1aa0f4bbdc30c660f7";
 
-test("peer address only trusts X-Forwarded-For from a loopback proxy when enabled", () => {
+test("peer address trusts X-Forwarded-For only when YOW_TRUST_PROXY is set", () => {
+  // Without trust, the proxy's own address stays the key.
   assert.equal(peerAddress("127.0.0.1", "203.0.113.7", false), "127.0.0.1");
+  assert.equal(
+    peerAddress("198.51.100.4", "203.0.113.7", false),
+    "198.51.100.4",
+  );
+  // With trust, the forwarded last hop is used regardless of the peer address —
+  // a containerised proxy reaches Node from a Docker bridge IP, not loopback.
   assert.equal(peerAddress("127.0.0.1", "203.0.113.7", true), "203.0.113.7");
   assert.equal(
     peerAddress("::ffff:127.0.0.1", "2001:db8::1", true),
     "2001:db8::1",
   );
-  assert.equal(
-    peerAddress("198.51.100.4", "203.0.113.7", true),
-    "198.51.100.4",
-  );
+  assert.equal(peerAddress("172.18.0.1", "203.0.113.7", true), "203.0.113.7");
   assert.equal(
     peerAddress("127.0.0.1", "1.1.1.1, 203.0.113.7", true),
     "203.0.113.7",
@@ -192,6 +197,40 @@ test("without X-Forwarded-Proto a non-loopback plain-HTTP GET still upgrades to 
     const r = await head(port, { Host: "waage.example.com" });
     assert.equal(r.status, 308);
     assert.ok((r.location ?? "").startsWith("https://"), r.location ?? "");
+  } finally {
+    close();
+  }
+});
+
+test("forwardedScheme honours a trusted proxy and clamps malformed values", () => {
+  // native TLS is always https
+  assert.equal(forwardedScheme(true, false, undefined), "https");
+  // no trusted proxy: plain http
+  assert.equal(forwardedScheme(false, false, "https"), "http");
+  // trusted proxy: explicit http stays http, anything else -> https
+  assert.equal(forwardedScheme(false, true, "http"), "http");
+  assert.equal(forwardedScheme(false, true, "https"), "https");
+  assert.equal(forwardedScheme(false, true, "https,http"), "https");
+  assert.equal(forwardedScheme(false, true, ["https", "http"]), "https");
+  // missing or malformed header defaults to https and never throws downstream
+  for (const bad of [undefined, "", "/", "ht!tp", "javascript:"])
+    assert.equal(
+      forwardedScheme(false, true, bad as any),
+      "https",
+      String(bad),
+    );
+});
+
+test("a malformed X-Forwarded-Proto does not crash the listener", async () => {
+  const { port, close } = await proxied(true);
+  try {
+    const r = await head(port, {
+      Host: "waage.example.com",
+      "X-Forwarded-Proto": "/",
+    });
+    // treated as https (clamped), so no 308 loop and no unhandled URL throw
+    assert.notEqual(r.status, 308);
+    assert.ok(r.status < 500, `status ${r.status}`);
   } finally {
     close();
   }
