@@ -1,5 +1,5 @@
 {
-  "version": 1821,
+  "version": 1021,
   "stockVersion": 1721,
   "bootloader": 12,
   "sourceSize": 752448,
@@ -7,7 +7,7 @@
   "expansionAt": 480732,
   "expansionSize": 4096,
   "sourceSha256": "4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86",
-  "outputSha256": "b08e0293714720738dff76a11e96822416b56a006a93f193c27c1cfd9e0cf073",
+  "outputSha256": "e617dba9add0b176bc178f87114b8ae3b13f945f7387ccbcd00848b26e7c86c9",
   "url": "http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin",
   "ownerProtocol": 2,
   "hostLimit": 59,
@@ -25,7 +25,7 @@
     {
       "offset": 8,
       "length": 2,
-      "hex": "1d07",
+      "hex": "fd03",
       "beforeSha256": "bf64bd828dc3e53fd9f3c65945592bcb8de93722eaea0f82060d41fa6b94e627"
     },
     {
@@ -37,7 +37,7 @@
     {
       "offset": 20,
       "length": 4,
-      "hex": "9040cd8e",
+      "hex": "7a7fa64a",
       "beforeSha256": "7ccde88cc46f89e716482e2ebb2e4142d1e438759b665cc24c7d15d31d3d144b"
     },
     {
@@ -55,7 +55,7 @@
     {
       "offset": 40,
       "length": 4,
-      "hex": "0dd1f7b3",
+      "hex": "459a13c6",
       "beforeSha256": "099b7951bec5652b49535c9695f2ea4e3117f0164cbeeb6a344d325f7573cf60"
     },
     {
@@ -67,7 +67,7 @@
     {
       "offset": 60,
       "length": 6,
-      "hex": "9040cd8e1d07",
+      "hex": "7a7fa64afd03",
       "beforeSha256": "bb8213280ca3efe96c8696d668749ac6a66a520e3bb61b8d428ae3e0cff68a77"
     },
     {
@@ -91,7 +91,7 @@
     {
       "offset": 128,
       "length": 4,
-      "hex": "7bdfe903",
+      "hex": "fed4affa",
       "beforeSha256": "8103e01dcb717eed858c6ce96af2ffb690d44726459209e6d44e0c6eef9a5c9f"
     },
     {
@@ -117,6 +117,12 @@
       "length": 2,
       "hex": "3efc",
       "beforeSha256": "bf9f9b136fd7a231db06ed241a05dc54c4b2f93306f9e9323272e1fc8a2224ae"
+    },
+    {
+      "offset": 480728,
+      "length": 2,
+      "hex": "fd03",
+      "beforeSha256": "bf64bd828dc3e53fd9f3c65945592bcb8de93722eaea0f82060d41fa6b94e627"
     },
     {
       "offset": 480732,
@@ -391,13 +397,13 @@
     {
       "offset": 484824,
       "length": 2,
-      "hex": "1d07",
+      "hex": "fd03",
       "beforeSha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
     },
     {
       "offset": 756540,
       "length": 4,
-      "hex": "7f914122",
+      "hex": "eb41a655",
       "beforeSha256": "dc025d88fbcb0bbb06ce7bc389fe601c4f2d4e5bd870c1999eb2e588266af2e2"
     }
   ],
@@ -422,6 +428,5 @@
     }
   ],
   "stackPointer": 536936448,
-  "releaseSource": "firmware/ws50/v1721/build.py",
-  "runtimeVersion": 1721
+  "releaseSource": "firmware/ws50/v1721/build.py"
 }

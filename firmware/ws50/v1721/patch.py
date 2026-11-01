@@ -32,7 +32,10 @@ CDN = "http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin"
 SOURCE_HASH = "4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86"
 SOURCE_SHA1 = "6f3af68e8a9b063322eb0ff45245fa2e8c5357bc"
 SOURCE_SIZE = 752_448
-VERSION = 1821  # YOW build: stock 1721 bumped to 1821 to stay above the vendor offer
+# YOW build numbers stay BELOW stock so the two-slot updater always writes the
+# lower-version slot and keeps vanilla vendor firmware as the recovery image
+# (README "I have deliberately set my version numbers low"). 1021 < 1721.
+VERSION = 1021
 SOURCE_VERSIONS = [1721]
 APP_BASE = 0x4000
 EXTRA = 0x1000
@@ -204,8 +207,9 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     if len(code) > EXTRA - 4:
         raise ValueError("owner code exceeds app expansion")
     # Keep the pinned runtime version word at stock APP_END-4; inject the
-    # owner code into the expansion that follows it.
-    result = bytearray(stock[:APP_END] +
+    # owner code into the expansion that follows it. The app-tail word is
+    # rewritten to VERSION so the running firmware probes as v1021.
+    result = bytearray(stock[:APP_END - 4] + struct.pack("<I", VERSION) +
                        code + bytes(EXTRA - len(code)) + stock[APP_END:])
     dispatch_va = CODE_VA + symbols["owner_wpp_dispatch"]
     url_va = CODE_VA + symbols["owner_url_target_copy"]
@@ -232,17 +236,17 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     put32(result, len(result) - 4, zlib.crc32(result[:-4]))
     output = bytes(result)
     validate_container(output, version=VERSION)
-    # The pinned runtime version word stays at stock offset APP_END-4 because
-    # the expansion is inserted after it (stock[APP_END-4:] is appended last).
-    if u32(output, APP_END - 4) != 1721:
-        raise ValueError("WS-50 pinned runtime version word changed")
+    # The runtime version word at stock offset APP_END-4 now reports VERSION,
+    # so a flashed scale probes as v1021 (below stock 1721).
+    if u32(output, APP_END - 4) != VERSION:
+        raise ValueError("WS-50 runtime version word not updated")
     for i in range(1, 4):
         s = u32(stock, 0x30 + 20 * i + 4)
         size = u32(stock, 0x30 + 20 * i + 8)
         if output[s + EXTRA:s + EXTRA + size] != stock[s:s + size]:
             raise ValueError(f"non-application section {i + 1} changed")
     metadata = {"format": "YOW-image-v1", "model": "WS50",
-                "imageFile": "wbs02_yow_1821.bin", "sha256": sha(output),
+                "imageFile": "wbs02_yow_1021.bin", "sha256": sha(output),
                 "firmwareVersion": VERSION, "sourceFirmwareVersions": SOURCE_VERSIONS,
                 "bootloaderVersion": 12, "ownerConfigProtocolVersion": 2,
                 "sourceSha256": SOURCE_HASH,
