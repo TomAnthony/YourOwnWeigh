@@ -17,6 +17,7 @@ from pathlib import Path
 
 import constants as C
 from patch_owner_target import EXTRA, TABLE_NEW_VA  # noqa: F401
+from patch_tls_http_read import INSERT
 from build import build
 from stock import read_pinned
 
@@ -31,9 +32,12 @@ def u32(d, o):
     return struct.unpack_from("<I", d, o)[0]
 
 
-def make(source: bytes, http_only: bool) -> dict:
-    out = build(source, http_only=http_only)
-    at, n = C.APP_END, EXTRA
+def make(source: bytes) -> dict:
+    out = build(source)
+    # The owner stage inserts EXTRA at APP_END and the http_read stage inserts
+    # INSERT immediately after it, so from the stock image it is one contiguous
+    # expansion of EXTRA + INSERT at APP_END.
+    at, n = C.APP_END, EXTRA + INSERT
 
     # Base expansion exactly as apply() builds it: n zero bytes inserted at `at`.
     base = bytearray(source[:at] + bytes(n) + source[at:])
@@ -100,13 +104,13 @@ def make(source: bytes, http_only: bool) -> dict:
         "resources": resources,
         "stackPointer": u32(out, 0x84),
         "releaseSource": "firmware/wbs04/v2231/build.py",
-        "transport": "http" if http_only else "https",
+        "transport": "http+https",
     }
 
 
 if __name__ == "__main__":
     src = read_pinned(sys.argv[1])
-    recipe = make(src, http_only="--https" not in sys.argv)
+    recipe = make(src)
     text = json.dumps(recipe, indent=2) + "\n"
     print(f"recipe: {len(recipe['writes'])} writes, output {recipe['outputSize']} B, "
           f"sha {recipe['outputSha256']}")

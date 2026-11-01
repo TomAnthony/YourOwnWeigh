@@ -21,8 +21,9 @@ RELEASES = {
     "WBS06": (127, "419aeafa0ab3a60197dfc6909b27381477498ac3688cd147ae0d675cf5a6b808"),
     "WBS03": (102, "97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a"),
     "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
-    # HTTP-only Body Cardio build, flashed and working on hardware; HTTPS pending.
-    "WBS04": (100, "a16bc12a14c927f1d08da3037538ed0b888b08a6e892f54a8a68544728864e3f"),
+    # Body Cardio: one firmware speaking HTTP + HTTPS (transport chosen at
+    # configure time). HTTP flashed and working; the HTTPS path is experimental.
+    "WBS04": (100, "cb18fa109f800fbebcf460cf9af32c908dd4c84cd79f8c83c1c2aaecca5bd56d"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",

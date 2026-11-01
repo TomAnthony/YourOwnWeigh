@@ -74,3 +74,26 @@ HELLO_SHA256 = "58e2390d0f826fd2dbe96887e2583b5083c425bb280ba958f0d25bf82716c059
 
 def app_offset(va: int) -> int:
     return APP_FILE + va - APP_VA
+
+# --- patch site 6: HTTPS TLS (v100 HTTPS variant; port of WBS06 patch_tls) ---
+# ClientHello one-scheme writer (22 bytes) replaced to advertise common schemes.
+WRITER_VA = 0x51E1A              # stock span starts `add r1, sp, #0xb0` (2ca9)
+WRITER_BL_TARGET_VA = 0x6A4F4    # stock sig-scheme writer helper (WBS06 0x5d648)
+# Dispatcher / CertificateVerify bypass (bytes identical to WBS06; see FINDINGS):
+TLS_DISPATCH_CBZ_VA = 0x53254    # 68b1 cbz r0 -> 0de0 b.n 0x53272 (skip X.509 cb)
+TLS_CV_BNE_VA = 0x53402          # 7ff4e4ab bne.w(err) -> 00bf00bf (accept schemes)
+TLS_CV_BEQ_VA = 0x5341E          # 0ad0 beq 0x53436 -> 0ae0 b.n 0x53436 (skip ed25519)
+TLS_CV_ERR_VA = 0x53448          # 7ff4b7ac bne.w(err) -> 002400bf (movs r4,#0; nop)
+
+# --- patch site 7: TLS fragment negotiation + encrypted-record limit (HTTPS) ---
+FRAG_NEG_VA = 0x52EC4       # 7ff483ae bne.w -> 3ff683ae bhi.w (accept declined/accepted MFL)
+FRAG_NEG_TARGET_VA = 0x52BCE
+REC_ITE_R3_VA = 0x53A30     # ite ne; movne.w r3,#0x200; moveq.w r3,#0x320
+REC_LIMIT_R3_VA = 0x53A36   # 4ff44873 moveq.w r3,#0x320 -> 4ff48053 #0x1000
+REC_ITE_R1_VA = 0x53AD4     # ite ne; movne.w r1,#0x200; moveq.w r1,#0x320
+REC_LIMIT_R1_VA = 0x53ADA   # 4ff44871 moveq.w r1,#0x320 -> 4ff48051 #0x1000
+
+# --- patch site 8: HTTPS receive-buffer hook (second 0x1000 expansion) ---
+HTTP_HOOK_VA = 0x317D0       # ldr r0,[r5]; mov.w r1,#0x200 ... -> BL wrapper
+HTTP_RESUME_ERR_VA = 0x317DC # count<0: resume at stock error classifier
+HTTP_RESUME_OK_VA = 0x31834  # count>=0: resume continuing the HTTP loop

@@ -1,12 +1,17 @@
-# WBS04 (Body Cardio) v2231 → v100 — HTTP-only, tested on hardware
+# WBS04 (Body Cardio) v2231 → v100 — one firmware, HTTP + HTTPS
 
-> **Status:** the HTTP-only build has been flashed and runs end to end on a
-> real Body Cardio: it adopts the configured server over Wi-Fi and uploads
-> weight, body composition, heart rate, pulse wave velocity and vascular age.
-> The **HTTPS** path is not finished yet (see TODO). There is still no UART
-> recovery for this model, so the dual-slot design is the only safety net —
-> flash at your own risk and keep a vanilla bank (YOW uses a low version so the
-> other slot is preserved).
+> **Status:** a single firmware that speaks **both HTTP and HTTPS** — you pick
+> the transport in the dashboard's Configure step. The **HTTP** path has been
+> flashed and runs end to end on a real Body Cardio (adopts the configured
+> server over Wi-Fi and uploads weight, body composition, heart rate, pulse wave
+> velocity and vascular age). The **HTTPS** path is **EXPERIMENTAL**: its
+> addresses were verified by disassembly against the byte-identical WBS06
+> firmware, but it has not yet been tested on real WBS04 hardware. Like WBS06 it
+> does not authenticate the server certificate (intended for your own reverse
+> proxy). There is still no UART recovery for this model, so the dual-slot design
+> is the only safety net — flash at your own risk and keep a vanilla bank (YOW
+> uses a low version so the other slot is preserved); a failed HTTPS sync is
+> recoverable by reflashing.
 
 The WBS04 is the same compiler build as WBS06 v1181, so nearly every WBS06 patch
 site relocates cleanly. Addresses were located statically, verified with
@@ -25,9 +30,11 @@ and the recipe round-trips through the bridge's `firmware.apply()`/`inspect()`.
 | Server-triggered OTA disable | ✅ located, wired |
 | End-to-end emulation of owner_wpp_170 | ✅ `test_owner_target.py` |
 | Portable bridge recipe (`recipes/WBS04.json`) | ✅ round-trips to pinned output |
-| **Hardware test (HTTP-only)** | ✅ flashed; full measurement set uploaded |
-| TLS-accept (Ed25519 leaf) | ⚠️ located; `owner_tls_accept` is the restrictive Ed25519-only variant |
-| **HTTPS: `patch_tls` + fragments + bounded HTTP read** | ❌ TODO (port WBS06 stages for ordinary RSA/ECDSA certs) |
+| **Hardware test (HTTP path)** | ✅ flashed; full measurement set uploaded |
+| **HTTPS: `patch_tls` (cert bypass + common sig schemes)** | ✅ ported from WBS06; byte-identical dispatcher, addresses verified |
+| **HTTPS: `patch_tls_fragments`** | ✅ ported; 3 patches byte-identical to WBS06 |
+| **HTTPS: `patch_tls_http_read` + `tls_http_read.c`** | ✅ ported; hook/resume/fns located, build self-validates |
+| **Hardware test (HTTPS path)** | ❌ not yet tested on a real WBS04 |
 | UART recovery | ❌ WBS04 pads unknown; dual-slot is the only safety net |
 
 ## Key deviation from WBS06
@@ -42,11 +49,17 @@ WBS06 512 KB flash ceiling, so the recipe carries `flashLimit: 0x100000`.
 - `constants.py` — all located WBS04 addresses (single source of truth).
 - `stock.py` — pinned CDN download + SHA-256 verify.
 - `validate_stock.py` — asserts the stock image + every patch site (read-only).
-- `owner_target.c` — owner injection C source (compiles http-only and https).
+- `owner_target.c` — owner injection C source (host/transport + OTA disable).
 - `patch_owner_target.py` — compile + relocate + inject + CRCs.
 - `patch_startup_face.py` — same-size smiley swap.
+- `patch_tls.py` — HTTPS: bypass the Ed25519-only cert checks and advertise
+  common signature schemes (ported from WBS06; dispatcher bytes identical).
+- `patch_tls_fragments.py` — HTTPS: accept a declined max-fragment-length and
+  raise the encrypted-record limit to 4 KiB.
+- `patch_tls_http_read.py` + `tls_http_read.c` — HTTPS: stage a large decrypted
+  record in its own buffer before the unchanged HTTP parser sees it.
 - `make_recipe.py` — emit `recipes/WBS04.json` from the builder output.
-- `build.py` — orchestration (owner → face).
+- `build.py` — orchestration (owner → face → TLS → fragments → receive buffer).
 - `test_owner_target.py` — offline emulation of the owner WPP 0x170 handler.
 
 ## Build
@@ -56,12 +69,14 @@ python3.11 -m venv local/firmware-venv
 local/firmware-venv/bin/pip install -r firmware/wbs04/v2231/requirements.txt
 cd firmware/wbs04/v2231
 ../../../local/firmware-venv/bin/python validate_stock.py PATH/wbs04_2231.bin
-../../../local/firmware-venv/bin/python build.py --source PATH/wbs04_2231.bin --http-only --check-only
+../../../local/firmware-venv/bin/python build.py --source PATH/wbs04_2231.bin --check-only
 ```
 
+Drop `--check-only` (optionally with `--output PATH.bin`) to write the image.
 The shipped recipe (`recipes/WBS04.json`, registered in `firmware.RELEASES`) is
-the HTTP-only v100 build. Data travels in clear text on the LAN (as with WS-30);
-HTTPS awaits the TLS stages above.
+this single v100 build; the scale uses HTTP or HTTPS depending on the transport
+you set in the dashboard's Configure step. On the HTTP path data travels in
+clear text on the LAN (as with WS-30), so keep that path LAN-only.
 
 ## Hardware test
 

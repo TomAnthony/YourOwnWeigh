@@ -3,11 +3,11 @@
   "stockVersion": 2231,
   "bootloader": 12,
   "sourceSize": 973212,
-  "outputSize": 977308,
+  "outputSize": 981404,
   "expansionAt": 557244,
-  "expansionSize": 4096,
+  "expansionSize": 8192,
   "sourceSha256": "9668a637640bc031019148a8259c1f740d1517cc61eabbf66a88c549c97d58e1",
-  "outputSha256": "a16bc12a14c927f1d08da3037538ed0b888b08a6e892f54a8a68544728864e3f",
+  "outputSha256": "cb18fa109f800fbebcf460cf9af32c908dd4c84cd79f8c83c1c2aaecca5bd56d",
   "url": "http://cdnfw.withings.net/wbs04/wbs04_2231_1xHtQN.bin",
   "ownerProtocol": 1,
   "hostLimit": 48,
@@ -27,7 +27,7 @@
       "offset": 1,
       "length": 1,
       "beforeSha256": "19152ddfba193b5b09fcb80d1bba5248f36027c06e81670db5a7146fb654d4ec",
-      "hex": "e9"
+      "hex": "f9"
     },
     {
       "offset": 8,
@@ -39,67 +39,73 @@
       "offset": 17,
       "length": 1,
       "beforeSha256": "76be8b528d0075f7aae98d6fa57a6d3c83ae480a8469e668d7b0af968995ac71",
-      "hex": "90"
+      "hex": "a0"
     },
     {
       "offset": 20,
       "length": 4,
       "beforeSha256": "16c3a6ec078c53bf093537c78f60cdc82e8a4293148477776a765878900641ec",
-      "hex": "9b7bb496"
+      "hex": "3bf036aa"
     },
     {
       "offset": 25,
       "length": 1,
       "beforeSha256": "76be8b528d0075f7aae98d6fa57a6d3c83ae480a8469e668d7b0af968995ac71",
-      "hex": "90"
+      "hex": "a0"
     },
     {
       "offset": 33,
       "length": 1,
       "beforeSha256": "9d1e0e2d9459d06523ad13e28a4093c2316baafe7aec5b25f30eba2e113599c4",
-      "hex": "1d"
+      "hex": "2d"
     },
     {
       "offset": 40,
       "length": 4,
       "beforeSha256": "c17588e3e12c570bab06b3ab0c4077bbee1b3924f73153bbb947d36a23901dd4",
-      "hex": "5a180cd2"
+      "hex": "942457c0"
     },
     {
       "offset": 57,
       "length": 1,
       "beforeSha256": "76be8b528d0075f7aae98d6fa57a6d3c83ae480a8469e668d7b0af968995ac71",
-      "hex": "90"
+      "hex": "a0"
     },
     {
       "offset": 60,
       "length": 6,
       "beforeSha256": "30795a23eb9346eab2df4caa3a6adc284ebee30a08a2d1da443508766891a58b",
-      "hex": "9b7bb4966400"
+      "hex": "3bf036aa6400"
     },
     {
       "offset": 73,
       "length": 1,
       "beforeSha256": "76be8b528d0075f7aae98d6fa57a6d3c83ae480a8469e668d7b0af968995ac71",
-      "hex": "90"
+      "hex": "a0"
     },
     {
       "offset": 93,
       "length": 1,
       "beforeSha256": "9d1e0e2d9459d06523ad13e28a4093c2316baafe7aec5b25f30eba2e113599c4",
-      "hex": "1d"
+      "hex": "2d"
     },
     {
       "offset": 113,
       "length": 1,
       "beforeSha256": "fd9528b920d6d3956e9e16114523e1889c751e8c1e040182116d4c906b43f558",
-      "hex": "a9"
+      "hex": "b9"
     },
     {
       "offset": 128,
       "length": 4,
       "beforeSha256": "27c3c9cd6eb4a96e39575edfed9aa1ee0d8a0c9b223ce7703c7236b144c2969e",
-      "hex": "56829cb4"
+      "hex": "eed8ffd8"
+    },
+    {
+      "offset": 186452,
+      "length": 4,
+      "beforeSha256": "c8314490bab382c52b0f7014a8a7fc536a858c2c3e7bb0d9850551cd9cc6df8d",
+      "hex": "5bf063fc"
     },
     {
       "offset": 286024,
@@ -130,6 +136,54 @@
       "length": 2,
       "beforeSha256": "cde15fd9dc9406ced084de20a2d8ec1285587a79005b679e91f665cbfd0c4a22",
       "hex": "7047"
+    },
+    {
+      "offset": 319134,
+      "length": 22,
+      "beforeSha256": "6a35865839ba8820aa914af42de91a6e6f535a14b3882253a59842ef12caf607",
+      "hex": "4cf6a871c0f208011a22d4f80890204618f063fb00bf"
+    },
+    {
+      "offset": 323400,
+      "length": 2,
+      "beforeSha256": "f2dcfb9c25afd75c38a8ffc7bc6ab263d27ee06ff6bd0ce6111c5ef72ef59821",
+      "hex": "3ff6"
+    },
+    {
+      "offset": 324312,
+      "length": 2,
+      "beforeSha256": "703aadee0a11cdd95b76dbf7cc0cf1d173ba06de8433d5deb656fc34a6d98c37",
+      "hex": "0de0"
+    },
+    {
+      "offset": 324742,
+      "length": 4,
+      "beforeSha256": "ddf29aa1412fbcdb4f7ad8ca51aa4d19951fe85a64f2e61bc29bc1a0e3529f39",
+      "hex": "00bf00bf"
+    },
+    {
+      "offset": 324771,
+      "length": 1,
+      "beforeSha256": "d4b0c0a4a8cc6c257aed34d16d39dd3c2d3539ed67fd4badd40aef16c1591715",
+      "hex": "e0"
+    },
+    {
+      "offset": 324812,
+      "length": 4,
+      "beforeSha256": "94a7f4db6f1d27f6924f4196bc4b1999be68dd198bc05946a87cfcb9054fe3ed",
+      "hex": "002400bf"
+    },
+    {
+      "offset": 326332,
+      "length": 2,
+      "beforeSha256": "71a2afdd44c3ee40b5f8864e73bd8f03f5f15d12dd5c9a4701b511c64c4aec90",
+      "hex": "8053"
+    },
+    {
+      "offset": 326496,
+      "length": 2,
+      "beforeSha256": "7cc1dd9174f3cbfdb88e0ddeee146465252f92d7be50b6b92cf27b2ca22c50fc",
+      "hex": "8051"
     },
     {
       "offset": 548357,
@@ -1741,9 +1795,9 @@
     },
     {
       "offset": 561054,
-      "length": 142,
-      "beforeSha256": "b7f064b4bd27a3d68b5e66519cfac498d2e96da9bfd1bacf4110f4c7c98feca3",
-      "hex": "b7e410f8021c65297ff4d5adbbf10c0f3ff4deaa10f80d1c2e293ff4d9aacae511f8022c652a7ff42eaebef10c0f3ff4faad11f80d1c2e293ff4f5ad23e610f8021c65297ff441afbbf10c0f3ff476ad10f80d1c2e293ff471ad36e712f8021c6529aad1bef10c0f3ff448ae12f80d1c2e293ff443aea0e7f0b581b006964cf29903c0f208039847034601b0f0bd"
+      "length": 168,
+      "beforeSha256": "e3c2af35d1dfc500e16f826a071cc311bf55003a3de77de7ea3376c6b6fa2857",
+      "hex": "b7e410f8021c65297ff4d5adbbf10c0f3ff4deaa10f80d1c2e293ff4d9aacae511f8022c652a7ff42eaebef10c0f3ff4faad11f80d1c2e293ff4f5ad23e610f8021c65297ff441afbbf10c0f3ff476ad10f80d1c2e293ff471ad36e712f8021c6529aad1bef10c0f3ff448ae12f80d1c2e293ff443aea0e7f0b581b006964cf29903c0f208039847034601b0f0bd0403050306030804080508060809080a080b0401050106010807"
     },
     {
       "offset": 561336,
@@ -1752,10 +1806,40 @@
       "hex": "64"
     },
     {
-      "offset": 977304,
+      "offset": 561340,
+      "length": 32,
+      "beforeSha256": "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925",
+      "hex": "f0b581b048f2b5570646c0f205074ff4c050b847c8b144f65972c0f205024ff4"
+    },
+    {
+      "offset": 561373,
+      "length": 7,
+      "beforeSha256": "837885c8f8091aeaeb9ec3c3f85a6ff470a415e610b8ba3e49f9b33c9cf9d619",
+      "hex": "71044690470546"
+    },
+    {
+      "offset": 561381,
+      "length": 71,
+      "beforeSha256": "0805dcdc42ca47abdc3d8fe11f8e0c7a108602022f71ab349648cfdd30a75aa6",
+      "hex": "2813d4b5f5c05f0ed8316861b101f50e7001f5167147f6815622462b46b04704e06ff0070505e06ff0070507f1100120468847284601b0f0bd28464df23903c0f2080398470446"
+    },
+    {
+      "offset": 561453,
+      "length": 23,
+      "beforeSha256": "015275e61fa0d0751c1d9f45541c7804c895404455470710ade3786f282f2da0",
+      "hex": "2804d541f2dd73c0f20303184741f63503c0f203031847"
+    },
+    {
+      "offset": 565432,
+      "length": 1,
+      "beforeSha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "hex": "64"
+    },
+    {
+      "offset": 981400,
       "length": 4,
       "beforeSha256": "0083a468b569e6f8d6274de57d2e239ddb9ba8cfd45aeeb8c73d53da45f697db",
-      "hex": "cce42edd"
+      "hex": "98262bf5"
     }
   ],
   "resources": [
@@ -1780,5 +1864,5 @@
   ],
   "stackPointer": 536936448,
   "releaseSource": "firmware/wbs04/v2231/build.py",
-  "transport": "http"
+  "transport": "http+https"
 }
