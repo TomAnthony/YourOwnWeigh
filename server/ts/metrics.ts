@@ -11,6 +11,11 @@ export const METRICS = [
   { type: 77, key: "water_mass_kg", label: "Water Mass", unit: "kg" },
   { type: 88, key: "bone_mass_kg", label: "Bone Mass", unit: "kg" },
   { type: 11, key: "heart_rate_bpm", label: "Heart Rate", unit: "bpm" },
+  { type: 4, key: "height_m", label: "Height", unit: "m" },
+  { type: 9, key: "diastolic_bp_mmhg", label: "Diastolic Blood Pressure", unit: "mmHg" },
+  { type: 10, key: "systolic_bp_mmhg", label: "Systolic Blood Pressure", unit: "mmHg" },
+  { type: 91, key: "pulse_wave_velocity_m_s", label: "Pulse Wave Velocity", unit: "m/s" },
+  { type: 135, key: "spo2_pct", label: "SpO2", unit: "%" },
   {
     type: 170,
     key: "visceral_fat_index",

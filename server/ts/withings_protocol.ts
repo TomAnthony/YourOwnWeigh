@@ -1,4 +1,5 @@
 /** Read-only migration exchange for both scale identities, shared by Node and Worker. */
+import { ws30MD5 } from "./ws30_md5.ts";
 type ScaleIdentity = Record<string, any>;
 export type WithingsPost = (
   path: string,
@@ -22,6 +23,13 @@ async function sha(value: string): Promise<string> {
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 }
+async function sha1(value: string): Promise<string> {
+  return Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-1", enc.encode(value))),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+const HASHERS = { sha256: sha, sha1, md5: ws30MD5 } as const;
 
 /** Ask only for the firmware offer. Never retain the vendor session, roster,
  * device secret, or complete response in the report shown to the user. */
@@ -101,6 +109,7 @@ export async function lookupWithingsFirmware(
 export async function captureWithingsSession(
   scale: ScaleIdentity,
   post: WithingsPost,
+  hashMethod: "sha256" | "md5" | "sha1" = "sha256",
 ): Promise<string> {
   const mac =
     String(scale.mac ?? "")
@@ -113,7 +122,29 @@ export async function captureWithingsSession(
   const once = (await post("once", "action=get")).body.once;
   if (typeof once !== "string" || once.length < 1 || once.length > 31)
     throw new Error("Withings challenge is invalid");
-  const hash = await sha(`${mac}:${scale.secret}:${once}`);
+  const hash = await HASHERS[hashMethod](`${mac}:${scale.secret}:${once}`);
+  const sessionFields: Record<string, string | number> = {
+    action: "new",
+    auth: mac,
+    hash,
+    mfgid: scale.reported_mfgid ?? 0,
+    currentfw: scale.ble_firmware_version ?? 1181,
+    batterylvl: 100,
+    duration: 300,
+    wstarget: 1,
+    enrich: "t",
+    trademark: 1,
+    network: 1,
+    trigger: "weather",
+    withaccids: 1,
+    feature_mask: scale.reported_feature_mask ?? 0,
+  };
+  if (hashMethod === "sha256") sessionFields.hashmethod = "sha256";
+  if (hashMethod === "sha1") {
+    // wbs02 legacy API: method=sha&keyonly=1 instead of hashmethod=sha256.
+    sessionFields.method = "sha";
+    sessionFields.keyonly = 1;
+  }
   const session = (
     await post(
       "session",

@@ -17,8 +17,6 @@ export interface ScaleModel {
   fullLabel: string;
   /** Regex the enrolled device export's name must match. */
   namePattern: string;
-  exportFormat: string;
-  bootloader: number;
   /** Firmware versions accepted at enrollment. */
   enrolledFirmware: readonly number[];
   /** Owner-firmware versions that enable server write (http-only for classic). */
@@ -26,6 +24,8 @@ export interface ScaleModel {
   hostnameLimit: number;
   /** Classic models skip the settings-fixture and roster gates. */
   classicGates: boolean;
+  /** Vendor migration: origin host and session auth variant. */
+  vendor: { origin: string; hash: SessionHash; cgiBin: boolean };
 }
 
 export const SCALE_MODELS: Record<string, ScaleModel> = {
@@ -43,6 +43,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [123, 124, 125, 126, 127],
     hostnameLimit: 48,
     classicGates: false,
+    vendor: { origin: "https://scalews.withings.net", hash: "sha256", cgiBin: false },
   },
   WBS13: {
     transport: "ble",
@@ -58,6 +59,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [100, 101, 102, 103],
     hostnameLimit: 48,
     classicGates: false,
+    vendor: { origin: "https://scalews.withings.net", hash: "sha256", cgiBin: false },
   },
   WBS03: {
     transport: "classic",
@@ -73,6 +75,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [100, 101, 102],
     hostnameLimit: 59,
     classicGates: true,
+    vendor: { origin: "https://scalews.withings.net", hash: "md5", cgiBin: false },
   },
   WS50: {
     transport: "classic",
@@ -84,10 +87,11 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     namePattern: "WS-?50",
     exportFormat: "YOW-Classic-device-v1",
     bootloader: 12,
-    enrolledFirmware: [1721, 1821],
-    ownerFirmware: [1821],
+    enrolledFirmware: [1721, 1021],
+    ownerFirmware: [1021],
     hostnameLimit: 59,
     classicGates: true,
+    vendor: { origin: "https://wbs02-ws.withings.net", hash: "sha1", cgiBin: true },
   },
 };
 
