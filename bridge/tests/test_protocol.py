@@ -212,7 +212,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         for key in ("ota", "serverWrite", "wifiWrite", "completeSetup"):
             self.assertTrue(caps[key])
         self.assertEqual(caps["hostnameMaxBytes"], 48)
-        self.assertEqual(caps["serverTransports"], ["http", "https"])
+        self.assertEqual(caps["serverTransports"], ["http"])
 
     async def test_wbs04_service_needs_matching_body_cardio_identity(self):
         # A …0006… device that is not a boot-12 Body Cardio stays unsupported.

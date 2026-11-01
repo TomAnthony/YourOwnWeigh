@@ -163,6 +163,9 @@ def build(original: bytes, *, http_only: bool = False) -> tuple[bytes, dict]:
     _put32(result, 0, len(result))
     _put32(result, 8, C.YOW_VERSION)
     _put32(result, 0x40, C.YOW_VERSION)
+    # Runtime version accessor at the original application tail (inspect() reads
+    # it at expansionAt-4); mirrors the WBS06 builder.
+    _put32(result, C.APP_END - 4, C.YOW_VERSION)
     _put32(result, 0x10, _get32(original, 0x10) + EXTRA)   # section 2 start
     _put32(result, 0x38, _get32(original, 0x38) + EXTRA)
     for o in (0x18, 0x20, 0x48, 0x5C, 0x70):               # downstream section starts

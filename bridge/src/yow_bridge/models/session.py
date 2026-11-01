@@ -234,7 +234,9 @@ class ScaleSession:
                 ota=version in (2231, 100, 101, 102),
                 serverRead=owner,
                 serverWrite=owner,
-                serverTransports=["http", "https"] if owner else [],
+                # The shipped WBS04 recipe is HTTP-only; HTTPS needs the TLS
+                # robustness stages ported before it can be advertised.
+                serverTransports=["http"] if owner else [],
                 hostnameMaxBytes=48,
                 wifiWrite=True,
                 wifiRead="ssid-only",
