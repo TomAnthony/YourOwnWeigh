@@ -12,7 +12,12 @@ import {
   settingsWorkspace,
   syncPage,
 } from "./integrated_ui.ts";
-import { handleScaleRequest, zoneTriplet, roster } from "./scale_api.ts";
+import {
+  handleScaleRequest,
+  zoneTriplet,
+  roster,
+  screenIds,
+} from "./scale_api.ts";
 import {
   dashboardPage,
   escapeHtml,
@@ -1149,9 +1154,16 @@ async function fetchAndApplyProfile(
       "WBS13 uses local users; choose them in Scales → Edit Settings",
     );
   const raw = await fetcher(scale);
-  await stageCapture(db, scale.id, raw);
   const capture = parseCapture(raw),
     statements: D1PreparedStatement[] = [];
+  // WBS04 builds its screen config from each user's `cs` screen IDs, so a
+  // baseline without them would break every later screen request.
+  if (
+    scale.model === "WBS04" &&
+    capture.sp!.users.some((user) => screenIds(user.cs) === null)
+  )
+    throw new Error("Capture is missing valid screen IDs (cs) for a user");
+  await stageCapture(db, scale.id, raw);
   // Preserve an established local roster and locally edited users on refresh.
   if (!scale.roster_snapshot)
     statements.push(

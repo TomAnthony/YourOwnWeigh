@@ -32,8 +32,13 @@ _SIM_PROFILE = {
     "WBS03": dict(name="WS-30", mac="020000000003", firmware=102, boot=15),
     # Starts on stock 2231 so the dry-run shows the real stock->flash->config
     # progression; install() flips it to the YOW owner version.
-    "WBS04": dict(name="Body Cardio", mac="0024e493c4cc", firmware=2231, boot=12),
+    "WBS04": dict(name="Body Cardio", mac="020000000004", firmware=2231, boot=12),
 }
+
+
+# Firmware "installed" on each demo scale for the life of the bridge process.
+# A reconnect creates a new Session, which must still see the flashed version.
+_INSTALLED = {}
 
 
 class Session(ScaleSession):
@@ -41,7 +46,7 @@ class Session(ScaleSession):
         super().__init__(model, self)
         self.server = dict(supported=True, unset=True)
         self.ssid = "Demo Wi-Fi"
-        self.firmware = _SIM_PROFILE[model]["firmware"]
+        self.firmware = _INSTALLED.get(model, _SIM_PROFILE[model]["firmware"])
 
     async def probe(self):
         p = _SIM_PROFILE[self.model]
@@ -106,4 +111,5 @@ class Session(ScaleSession):
         self.firmware = {"WBS06": 127, "WBS03": 102, "WBS04": 100}.get(
             self.model, self.firmware
         )
+        _INSTALLED[self.model] = self.firmware
         return dict(transferred=True, simulated=True, runningFirmwareConfirmed=False)

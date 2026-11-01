@@ -49,6 +49,14 @@ const encoder = new TextEncoder();
 
 const now = () => Math.floor(Date.now() / 1000);
 
+/** Screen IDs from a roster `cs` field ("2,1,3"; "" means none). Returns null
+ * when the value is missing or malformed, so callers can reject it. */
+export function screenIds(cs: unknown): number[] | null {
+  if (cs === "") return [];
+  if (typeof cs !== "string" || !/^\d{1,5}(,\d{1,5}){0,31}$/.test(cs))
+    return null;
+  return cs.split(",").map(Number);
+}
 function randomHex(bytes: number): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -645,18 +653,23 @@ async function fixture(
     if (endpoint === "screen") {
       const users = (await roster(env, scale)) as Array<{
         id: number;
-        cs: string;
+        cs?: unknown;
       }>;
       body = {
         device: [],
         user: users.map((u) => ({
           userid: u.id,
-          screens: u.cs.split(",").map((id, i) => ({
-            id: Number(id),
-            src: 1,
-            embid: Number(id),
-            rk: i + 1,
-          })),
+          // A baseline without usable `cs` (older snapshot, manual edit or
+          // restored backup) falls back to the weight screen instead of
+          // failing every screen request.
+          screens: (screenIds(u.cs)?.length ? screenIds(u.cs)! : [2]).map(
+            (id, i) => ({
+              id,
+              src: 1,
+              embid: id,
+              rk: i + 1,
+            }),
+          ),
         })),
       };
     }

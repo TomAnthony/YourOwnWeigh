@@ -121,7 +121,7 @@ class Application:
             helperVersion=__version__,
             os=platform.system(),
             simulated=self.simulate,
-            models=["WBS06", "WBS03", "WBS13"],
+            models=["WBS06", "WBS03", "WBS13", "WBS04"],
             backends=["CoreBluetooth", "IOBluetooth"]
             if platform.system() == "Darwin"
             else ["BlueZ GATT", "BlueZ RFCOMM"] if platform.system() == "Linux" else [],

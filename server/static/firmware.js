@@ -738,7 +738,15 @@
       }
     });
   }
-  $("scan-ble").onclick = () => scan("WBS06");
+  // Real BLE discovery is model-agnostic (the probe identifies the scale). The
+  // demonstration bridge only invents the model it is asked for, so keep the
+  // selected BLE demo model there instead of always resetting to WBS06.
+  $("scan-ble").onclick = () =>
+    scan(
+      snapshot.simulated && $("scale-model").value === "WBS04"
+        ? "WBS04"
+        : "WBS06",
+    );
   $("scan-classic").onclick = () => scan("WBS03");
   $("disconnect").onclick = () =>
     action(async () => {
