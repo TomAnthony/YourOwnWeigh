@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -115,6 +115,83 @@ test("without YOW_TRUST_PROXY the proxy's own address is still the key (previous
     for (let i = 0; i < 20; i++)
       await sync(base, "203.0.113.66", "wrong-password");
     assert.equal(await sync(base, "198.51.100.10", "admin-password-123"), 401);
+  } finally {
+    close();
+  }
+});
+
+async function proxied(
+  trustProxy: boolean,
+): Promise<{ port: number; close: () => void }> {
+  const directory = mkdtempSync(join(tmpdir(), "yow-proxy-scheme-"));
+  const store = new LocalSqlite(join(directory, "scheme.sqlite3"));
+  await store
+    .asD1()
+    .prepare("INSERT INTO settings(key,value) VALUES('admin_password',?)")
+    .bind(HASH)
+    .run();
+  const env: AppEnv = { DB: store.asD1() };
+  const hosts = new Set<string>(["waage.example.com"]);
+  const server = createServer(
+    localListener(env, false, hosts, false, trustProxy),
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    port,
+    close: () => {
+      server.close();
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+function head(
+  port: number,
+  headers: Record<string, string>,
+): Promise<{ status: number; location?: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request(
+      { host: "127.0.0.1", port, path: "/", method: "GET", headers },
+      (res) => {
+        res.resume();
+        resolve({
+          status: res.statusCode ?? 0,
+          location: res.headers.location,
+        });
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("a trusted proxy's X-Forwarded-Proto=https avoids the redirect loop", async () => {
+  const { port, close } = await proxied(true);
+  try {
+    const r = await head(port, {
+      Host: "waage.example.com",
+      "X-Forwarded-Proto": "https",
+    });
+    // Treated as https: the app proceeds (redirects an unauthenticated user to
+    // /login) instead of 308-ing back to https and looping.
+    assert.notEqual(r.status, 308);
+    assert.ok(
+      !/^https?:/i.test(r.location ?? ""),
+      `unexpected absolute redirect: ${r.location}`,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("without X-Forwarded-Proto a non-loopback plain-HTTP GET still upgrades to https", async () => {
+  const { port, close } = await proxied(false);
+  try {
+    const r = await head(port, { Host: "waage.example.com" });
+    assert.equal(r.status, 308);
+    assert.ok((r.location ?? "").startsWith("https://"), r.location ?? "");
   } finally {
     close();
   }

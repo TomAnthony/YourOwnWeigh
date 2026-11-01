@@ -1,0 +1,13 @@
+# YourOwnWeigh server — plain HTTP behind your own TLS-terminating reverse proxy.
+services:
+  yow:
+    image: ghcr.io/tomanthony/yourownweigh:latest
+    # Or build locally instead of pulling:
+    # build: { context: .., dockerfile: docker/Dockerfile }
+    container_name: yourownweigh
+    restart: unless-stopped
+    env_file: .env             # copy .env.example to .env first
+    volumes:
+      - ./data:/data           # SQLite DB + first-run bootstrap token
+    ports:
+      - "127.0.0.1:8080:8080"  # your reverse proxy forwards the subdomain here

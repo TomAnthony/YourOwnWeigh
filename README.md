@@ -116,6 +116,10 @@ npm run setup:local -- --scale-host YOUR_MAC_LAN_IP
 - In a second Terminal, run the Caddy command printed by setup. It forwards HTTP 80 and HTTPS 443 to the **scale-only** listener at `127.0.0.1:8081`; the admin page remains on loopback. 
 - You can now follow from step 4 (Python bridge) in the CloudFlare section above, entering the machines IP as the scale's hostname. 
 
+## Running with Docker
+
+Run the server 24/7 on a NAS, VPS or Pi behind your own reverse proxy, which terminates TLS for one subdomain and forwards to the container (plain HTTP, one port). See [`docker/`](docker/README.md) for the compose file and setup.
+
 ## FAQ
 
 **Q)** Will this brick my device?

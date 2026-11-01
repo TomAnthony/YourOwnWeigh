@@ -107,10 +107,22 @@ export function localListener(
       outgoing.end("Unrecognized Host header");
       return;
     }
-    const url = new URL(
-      incoming.url ?? "/",
-      `${secure ? "https" : "http"}://${authority}`,
-    );
+    // Behind a trusted reverse proxy that terminates TLS, the request reaches
+    // this plain-HTTP listener as http. Honour X-Forwarded-Proto so the app
+    // treats it as https (no self-redirect loop, Secure session cookies). With
+    // no such header the proxy is still terminating TLS, so default to https.
+    const forwardedProto = trustProxy
+      ? String(incoming.headers["x-forwarded-proto"] ?? "")
+          .split(",")[0]
+          .trim()
+          .toLowerCase()
+      : "";
+    const scheme = secure
+      ? "https"
+      : trustProxy
+        ? forwardedProto || "https"
+        : "http";
+    const url = new URL(incoming.url ?? "/", `${scheme}://${authority}`);
     if (
       scaleOnly &&
       !(incoming.method === "POST" && SCALE_PATHS.has(url.pathname))
@@ -197,9 +209,18 @@ export async function startLocal() {
   const cert = config.YOW_TLS_CERT,
     key = config.YOW_TLS_KEY;
   const secure = !!(cert && key);
-  if (!secure && !["127.0.0.1", "::1", "localhost"].includes(host))
+  const trustProxy = config.YOW_TRUST_PROXY === "1";
+  // Plain HTTP must stay on loopback unless the operator declares a reverse
+  // proxy in front (YOW_TRUST_PROXY=1) that terminates TLS and forwards to this
+  // listener. That lets the Docker image bind 0.0.0.0 inside its own network
+  // namespace while real TLS is handled by the proxy.
+  if (
+    !secure &&
+    !trustProxy &&
+    !["127.0.0.1", "::1", "localhost"].includes(host)
+  )
     throw new Error(
-      "Plain HTTP dashboard must bind to loopback. Use native HTTPS for remote administration.",
+      "Plain HTTP dashboard must bind to loopback unless YOW_TRUST_PROXY=1 (a reverse proxy terminates TLS in front of it).",
     );
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("Invalid YOW_PORT");
@@ -224,7 +245,6 @@ export async function startLocal() {
     lookupFirmwareOffer: firmwareOffer,
     bridgeRequest: (request, adminId) => bridge.request(request, adminId),
   };
-  const trustProxy = config.YOW_TRUST_PROXY === "1";
   const listener = localListener(env, secure, allowedHosts, false, trustProxy);
   const server = secure
     ? createHttpsServer(

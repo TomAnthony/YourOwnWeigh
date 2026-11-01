@@ -1,0 +1,12 @@
+# Keep the build context tiny: only what docker/Dockerfile copies.
+# Ignore everything, then re-include the server runtime inputs.
+*
+!package.json
+!package-lock.json
+!server
+!connectors
+!docker
+# never ship these even if re-included above
+**/node_modules
+**/.git
+**/*.bin
