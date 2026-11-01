@@ -5,6 +5,7 @@ import type { Duplex } from "node:stream";
 import { readFileSync, writeFileSync, renameSync, chmodSync } from "node:fs";
 import { BridgeBroker, bridgeRunId } from "./bridge.ts";
 import { handleApp, type AppEnv } from "./app.ts";
+import { forwardedScheme } from "./proxy.ts";
 
 export class NodeBridge {
   broker: BridgeBroker;
@@ -56,6 +57,7 @@ export class NodeBridge {
     env: AppEnv,
     secure: boolean,
     allowedHosts: Set<string>,
+    trustProxy = false,
   ) {
     const health = setInterval(() => this.broker.expireHelpers(), 5000);
     health.unref();
@@ -69,9 +71,17 @@ export class NodeBridge {
             socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
             return;
           }
+          // Same proxy-aware scheme as the HTTP listener: without it a WS
+          // upgrade on the public hostname is seen as http, handleApp 308s it,
+          // and the handshake is rejected as 403 behind a TLS proxy.
           const url = new URL(
             incoming.url ?? "/",
-            `${secure ? "https" : "http"}://${authority}`,
+            `${forwardedScheme(
+              secure,
+              trustProxy,
+              incoming.socket.remoteAddress,
+              incoming.headers["x-forwarded-proto"],
+            )}://${authority}`,
           );
           if (
             !["/api/bridge/socket", "/api/bridge/ui/socket"].includes(

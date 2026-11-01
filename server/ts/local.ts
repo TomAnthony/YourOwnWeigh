@@ -17,6 +17,7 @@ import { LocalSqlite } from "./sqlite.ts";
 import { handleApp, type AppEnv } from "./app.ts";
 import { captureWithings, firmwareOffer } from "./withings_capture.ts";
 import { NodeBridge } from "./bridge_node.ts";
+import { forwardedScheme, isTrustedProxyPeer } from "./proxy.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const SCALE_PATHS = new Set([
@@ -70,19 +71,20 @@ export function assets(): AppEnv["ASSETS"] {
     },
   };
 }
-const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-/** Client address used for failed-password limits. Behind a reverse proxy on
- * the same machine every request comes from loopback, so one stranger could
- * lock everyone out. With YOW_TRUST_PROXY=1, a loopback peer's X-Forwarded-For
- * is used instead; its last entry is the one the proxy itself added.
- */
+/** Client address used for failed-password limits. With YOW_TRUST_PROXY=1 the
+ * container is reachable only through the operator's reverse proxy (its port is
+ * published to loopback), and that proxy may reach Node from a Docker bridge
+ * address rather than loopback. Trust the last hop of its X-Forwarded-For, but
+ * only when the immediate peer is itself loopback/private — never from a public
+ * address — so one stranger cannot lock everyone out and a direct internet
+ * client cannot spoof the header. */
 export function peerAddress(
   remote: string | undefined,
   forwarded: string | string[] | undefined,
   trustProxy: boolean,
 ): string {
   const peer = remote ?? "unknown";
-  if (!trustProxy || !LOOPBACK.has(peer) || forwarded === undefined)
+  if (!trustProxy || forwarded === undefined || !isTrustedProxyPeer(peer))
     return peer;
   const last = (Array.isArray(forwarded) ? forwarded.join(",") : forwarded)
     .split(",")
@@ -107,9 +109,18 @@ export function localListener(
       outgoing.end("Unrecognized Host header");
       return;
     }
+    // Behind a trusted reverse proxy the request arrives over plain HTTP; treat
+    // it by the forwarded scheme so there is no redirect loop and session
+    // cookies stay Secure. forwardedScheme clamps the header to http/https so a
+    // malformed value cannot crash new URL().
     const url = new URL(
       incoming.url ?? "/",
-      `${secure ? "https" : "http"}://${authority}`,
+      `${forwardedScheme(
+        secure,
+        trustProxy,
+        incoming.socket.remoteAddress,
+        incoming.headers["x-forwarded-proto"],
+      )}://${authority}`,
     );
     if (
       scaleOnly &&
@@ -197,9 +208,18 @@ export async function startLocal() {
   const cert = config.YOW_TLS_CERT,
     key = config.YOW_TLS_KEY;
   const secure = !!(cert && key);
-  if (!secure && !["127.0.0.1", "::1", "localhost"].includes(host))
+  const trustProxy = config.YOW_TRUST_PROXY === "1";
+  // Plain HTTP must stay on loopback unless the operator declares a reverse
+  // proxy in front (YOW_TRUST_PROXY=1) that terminates TLS and forwards to this
+  // listener. That lets the Docker image bind 0.0.0.0 inside its own network
+  // namespace while real TLS is handled by the proxy.
+  if (
+    !secure &&
+    !trustProxy &&
+    !["127.0.0.1", "::1", "localhost"].includes(host)
+  )
     throw new Error(
-      "Plain HTTP dashboard must bind to loopback. Use native HTTPS for remote administration.",
+      "Plain HTTP dashboard must bind to loopback unless YOW_TRUST_PROXY=1 (a reverse proxy terminates TLS in front of it).",
     );
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("Invalid YOW_PORT");
@@ -224,7 +244,6 @@ export async function startLocal() {
     lookupFirmwareOffer: firmwareOffer,
     bridgeRequest: (request, adminId) => bridge.request(request, adminId),
   };
-  const trustProxy = config.YOW_TRUST_PROXY === "1";
   const listener = localListener(env, secure, allowedHosts, false, trustProxy);
   const server = secure
     ? createHttpsServer(
@@ -232,7 +251,7 @@ export async function startLocal() {
         listener,
       )
     : createHttpServer(listener);
-  bridge.attach(server, env, secure, allowedHosts);
+  bridge.attach(server, env, secure, allowedHosts, trustProxy);
   server.listen(port, host, () => {
     console.log(`YourOwnWeigh: ${origin.origin}`);
     if (!initialized) console.log(`First-run bootstrap token: ${bootstrap}`);
