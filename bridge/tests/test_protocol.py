@@ -182,6 +182,48 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["transferred"])
         self.assertEqual(progress[-1], ("transfer_complete", 1200, 1200))
 
+    async def test_wbs04_stock_is_recognised_and_flashable_only(self):
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        transport.wpp_profile = "WBS04"
+        frame = probe("WBS06", name="Body Cardio", boot=12, firmware=2231)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertEqual(identity["model"], "WBS04")
+        self.assertTrue(identity["supported"])
+        caps = identity["capabilities"]
+        self.assertTrue(caps["ota"])  # stock 2231 may be flashed
+        # Like WBS06: Wi-Fi/setup/import work on stock; server config does not.
+        self.assertTrue(caps["wifiWrite"])
+        self.assertTrue(caps["completeSetup"])
+        self.assertFalse(caps["serverWrite"])
+        self.assertEqual(caps["serverTransports"], [])
+
+    async def test_wbs04_yow_firmware_enables_server_config(self):
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        transport.wpp_profile = "WBS04"
+        frame = probe("WBS06", name="Body Cardio", boot=12, firmware=100)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertEqual(identity["model"], "WBS04")
+        self.assertTrue(identity["supported"])
+        caps = identity["capabilities"]
+        for key in ("ota", "serverWrite", "wifiWrite", "completeSetup"):
+            self.assertTrue(caps[key])
+        self.assertEqual(caps["hostnameMaxBytes"], 48)
+        self.assertEqual(caps["serverTransports"], ["http", "https"])
+
+    async def test_wbs04_service_needs_matching_body_cardio_identity(self):
+        # A …0006… device that is not a boot-12 Body Cardio stays unsupported.
+        transport = MockTransport("WBS06")
+        transport.identity_only = True
+        transport.wpp_profile = "WBS04"
+        frame = probe("WBS06", name="Body", boot=4, firmware=1181)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertFalse(identity["supported"])
+
     async def test_wbs13_candidate_and_unreviewed_versions_are_distinct(self):
         for version, expected in ((100, True), (101, True), (102, True), (103, True), (104, False), (1312, False)):
             transport = MockTransport("WBS06")

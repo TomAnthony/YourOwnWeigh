@@ -387,7 +387,7 @@ async function newSession(
   const ws30 = scale?.model === "WBS03";
   const validHash = ws30
     ? /^[0-9a-f]{32}$/i.test(submitted) && !params.has("hashmethod")
-    : ["WBS06", "WBS13"].includes(scale?.model ?? "") &&
+    : ["WBS06", "WBS13", "WBS04"].includes(scale?.model ?? "") &&
       HASH_RE.test(submitted) &&
       params.get("hashmethod") === "sha256";
   if (!validHash) return authenticationFailure(env, scale, request);

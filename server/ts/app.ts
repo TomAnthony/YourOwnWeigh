@@ -470,7 +470,11 @@ function parseDeviceRecord(raw: string): Row {
     record.format === "YOW-BLE-device-v1" &&
     record.model === "WBS13" &&
     record.name === "Body Smart";
-  if (!isBody && !isWS30 && !isBodySmart)
+  const isBodyCardio =
+    record.format === "YOW-BLE-device-v1" &&
+    record.model === "WBS04" &&
+    record.name === "Body Cardio";
+  if (!isBody && !isWS30 && !isBodySmart && !isBodyCardio)
     throw new Error("Unsupported device enrollment record");
   record.mac = canonicalMac(record.mac);
   if (!/^[a-f0-9]{16}$/i.test(record.session_secret ?? ""))
@@ -506,6 +510,13 @@ function parseDeviceRecord(raw: string): Row {
       record.firmware_version !== 100)
   )
     throw new Error("BLE identity is outside the reviewed WBS13 profile");
+  if (
+    isBodyCardio &&
+    (record.hardware_version !== 0xffffff ||
+      record.bootloader_version !== 12 ||
+      ![2231, 100, 101, 102].includes(record.firmware_version))
+  )
+    throw new Error("BLE identity is outside the reviewed WBS04 profile");
   if (
     isWS30 &&
     (record.bootloader_version !== 15 ||
@@ -1216,7 +1227,7 @@ async function enrollDevice(
 ): Promise<Row> {
   label =
     label.trim() ||
-    `${record.model === "WBS03" ? "WS-30" : record.model === "WBS13" ? "Body Smart" : "Body"} ${record.mac.slice(-4)}`;
+    `${record.model === "WBS03" ? "WS-30" : record.model === "WBS13" ? "Body Smart" : record.model === "WBS04" ? "Body Cardio" : "Body"} ${record.mac.slice(-4)}`;
   if (label.length > 80) throw new Error("Scale label is too long");
   if (zone) zoneTriplet(zone);
   const existing = await one(

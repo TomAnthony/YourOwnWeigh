@@ -43,7 +43,11 @@
     "check-firmware-offer",
   ];
   const label = (model) =>
-    ({ WBS03: "WS-30 (WBS03)", WBS13: "Body Smart (WBS13)" })[model] || "WBS06";
+    ({
+      WBS03: "WS-30 (WBS03)",
+      WBS13: "Body Smart (WBS13)",
+      WBS04: "Body Cardio (WBS04)",
+    })[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
   const unknownFirmware = (artifact) =>

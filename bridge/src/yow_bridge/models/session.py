@@ -57,7 +57,7 @@ def hostname(value, limit):
 
 class ScaleSession:
     def __init__(self, model, transport):
-        if model not in ("WBS06", "WBS03", "WBS13"):
+        if model not in ("WBS06", "WBS03", "WBS13", "WBS04"):
             raise ValueError("Unsupported model")
         self.model, self.transport = model, transport
         self.serial_reset = asyncio.Event()
@@ -145,16 +145,23 @@ class ScaleSession:
         # Enable the WBS13 path only for the exact observed probe
         # identity and service profile, never another device on the same UUIDs.
         modern = getattr(self.transport, "wpp_profile", None) == "WBS13"
+        cardio = getattr(self.transport, "wpp_profile", None) == "WBS04"
         if self.model != "WBS03" and modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF:
             self.model = "WBS13"
+        # Body Cardio (WBS04): its own WPP service (…0006…); never enables the
+        # WBS06/WBS13 OTA paths. Boot 12, hardware 0xFFFFFF, probe name below.
+        if self.model != "WBS03" and cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF:
+            self.model = "WBS04"
         supported = (
             modern and name == "Body Smart" and boot == 2 and identity["hardwareVersion"] == 0xFFFFFF
             if self.model == "WBS13" else
+            cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF
+            if self.model == "WBS04" else
             name == "Body" and boot == 4 and identity["hardwareVersion"] == 0xFFFFFF
             if self.model == "WBS06"
             else boot == 15 and bool(re.search(r"WS-?30", name, re.IGNORECASE))
         )
-        supported = supported and (self.model == "WBS13" or not getattr(self.transport, "identity_only", False))
+        supported = supported and (self.model in ("WBS13", "WBS04") or not getattr(self.transport, "identity_only", False))
         # A factory-new Body Smart returned a valid identity with an empty
         # secret. Show that identity without enabling provisioning or claiming
         # credentials are available. Supported models still require their key;
@@ -219,6 +226,23 @@ class ScaleSession:
                 vendorFirmwareOfferRead=False,
                 firmwareRead=False, otaDestinationRead=False,
             )
+        if self.model == "WBS04":
+            # Body Cardio mirrors WBS06: Withings import + Wi-Fi/setup commands
+            # work on stock firmware; only server-target config needs YOW firmware.
+            owner = version in (100, 101, 102)
+            return dict(
+                ota=version in (2231, 100, 101, 102),
+                serverRead=owner,
+                serverWrite=owner,
+                serverTransports=["http", "https"] if owner else [],
+                hostnameMaxBytes=48,
+                wifiWrite=True,
+                wifiRead="ssid-only",
+                wifiConnectionResult="device-reported",
+                completeSetup=True,
+                firmwareRead=False,
+                otaDestinationRead=False,
+            )
         body = self.model == "WBS06"
         owner = version in ((123, 124, 125, 126, 127) if body else (100, 101, 102))
         known = version in ((1181, 123, 124, 125, 126, 127) if body else (921, 100, 101, 102))
@@ -251,7 +275,7 @@ class ScaleSession:
         i = self.identity
         return dict(
             format="YOW-BLE-device-v1"
-            if self.model in ("WBS06", "WBS13")
+            if self.model in ("WBS06", "WBS13", "WBS04")
             else "YOW-Classic-device-v1",
             model=self.model,
             name=i["name"],
