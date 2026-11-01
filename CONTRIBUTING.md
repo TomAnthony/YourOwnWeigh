@@ -15,6 +15,7 @@ These models are mapped:
 | --- | --- | --- |
 | Body (**WBS13**) | v1311 | https://wbs13-fw.withings.net/wbs13/wbs13_1311_lb2w93.bin |
 | Body (**WBS06**) | v1181 | http://cdnfw.withings.net/wbs06/wbs06_1181_XFUxfc.bin |
+| Body Cardio (**WBS04**) | v2231 | http://cdnfw.withings.net/wbs04/wbs04_2231_1xHtQN.bin |
 | Wireless Scale (**WS-30 / WBS03**) | v921 | http://cdnfw.withings.net/wbs03/wbs03_921_dR7wKb.bin |
 
 ### Identifying New Firmwares
