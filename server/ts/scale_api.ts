@@ -49,6 +49,14 @@ const encoder = new TextEncoder();
 
 const now = () => Math.floor(Date.now() / 1000);
 
+/** Screen IDs from a roster `cs` field ("2,1,3"; "" means none). Returns null
+ * when the value is missing or malformed, so callers can reject it. */
+export function screenIds(cs: unknown): number[] | null {
+  if (cs === "") return [];
+  if (typeof cs !== "string" || !/^\d{1,5}(,\d{1,5}){0,31}$/.test(cs))
+    return null;
+  return cs.split(",").map(Number);
+}
 function randomHex(bytes: number): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -387,7 +395,7 @@ async function newSession(
   const ws30 = scale?.model === "WBS03";
   const validHash = ws30
     ? /^[0-9a-f]{32}$/i.test(submitted) && !params.has("hashmethod")
-    : ["WBS06", "WBS13"].includes(scale?.model ?? "") &&
+    : ["WBS06", "WBS13", "WBS04"].includes(scale?.model ?? "") &&
       HASH_RE.test(submitted) &&
       params.get("hashmethod") === "sha256";
   if (!validHash) return authenticationFailure(env, scale, request);
@@ -446,7 +454,7 @@ async function newSession(
   if (
     !ws30 &&
     (!scale.settings_ready ||
-      (scale.model !== "WBS13" &&
+      (!["WBS13", "WBS04"].includes(scale.model) &&
         (!scale.screen_response || !scale.summary_response)))
   ) {
     await env.DB.batch([
@@ -636,21 +644,29 @@ async function fixture(
     return error(400, "unsupported action");
   const scale = await requireDeviceSession(env, params, endpoint);
   if (!scale) return error(403, "invalid session");
-  if (scale.model === "WBS13") {
+  if (scale.model === "WBS13" || scale.model === "WBS04") {
+    // WBS04 (Body Cardio) builds its screen config dynamically from the roster
+    // `cs` screen IDs, like WBS13, instead of a captured Withings fixture. This
+    // supplies the heart-rate / PWV / vascular-age screens so the scale runs the
+    // full measurement sequence rather than weight only.
     let body: object = endpoint === "summary" ? [] : {};
     if (endpoint === "screen") {
       const users = (await roster(env, scale)) as Array<{
         id: number;
-        cs: string;
+        cs?: unknown;
       }>;
       body = {
         device: [],
         user: users.map((u) => ({
           userid: u.id,
-          screens: u.cs.split(",").map((id, i) => ({
-            id: Number(id),
+          // A missing or malformed `cs` (older snapshot, manual edit or
+          // restored backup) falls back to the weight screen instead of
+          // failing every screen request. An explicit empty selection (the
+          // user turned every screen off) is preserved as-is.
+          screens: (screenIds(u.cs) ?? [2]).map((id, i) => ({
+            id,
             src: 1,
-            embid: Number(id),
+            embid: id,
             rk: i + 1,
           })),
         })),

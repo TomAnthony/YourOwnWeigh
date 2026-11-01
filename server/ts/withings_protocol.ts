@@ -122,7 +122,9 @@ export async function captureWithingsSession(
         auth: mac,
         hash,
         mfgid: scale.reported_mfgid ?? 0,
-        currentfw: 1181,
+        // Report the model's stock firmware so Withings treats the session as
+        // this device, not a WBS06. WBS04 (Body Cardio) ships stock 2231.
+        currentfw: scale.model === "WBS04" ? 2231 : 1181,
         batterylvl: 100,
         duration: 300,
         wstarget: 1,

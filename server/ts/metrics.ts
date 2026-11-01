@@ -29,6 +29,18 @@ export const METRICS = [
     label: "Metabolic Age",
     unit: "years",
   },
+  {
+    type: 91,
+    key: "pulse_wave_velocity_mps",
+    label: "Pulse Wave Velocity",
+    unit: "m/s",
+  },
+  {
+    type: 155,
+    key: "vascular_age_years",
+    label: "Vascular Age",
+    unit: "years",
+  },
 ] as const;
 export type Metric = (typeof METRICS)[number];
 export type Measure = {

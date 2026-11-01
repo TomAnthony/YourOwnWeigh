@@ -225,7 +225,7 @@ function parse(raw: string): Backup {
   const macs = new Set();
   for (const r of b.sections.scales) {
     if (
-      !["WBS06", "WBS03", "WBS13"].includes(String(r.model)) ||
+      !["WBS06", "WBS03", "WBS13", "WBS04"].includes(String(r.model)) ||
       !/^[A-F0-9]{12}$/.test(String(r.mac)) ||
       macs.has(r.mac) ||
       typeof r.secret !== "string" ||

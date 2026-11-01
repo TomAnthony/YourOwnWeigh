@@ -21,6 +21,8 @@ RELEASES = {
     "WBS06": (127, "419aeafa0ab3a60197dfc6909b27381477498ac3688cd147ae0d675cf5a6b808"),
     "WBS03": (102, "97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a"),
     "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
+    # HTTP-only Body Cardio build, flashed and working on hardware; HTTPS pending.
+    "WBS04": (100, "a16bc12a14c927f1d08da3037538ed0b888b08a6e892f54a8a68544728864e3f"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",
@@ -96,8 +98,12 @@ def inspect(data: bytes, model: str) -> dict:
         or u(0x84) != p["stackPointer"]
     ):
         raise ValueError("Application identity/version mismatch")
+    # Internal-flash ceiling is model-specific: WBS06 is a 512 KB part, the
+    # Body Cardio (WBS04) application already spans past 0x80000, so the recipe
+    # carries its own flashLimit.
+    flash_limit = p.get("flashLimit", 0x80000)
     if (
-        app[2] + 0x4000 > 0x80000
+        app[2] + 0x4000 > flash_limit
         or not 0x4000 <= (u(0x88) & ~1) < app[2] + 0x4000
         or not u(0x88) & 1
     ):

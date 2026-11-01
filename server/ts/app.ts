@@ -12,7 +12,12 @@ import {
   settingsWorkspace,
   syncPage,
 } from "./integrated_ui.ts";
-import { handleScaleRequest, zoneTriplet, roster } from "./scale_api.ts";
+import {
+  handleScaleRequest,
+  zoneTriplet,
+  roster,
+  screenIds,
+} from "./scale_api.ts";
 import {
   dashboardPage,
   escapeHtml,
@@ -470,7 +475,11 @@ function parseDeviceRecord(raw: string): Row {
     record.format === "YOW-BLE-device-v1" &&
     record.model === "WBS13" &&
     record.name === "Body Smart";
-  if (!isBody && !isWS30 && !isBodySmart)
+  const isBodyCardio =
+    record.format === "YOW-BLE-device-v1" &&
+    record.model === "WBS04" &&
+    record.name === "Body Cardio";
+  if (!isBody && !isWS30 && !isBodySmart && !isBodyCardio)
     throw new Error("Unsupported device enrollment record");
   record.mac = canonicalMac(record.mac);
   if (!/^[a-f0-9]{16}$/i.test(record.session_secret ?? ""))
@@ -506,6 +515,13 @@ function parseDeviceRecord(raw: string): Row {
       record.firmware_version !== 100)
   )
     throw new Error("BLE identity is outside the reviewed WBS13 profile");
+  if (
+    isBodyCardio &&
+    (record.hardware_version !== 0xffffff ||
+      record.bootloader_version !== 12 ||
+      ![2231, 100, 101, 102].includes(record.firmware_version))
+  )
+    throw new Error("BLE identity is outside the reviewed WBS04 profile");
   if (
     isWS30 &&
     (record.bootloader_version !== 15 ||
@@ -707,7 +723,10 @@ async function importCaptureUsers(
   }
   await db.batch(statements);
 }
-function captureSettings(capture: Capture): { values: Value[] } {
+function captureSettings(
+  capture: Capture,
+  requireFixtures = true,
+): { values: Value[] } {
   const ctp = capture.ctp,
     ind = capture.ind;
   if (!ctp || !ind) throw new Error("Capture has no time or device settings");
@@ -730,18 +749,17 @@ function captureSettings(capture: Capture): { values: Value[] } {
     throw new Error("Captured routing selector points to a Withings beta host");
   const tmp = integer(ind.tmp, 0, 255, "ind.tmp");
   const weight = integer(ind.w, 0, 255, "ind.w");
-  const screen = validatedFixture(
-    JSON.stringify(capture.screen_response ?? null),
-    "screen",
-  );
-  const summary = validatedFixture(
-    JSON.stringify(capture.summary_response ?? null),
-    "summary",
-  );
+  const screen = capture.screen_response
+    ? validatedFixture(JSON.stringify(capture.screen_response), "screen")
+    : null;
+  const summary = capture.summary_response
+    ? validatedFixture(JSON.stringify(capture.summary_response), "summary")
+    : null;
   const weather = capture.weather_response
     ? validatedFixture(JSON.stringify(capture.weather_response), "weather")
     : null;
-  if (!screen || !summary) throw new Error("Capture lacks display responses");
+  if (requireFixtures && (!screen || !summary))
+    throw new Error("Capture lacks display responses");
   return {
     values: [
       goff,
@@ -1136,9 +1154,16 @@ async function fetchAndApplyProfile(
       "WBS13 uses local users; choose them in Scales → Edit Settings",
     );
   const raw = await fetcher(scale);
-  await stageCapture(db, scale.id, raw);
   const capture = parseCapture(raw),
     statements: D1PreparedStatement[] = [];
+  // WBS04 builds its screen config from each user's `cs` screen IDs, so a
+  // baseline without them would break every later screen request.
+  if (
+    scale.model === "WBS04" &&
+    capture.sp!.users.some((user) => screenIds(user.cs) === null)
+  )
+    throw new Error("Capture is missing valid screen IDs (cs) for a user");
+  await stageCapture(db, scale.id, raw);
   // Preserve an established local roster and locally edited users on refresh.
   if (!scale.roster_snapshot)
     statements.push(
@@ -1156,6 +1181,27 @@ async function fetchAndApplyProfile(
   }
   if (scale.model === "WBS06" && !scale.settings_ready) {
     const { values } = captureSettings(capture);
+    if (
+      scale.reported_feature_mask != null &&
+      scale.reported_feature_mask !== values[3]
+    )
+      throw new Error(
+        "Captured settings do not match this scale's reported feature mask",
+      );
+    statements.push(
+      db
+        .prepare(
+          "UPDATE scales SET goff=?,dst=?,ngoff=?,feature_mask=?,debug_mask=?,beta_ws=?,temp_code=?,weight_code=?,screen_response=?,summary_response=?,weather_response=?,settings_ready=1 WHERE id=? AND settings_ready=0",
+        )
+        .bind(...values, scale.id),
+    );
+  }
+  if (scale.model === "WBS04" && !scale.settings_ready) {
+    // Body Cardio: import the captured clock + device settings (ctp/ind) so the
+    // session sends the real offsets, unit codes and feature flags — but mark
+    // ready without the WBS06 screen/summary display fixtures, which Withings
+    // does not supply for this model (confirmed on hardware after flashing).
+    const { values } = captureSettings(capture, false);
     if (
       scale.reported_feature_mask != null &&
       scale.reported_feature_mask !== values[3]
@@ -1216,7 +1262,7 @@ async function enrollDevice(
 ): Promise<Row> {
   label =
     label.trim() ||
-    `${record.model === "WBS03" ? "WS-30" : record.model === "WBS13" ? "Body Smart" : "Body"} ${record.mac.slice(-4)}`;
+    `${record.model === "WBS03" ? "WS-30" : record.model === "WBS13" ? "Body Smart" : record.model === "WBS04" ? "Body Cardio" : "Body"} ${record.mac.slice(-4)}`;
   if (label.length > 80) throw new Error("Scale label is too long");
   if (zone) zoneTriplet(zone);
   const existing = await one(
@@ -1280,7 +1326,7 @@ async function enrollDevice(
 async function queueRosterEdits(db: D1Database, userId: number) {
   for (const scale of await rows(
     db,
-    "SELECT * FROM scales WHERE model='WBS06' AND settings_ready=1 AND roster_snapshot IS NOT NULL",
+    "SELECT * FROM scales WHERE model IN ('WBS06','WBS04') AND settings_ready=1 AND roster_snapshot IS NOT NULL",
   )) {
     const baseline = JSON.parse(scale.roster_snapshot);
     if (!baseline.some((u: Row) => u.id === userId)) continue;
@@ -2632,7 +2678,7 @@ async function browserPost(
       await queueRosterEdits(db, id);
       return go(
         "/users",
-        "User updated; supported WBS06 roster edits will be sent on its next connection",
+        "User updated; roster edits will be sent to supported scales on their next connection",
       );
     }
     const readingAssign = /^\/readings\/(\d+)\/assign$/.exec(path);

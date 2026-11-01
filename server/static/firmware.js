@@ -43,7 +43,11 @@
     "check-firmware-offer",
   ];
   const label = (model) =>
-    ({ WBS03: "WS-30 (WBS03)", WBS13: "Body Smart (WBS13)" })[model] || "WBS06";
+    ({
+      WBS03: "WS-30 (WBS03)",
+      WBS13: "Body Smart (WBS13)",
+      WBS04: "Body Cardio (WBS04)",
+    })[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
   const unknownFirmware = (artifact) =>
@@ -734,7 +738,15 @@
       }
     });
   }
-  $("scan-ble").onclick = () => scan("WBS06");
+  // Real BLE discovery is model-agnostic (the probe identifies the scale). The
+  // demonstration bridge only invents the model it is asked for, so keep the
+  // selected BLE demo model there instead of always resetting to WBS06.
+  $("scan-ble").onclick = () =>
+    scan(
+      snapshot.simulated && $("scale-model").value === "WBS04"
+        ? "WBS04"
+        : "WBS06",
+    );
   $("scan-classic").onclick = () => scan("WBS03");
   $("disconnect").onclick = () =>
     action(async () => {

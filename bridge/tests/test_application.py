@@ -26,6 +26,9 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.app = Application(self.tmp.name, simulate=True)
 
     async def asyncTearDown(self):
+        from yow_bridge import simulation
+
+        simulation._INSTALLED.clear()
         self.tmp.cleanup()
 
     async def run_command(self, c):
@@ -46,6 +49,38 @@ class Commands(unittest.IsolatedAsyncioTestCase):
                 connectionGeneration=self.app.generation,
             )
         )
+
+    async def test_snapshot_advertises_wbs04(self):
+        self.assertIn("WBS04", self.app.snapshot()["models"])
+
+    async def connect_demo(self, model):
+        await self.run_command(
+            command("device.scan.start", dict(model=model, durationSeconds=1))
+        )
+        await self.run_command(command("device.connect", deviceId="demo-scale"))
+        event = await self.run_command(
+            command(
+                "device.probe",
+                deviceId="demo-scale",
+                connectionGeneration=self.app.generation,
+            )
+        )
+        return event["result"]
+
+    async def test_simulated_wbs04_firmware_survives_reconnect(self):
+        identity = await self.connect_demo("WBS04")
+        self.assertEqual(identity["model"], "WBS04")
+        self.assertEqual(identity["firmwareVersion"], 2231)
+        await self.app.session.install(bytes(10), lambda *args: None)
+        await self.run_command(
+            command(
+                "device.disconnect",
+                deviceId="demo-scale",
+                connectionGeneration=self.app.generation,
+            )
+        )
+        identity = await self.connect_demo("WBS04")
+        self.assertEqual(identity["firmwareVersion"], 100)
 
     async def test_connect_stops_scan_and_waits_for_radio_cleanup(self):
         from yow_bridge import simulation

@@ -34,7 +34,7 @@ export function firmwareWorkspace(csrf: string): string {
       </section>
       <div class="firmware-grid">
         <section id="firmware-panel"><h2>Firmware</h2>
-          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option><option value="WBS13">Body Smart (WBS13)</option></select></label>
+          <div class="form-block"><label>Target Model<select id="scale-model"><option value="WBS06">Body (WBS06)</option><option value="WBS03">WS-30 (WBS03)</option><option value="WBS13">Body Smart (WBS13)</option><option value="WBS04">Body Cardio (WBS04)</option></select></label>
           <p class="hint">Download stock firmware and generate YourOwnWeigh firmware. Files stay on the computer running the bridge.</p>
           <div class="action-row"><button id="generate-firmware" type="button">Generate Firmware For WBS06</button><label class="text-button file-link">Select Manually<input id="manual-firmware" type="file" accept=".bin" hidden></label></div></div>
           <div id="firmware-info" class="firmware-artifact" hidden></div>
@@ -94,7 +94,7 @@ export function scalesWorkspace(
               (
                 s,
               ) => `<section class="scale-card" id="scale-${e(s.id)}"><div class="section-heading"><h2>${e(s.label)}</h2><span class="badge${s.model !== "WBS03" && !s.settings_ready ? " warn" : ""}">${s.model === "WBS03" || s.settings_ready ? "Ready" : s.model === "WBS13" ? "Choose Users" : "Import Incomplete"}</span></div>
-      <table class="scale-details"><tbody><tr><th>Model</th><td>${s.model === "WBS03" ? "Wireless Scale (WBS03 / WS-30)" : s.model === "WBS13" ? "Body Smart (WBS13)" : "Body Scale (WBS06)"}</td></tr><tr><th>MAC</th><td><code>${e(
+      <table class="scale-details"><tbody><tr><th>Model</th><td>${s.model === "WBS03" ? "Wireless Scale (WBS03 / WS-30)" : s.model === "WBS13" ? "Body Smart (WBS13)" : s.model === "WBS04" ? "Body Cardio (WBS04)" : "Body Scale (WBS06)"}</td></tr><tr><th>MAC</th><td><code>${e(
         String(s.mac)
           .replace(/(..)(?=.)/g, "$1:")
           .toUpperCase(),
