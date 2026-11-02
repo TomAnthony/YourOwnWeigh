@@ -46,13 +46,7 @@ WBS13 v103 adds a native-resolution YOW startup smiley with outward-tilted eyes 
 
 WBS13 is a supported model and uses the shared Bleak transport on macOS and Linux. Its Bluetooth workflow has been exercised on macOS; a Linux WBS13 hardware check remains outstanding. This is transport validation: the firmware image and server protocol are the same on either platform, and daily Wi-Fi sync does not use the computer. Factory-reset previously Withings-registered scales before setup. Remaining coverage checks are recorded in the [hardware checklist](../docs/hardware-acceptance.md) and [WBS13 firmware notes](../firmware/wbs13/v1311/README.md).
 
-WS-50/WS50 uses Classic on macOS and Linux, with stock v1721 / bootloader 12
-and YOW v1023. Its owner hostname, Wi-Fi settings, clock, Complete Setup
-and OTA share the WS-30 workflow; v1023 replaces the stock 37×26 Hello bitmap
-with the same approved smiley and forces HTTP. The owner server uses native
-`/once`, `/session` and `/measure` paths and MD5 authentication; the web app
-also accepts the `/cgi-bin/*` aliases on the scale-only listener. Vendor-profile
-imports remain on the shared SHA-256 compatibility exchange. 
+WS-50/WS50 uses Classic on macOS and Linux, with stock v1721 / bootloader 12 and YOW v1023. Its owner hostname, Wi-Fi settings, clock, Complete Setup and OTA share the WS-30 workflow; v1023 replaces the stock 37×26 Hello bitmap with the same approved smiley and forces HTTP. The owner server uses native `/once`, `/session` and `/measure` paths and MD5 authentication; the web app also accepts the `/cgi-bin/*` aliases on the scale-only listener. Vendor-profile imports remain on the shared SHA-256 compatibility exchange.
 
 ## Progress And Recovery
 

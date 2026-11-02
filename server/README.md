@@ -14,12 +14,7 @@ The dashboard is `http://127.0.0.1:8080`. Setup creates a token under `local/dat
 
 For scale traffic, install [Caddy](https://caddyserver.com/docs/install) and run the generated Caddyfile using the command setup prints. Only the Caddy process needs access to ports 80/443; Node and Python must not run as root. Stop foreground processes with Ctrl-C. The generated proxy sends only scale traffic to the separate listener, whose route allowlist excludes admin, bootstrap, Sync and bridge paths. No firewall or router changes are made by setup.
 
-The scale-only listener accepts WS-50 POST requests to `/cgi-bin/once`,
-`/cgi-bin/session` and `/cgi-bin/measure`, alongside the other models' existing
-routes. This does not expose arbitrary `/cgi-bin/*` paths. WS-50 uses HTTP on
-port 80. After updating the server code, restart the Node process using your
-existing launch command/environment; the generated Caddy configuration needs
-no change for these routes.
+The scale-only listener accepts WS-50 POST requests to `/cgi-bin/once`, `/cgi-bin/session` and `/cgi-bin/measure`, alongside the other models' existing routes. This does not expose arbitrary `/cgi-bin/*` paths. WS-50 uses HTTP on port 80. After updating the server code, restart the Node process using your existing launch command/environment; the generated Caddy configuration needs no change for these routes.
 
 Caddy's [`tls internal`](https://caddyserver.com/docs/caddyfile/directives/tls) supplies the scale-facing certificate, with automatic trust-store installation disabled. The patched WBS06 does not authenticate that certificate. This does not make it trusted for iPhone or browser access. The local recipe deliberately uses loopback for administration; use a properly trusted HTTPS application endpoint for remote clients.
 
@@ -47,9 +42,7 @@ Approved WBS06/WS-30 enrollment stores the MAC/secret and Bluetooth observations
 
 WBS06 settings and display responses are required before its sync session can complete. If initial import fails, Finish Device Import retries. WS-30 does not adopt WBS06 display fixtures and keeps its minimal session. The server stores the profile; daily owner syncing does not call Withings. An optional read-only lookup for an unrecognised scale can use its Bluetooth MAC and secret to ask Withings for an advertised firmware URL and SHA-1. The browser receives only those offer fields, and the copyable issue report excludes credentials and users. This does not fetch or install the offered image.
 
-WS-50 owner-server sessions use 32-hex MD5 of `<auth>:<secret>:<once>` with no
-`method` or `hashmethod` marker, confirmed by a native packet capture.
-`auth` is hashed exactly as received; MAC canonicalization is for device lookup.
+WS-50 owner-server sessions use 32-hex MD5 of `<auth>:<secret>:<once>` with no `method` or `hashmethod` marker, confirmed by a native packet capture. `auth` is hashed exactly as received; MAC canonicalization is for device lookup.
 
 Timezone arithmetic lives in TypeScript. The browser provides an IANA timezone; the server calculates UTC/current offset/next transition/next offset for both Wi-Fi responses and Bluetooth provisioning. Shared fixtures in `contracts/time/v1/` test boundary behavior and Python's wire encoding.
 
@@ -93,9 +86,7 @@ Use Settings → Export Database. The versioned JSON includes household users, d
 
 Import uploads to bounded temporary staging (10 MiB / 25,000 rows), shows counts, then commits one SQLite transaction or D1 batch. Merge adds missing data, deduplicates readings and keeps existing user edits. Replace is explicit. Current passwords remain unless Restore Access Settings is selected; restoring them signs out sessions and revokes the bridge. Invalid rows or final-batch failures roll back. Staging expires after 15 minutes.
 
-Backup import validates device models against the shared model registry,
-including WS-50 (`WS50`). Merge and Replace retain its linked readings and raw
-metrics; unknown model identifiers are rejected.
+Backup import validates device models against the shared model registry, including WS-50 (`WS50`). Merge and Replace retain its linked readings and raw metrics; unknown model identifiers are rejected.
 
 The Sync API uses HTTP Basic `reader:password`, sharing the admin password by default. It accepts a numeric user ID or unique three-letter name. See Sync in the app and [Apple Health](../connectors/Apple%20Health/README.md). Unknown users and errors return JSON. Readings API access covers all household users; the requested user is a filter, not an authorization boundary.
 

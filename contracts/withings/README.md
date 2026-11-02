@@ -20,12 +20,7 @@ about this WS-30's running firmware. Authentication used the shared SHA-256
 exchange; the owner server's separate WS-30 MD5 protocol was not changed. Weather
 was not requested, so `weather_response: null` means uncaptured, not unsupported.
 
-Vendor profile imports retain this shared SHA-256 compatibility exchange for
-both WS-30 and WS-50; they do not select a vendor protocol from the model's
-owner-server authentication. The speculative per-model vendor configuration
-has been removed. WS-50 live acceptance remains unverified. See the
-[evidence gate](../../docs/ws30-vendor-import-confirmation.md) before introducing
-a model-specific exception.
+Vendor profile imports retain this shared SHA-256 compatibility exchange for both WS-30 and WS-50; they do not select a vendor protocol from the model's owner-server authentication. The speculative per-model vendor configuration has been removed. WS-50 live acceptance remains unverified. See the [evidence gate](../../docs/ws30-vendor-import-confirmation.md) before introducing a model-specific exception.
 
 ## Preserved Details And Sanitization
 
@@ -48,11 +43,7 @@ History numbers test response shape, not graph rendering or measurement decoding
 
 ## Verified Behavior
 
-[The regression tests](../../server/ts/tests/ws30_withings_import.test.ts) replay
-the shared exchange through the exported vendor transport wrapper, then exercise
-the actual web importer against a temporary SQLite database. The WS-50 wrapper
-case replays this same sanitized fixture to guard the compatibility contract;
-it is not evidence of a successful live WS-50 exchange. The tests check:
+[The regression tests](../../server/ts/tests/ws30_withings_import.test.ts) replay the shared exchange through the exported vendor transport wrapper, then exercise the actual web importer against a temporary SQLite database. The WS-50 wrapper case replays this same sanitized fixture to guard the compatibility contract; it is not evidence of a successful live WS-50 exchange. The tests check:
 
 1. Stage and preview the roster through the existing normalizer.
 2. Import all four users and memberships, preserving their numeric IDs.
