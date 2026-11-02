@@ -1,5 +1,5 @@
 {
-  "version": 1022,
+  "version": 1023,
   "stockVersion": 1721,
   "bootloader": 12,
   "sourceSize": 752448,
@@ -7,7 +7,7 @@
   "expansionAt": 480732,
   "expansionSize": 4096,
   "sourceSha256": "4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86",
-  "outputSha256": "a6db2b8855c726ac9a54066ce4aeb5f36dda0becdae631db4cccef090c24d4a9",
+  "outputSha256": "3ed6bcf5d282f84d022644a21d78f577650bd55e9f354607fcdcd5d3938dff4e",
   "url": "http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin",
   "ownerProtocol": 2,
   "hostLimit": 59,
@@ -26,7 +26,7 @@
       "offset": 8,
       "length": 2,
       "beforeSha256": "bf64bd828dc3e53fd9f3c65945592bcb8de93722eaea0f82060d41fa6b94e627",
-      "hex": "fe03"
+      "hex": "ff03"
     },
     {
       "offset": 17,
@@ -38,7 +38,7 @@
       "offset": 20,
       "length": 4,
       "beforeSha256": "7ccde88cc46f89e716482e2ebb2e4142d1e438759b665cc24c7d15d31d3d144b",
-      "hex": "0f6a3f6b"
+      "hex": "009cd550"
     },
     {
       "offset": 25,
@@ -54,9 +54,15 @@
     },
     {
       "offset": 40,
-      "length": 4,
-      "beforeSha256": "099b7951bec5652b49535c9695f2ea4e3117f0164cbeeb6a344d325f7573cf60",
-      "hex": "a0f44217"
+      "length": 2,
+      "beforeSha256": "a7e674b65066d74d9a749d436ce5e1d8d279c5f9763cc2d820da774cda11c05a",
+      "hex": "9da7"
+    },
+    {
+      "offset": 43,
+      "length": 1,
+      "beforeSha256": "d1211001882d2ce16a8553e449b6c8b7f71e61836efc2e416143808f20e721e7",
+      "hex": "32"
     },
     {
       "offset": 57,
@@ -68,7 +74,7 @@
       "offset": 60,
       "length": 6,
       "beforeSha256": "bb8213280ca3efe96c8696d668749ac6a66a520e3bb61b8d428ae3e0cff68a77",
-      "hex": "0f6a3f6bfe03"
+      "hex": "009cd550ff03"
     },
     {
       "offset": 73,
@@ -92,7 +98,7 @@
       "offset": 128,
       "length": 4,
       "beforeSha256": "8103e01dcb717eed858c6ce96af2ffb690d44726459209e6d44e0c6eef9a5c9f",
-      "hex": "b8e37d08"
+      "hex": "a523b7a4"
     },
     {
       "offset": 108490,
@@ -137,10 +143,124 @@
       "hex": "02fc"
     },
     {
+      "offset": 450524,
+      "length": 3,
+      "beforeSha256": "e521e3a01be9ff86884154f13a3b6beaecef51eff7ce3fce2ccb070d6172d350",
+      "hex": "000000"
+    },
+    {
+      "offset": 450528,
+      "length": 3,
+      "beforeSha256": "e521e3a01be9ff86884154f13a3b6beaecef51eff7ce3fce2ccb070d6172d350",
+      "hex": "000000"
+    },
+    {
+      "offset": 450533,
+      "length": 1,
+      "beforeSha256": "c555eab45d08845ae9f10d452a99bfcb06f74a50b988fe7e48dd323789b88ee3",
+      "hex": "00"
+    },
+    {
+      "offset": 450535,
+      "length": 3,
+      "beforeSha256": "334f38f6b429d2a273c2e2befc1088c3ced8e37c4793bf5a2a2fb0af812eb258",
+      "hex": "f00f00"
+    },
+    {
+      "offset": 450539,
+      "length": 3,
+      "beforeSha256": "334f38f6b429d2a273c2e2befc1088c3ced8e37c4793bf5a2a2fb0af812eb258",
+      "hex": "fc3f00"
+    },
+    {
+      "offset": 450543,
+      "length": 3,
+      "beforeSha256": "334f38f6b429d2a273c2e2befc1088c3ced8e37c4793bf5a2a2fb0af812eb258",
+      "hex": "fe7f00"
+    },
+    {
+      "offset": 450547,
+      "length": 11,
+      "beforeSha256": "989c7e893fd455bd06bb46ee84300c306640eafd9a11f69ffd8656373a0b1207",
+      "hex": "fe7f0000ffff1800ffff38"
+    },
+    {
+      "offset": 450559,
+      "length": 3,
+      "beforeSha256": "709e80c88487a2411e1ee4dfb9f22a861492d20c4765150c0c794abd70f8147c",
+      "hex": "ffff70"
+    },
+    {
+      "offset": 450563,
+      "length": 24,
+      "beforeSha256": "12de2a2f954442a243999d2d3f29a7b2963eadc0a41b7338e33b108351e263f1",
+      "hex": "fe7f6000fe7fe000fc3fc000f00fc0010000800100008001"
+    },
+    {
+      "offset": 450588,
+      "length": 3,
+      "beforeSha256": "ae2674ee27416f6b462e52c94ff6ffd5b6a53da2ef55893ab1d66039925473dc",
+      "hex": "008001"
+    },
+    {
+      "offset": 450592,
+      "length": 3,
+      "beforeSha256": "b12824deffc417e25444441b13a21a2bb80b1786adb751044240eccb17c5a231",
+      "hex": "008003"
+    },
+    {
+      "offset": 450596,
+      "length": 16,
+      "beforeSha256": "808567f55842efffb60446ec3c0964e0cbe53487c747356ac21bdc03a5b009db",
+      "hex": "00800300008003000080010000800100"
+    },
+    {
+      "offset": 450613,
+      "length": 9,
+      "beforeSha256": "8bb541b1a38fd15386dca0fb60328c97766b19b585e60fcd740378c6cd740480",
+      "hex": "8001f00fc001fc3fc0"
+    },
+    {
+      "offset": 450623,
+      "length": 11,
+      "beforeSha256": "6585275fbf48d1ad3abe7019293e044d26fb7546edede2fdad77e1246fc69472",
+      "hex": "fe7fe000fe7f6000ffff70"
+    },
+    {
+      "offset": 450635,
+      "length": 3,
+      "beforeSha256": "070b13c004e9475fa155cd84d90de9f87db1b7dea6707329638a6ce66043d246",
+      "hex": "ffff38"
+    },
+    {
+      "offset": 450639,
+      "length": 20,
+      "beforeSha256": "3d8e7b18e3deb2e2a899e88f9259f948f154641daf10cfc4a60ccb628a7c8fb0",
+      "hex": "ffff1800fe7f0000fe7f0000fc3f0000f00f0000"
+    },
+    {
+      "offset": 450661,
+      "length": 2,
+      "beforeSha256": "b7586d310e5efb1b7d10a917ba5af403adbf54f4f77fe7fdcb4880a95dac7e7e",
+      "hex": "0000"
+    },
+    {
+      "offset": 450665,
+      "length": 2,
+      "beforeSha256": "c2ce72fcaccf106e961feedac534ff8e74f196b818a0a02d608b5b781c3750d5",
+      "hex": "0000"
+    },
+    {
+      "offset": 450669,
+      "length": 2,
+      "beforeSha256": "a6c50ec6e4d440537a328c5c1ef6b5c95fc4f8bba86de6ea93dc66cb5a41f782",
+      "hex": "0000"
+    },
+    {
       "offset": 480728,
       "length": 2,
       "beforeSha256": "bf64bd828dc3e53fd9f3c65945592bcb8de93722eaea0f82060d41fa6b94e627",
-      "hex": "fe03"
+      "hex": "ff03"
     },
     {
       "offset": 480732,
@@ -656,13 +776,13 @@
       "offset": 484824,
       "length": 2,
       "beforeSha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
-      "hex": "fe03"
+      "hex": "ff03"
     },
     {
       "offset": 756540,
       "length": 4,
       "beforeSha256": "dc025d88fbcb0bbb06ce7bc389fe601c4f2d4e5bd870c1999eb2e588266af2e2",
-      "hex": "86ea1529"
+      "hex": "2de9ffc6"
     }
   ],
   "resources": [

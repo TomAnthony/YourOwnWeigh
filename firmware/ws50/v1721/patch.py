@@ -34,8 +34,15 @@ SOURCE_SHA1 = "6f3af68e8a9b063322eb0ff45245fa2e8c5357bc"
 SOURCE_SIZE = 752_448
 # Keep owner versions below stock so they follow the existing two-slot update
 # convention. Actual WS-50 recovery/slot selection is not hardware-qualified.
-VERSION = 1022
-SOURCE_VERSIONS = [1721, 1021, 1022]
+VERSION = 1023
+SOURCE_VERSIONS = [1721, 1023]
+FACE = Path(__file__).with_name("startup_face_37x26.bin")
+FACE_HASH = "dbdadf39ed8c6ad8f0b5abe8dfcb8ff79626dda8925091f20cee603e4e2b23a8"
+HELLO_HASH = "58e2390d0f826fd2dbe96887e2583b5083c425bb280ba958f0d25bf82716c059"
+HELLO_OFFSET = 0x6DFDB
+BITMAP_SIZE = 148
+HELLO_POINTER_LITERAL = 0x2B090
+HELLO_POINTER = 0x71F57
 APP_BASE = 0x4000
 EXTRA = 0x1000
 # Injected code lands at the file offset where the 4 KiB expansion begins:
@@ -128,6 +135,10 @@ def source_bytes(path: Path | None) -> bytes:
         raise ValueError("WS-50 DNS host-get preimage differs")
     if b[va2off(URL_SCHEME_LITERAL):va2off(URL_SCHEME_LITERAL) + 4] != URL_SCHEME_PREIMAGE:
         raise ValueError("WS-50 URL scheme preimage differs")
+    if sha(b[HELLO_OFFSET:HELLO_OFFSET + BITMAP_SIZE]) != HELLO_HASH or \
+       b.count(b[HELLO_OFFSET:HELLO_OFFSET + BITMAP_SIZE]) != 1 or \
+       u32(b, HELLO_POINTER_LITERAL) != HELLO_POINTER:
+        raise ValueError("stock WS-50 Hello artwork or renderer pointer differs")
     return b
 
 
@@ -200,6 +211,11 @@ def thumb_b16(source: int, target: int) -> bytes:
 
 
 def build(stock: bytes) -> tuple[bytes, dict]:
+    face = FACE.read_bytes()
+    if len(face) != BITMAP_SIZE or sha(face) != FACE_HASH:
+        raise ValueError("owner startup face differs from the pinned 37x26 asset")
+    if any(face[x * 4 + 3] & 0xFC for x in range(37)):
+        raise ValueError("unused face bitmap bits must be zero")
     code, symbols = compile_code()
     if "owner_reply_read" in symbols:
         # Deferred reply callbacks installed through unique literal placeholders.
@@ -233,8 +249,9 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     # Hook 3: setup DNS lookup must use the same persisted hostname as HTTP.
     result[va2off(DNS_HOST_GET):va2off(DNS_HOST_GET) + 4] = \
         thumb_bl(DNS_HOST_GET, dns_va)
-    # Every native sync caller requests TLS. Both URL branches must select the
-    # existing HTTP format, not just substitute the owner hostname.
+    # The startup renderer passes 37x26 for the same bitmap layout as WS-30.
+    result[HELLO_OFFSET:HELLO_OFFSET + BITMAP_SIZE] = face
+    put32(result, 0, len(result))
     put32(result, va2off(URL_SCHEME_LITERAL), HTTP_URL_FORMAT)
     # Container bookkeeping: new size/version words and shifted sections.
     put32(result, 0, len(result))
@@ -261,6 +278,9 @@ def build(stock: bytes) -> tuple[bytes, dict]:
         size = u32(stock, 0x30 + 20 * i + 8)
         if output[s + EXTRA:s + EXTRA + size] != stock[s:s + size]:
             raise ValueError(f"non-application section {i + 1} changed")
+    if output[HELLO_OFFSET:HELLO_OFFSET + BITMAP_SIZE] != face or \
+       u32(output, HELLO_POINTER_LITERAL) != HELLO_POINTER:
+        raise ValueError("startup face or its renderer pointer changed")
     metadata = {"format": "YOW-image-v1", "model": "WS50",
                 "imageFile": f"wbs02_yow_{VERSION}.bin", "sha256": sha(output),
                 "firmwareVersion": VERSION, "sourceFirmwareVersions": SOURCE_VERSIONS,

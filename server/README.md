@@ -48,7 +48,7 @@ Approved WBS06/WS-30 enrollment stores the MAC/secret and Bluetooth observations
 WBS06 settings and display responses are required before its sync session can complete. If initial import fails, Finish Device Import retries. WS-30 does not adopt WBS06 display fixtures and keeps its minimal session. The server stores the profile; daily owner syncing does not call Withings. An optional read-only lookup for an unrecognised scale can use its Bluetooth MAC and secret to ask Withings for an advertised firmware URL and SHA-1. The browser receives only those offer fields, and the copyable issue report excludes credentials and users. This does not fetch or install the offered image.
 
 WS-50 owner-server sessions use 32-hex MD5 of `<auth>:<secret>:<once>` with no
-`method` or `hashmethod` marker, confirmed by a native v1022 packet capture.
+`method` or `hashmethod` marker, confirmed by a native packet capture.
 `auth` is hashed exactly as received; MAC canonicalization is for device lookup.
 
 Timezone arithmetic lives in TypeScript. The browser provides an IANA timezone; the server calculates UTC/current offset/next transition/next offset for both Wi-Fi responses and Bluetooth provisioning. Shared fixtures in `contracts/time/v1/` test boundary behavior and Python's wire encoding.

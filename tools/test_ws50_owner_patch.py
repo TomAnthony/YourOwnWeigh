@@ -143,9 +143,35 @@ class WS50OwnerPatchTests(unittest.TestCase):
         patch = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(patch)
         cls.image, cls.manifest = patch.build(patch.source_bytes(Path(SOURCE)))
-
+        cls.patch = patch
+        cls.stock = patch.source_bytes(Path(SOURCE))
     def machine(self, storage=None):
         return Machine(self.image, self.manifest, storage)
+
+    def test_startup_face_replaces_only_the_pinned_hello_bitmap(self):
+        face = (ROOT / "firmware/ws50/v1721/startup_face_37x26.bin").read_bytes()
+        hello = self.stock[self.patch.HELLO_OFFSET:self.patch.HELLO_OFFSET + self.patch.BITMAP_SIZE]
+        start = self.patch.HELLO_OFFSET
+        self.assertEqual(len(face), self.patch.BITMAP_SIZE)
+        self.assertNotEqual(face, hello)
+        self.assertEqual(self.image[start:start + self.patch.BITMAP_SIZE], face)
+        self.assertEqual(self.image.count(face), 1)
+        self.assertEqual(self.stock.count(hello), 1)
+        self.assertEqual(self.patch.u32(self.image, self.patch.HELLO_POINTER_LITERAL),
+                         self.patch.HELLO_POINTER)
+        # Assert exact metadata and code/face regions rather than comparing
+        # every stock byte, because the app expansion shifts section starts.
+        for offset, value in {
+            0x00: len(self.image), 0x08: self.patch.VERSION, 0x40: self.patch.VERSION,
+            0x14: self.patch.u32(self.image, 0x14), 0x3C: self.patch.u32(self.image, 0x14),
+            0x28: self.patch.u32(self.image, 0x28), 0x80: self.patch.u32(self.image, 0x80),
+            self.patch.APP_END - 4: self.patch.VERSION,
+            self.patch.APP_END + self.patch.EXTRA - 4: self.patch.VERSION,
+            len(self.image) - 4: self.patch.u32(self.image, len(self.image) - 4),
+        }.items():
+            self.assertEqual(self.patch.u32(self.image, offset), value)
+        self.assertEqual(self.image.count(face), 1)
+        self.assertEqual(self.stock.count(hello), 1)
 
     def test_stock_wifi_read_returns_an_empty_object_when_unconfigured(self):
         m = self.machine()

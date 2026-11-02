@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build WS-50 v1022 from hash-pinned stock wbs02 v1721.
+"""Build WS-50 v1023 from hash-pinned stock wbs02 v1721.
 
 The exact output hash rejects unexpected toolchain or patch-code changes.
 

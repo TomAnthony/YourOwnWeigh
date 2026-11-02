@@ -19,7 +19,7 @@ const baseline = JSON.parse(readFileSync(process.env.YOW_WITHINGS_TEST_CAPTURE ?
 // A private baseline may be tested without copying its real identity into the DB.
 baseline.mac = MAC;
 
-for (const [model, firmware] of [["WBS03", 102], ["WS50", 1021]] as const) {
+for (const [model, firmware] of [["WBS03", 102], ["WS50", 1023]] as const) {
 test(`${model} vendor capture keeps compatibility authentication independent of owner firmware`, async (t) => {
   const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {

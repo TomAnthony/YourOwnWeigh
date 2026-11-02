@@ -41,10 +41,10 @@ test("scale-only HTTP listener ingests WS50 CGI uploads without exposing applica
     assert.ok(challengeBody && typeof challengeBody === "object" && "once" in challengeBody);
     const nonce = challengeBody.once;
     assert.ok(typeof nonce === "string");
-    // Sanitized native WS50 v1022 request shape from an owner packet capture:
+    // Sanitized native WS50 request shape from an owner packet capture:
     // root /session, MD5, no query parameters or hash-method marker.
     const sessionFields = {
-      action: "new", auth: mac, currentfw: "1022", mfgid: "0",
+      action: "new", auth: mac, currentfw: "1023", mfgid: "0",
       batterylvl: "64", duration: "300", zreboot: "1", trigger: "weather", enrich: "t",
       hash: createHash("md5").update(`${mac}:${secret}:${nonce}`).digest("hex"),
     };
