@@ -90,3 +90,17 @@ framebuffer, container, bridge recipe and bootloader checks are covered offline.
 On 31 October 2026 the maintainer confirmed that the v103 update's smiley works
 correctly on the physical display. This completes the startup artwork check;
 the remaining hardware coverage gaps listed above are tracked separately.
+
+## WS-50 Verification — 1 November 2026
+
+Physical model marking: **WS-50 / WS50**, Bluetooth name `Withings WS50`, hardware version `0xffffff`, stock firmware **1721**, bootloader **12**. Target image: YOW **v1023**, SHA-256 `3ed6bcf5d282f84d022644a21d78f577650bd55e9f354607fcdcd5d3938dff4e`. Owner hardware results: the v1023 OTA transfer succeeded and the scale reported the flashed version. Server configuration worked, and readings reached the local server. On 2 November 2026 the owner completed the v1023 checklist below: boot smiley, battery-cycle persistence of `10.0.1.90`/HTTP plus Wi-Fi/timezone, Complete Setup/Ready, one assigned reading for Jonathan (94.845 kg) and one unassigned reading (13.148 kg). Linux transport and UART recovery remain unqualified.
+
+Test environment: macOS 27.0.1 (26A434), kernel 27.0.0, arm64; Node v24.12.0; Python 3.15.2 with bleak 2.1.1, pyobjc-core 13.0, pyobjc-framework-corebluetooth 13.0 and pyobjc-framework-iobluetooth 12.2.2 (dbus-fast not installed; macOS Classic uses IOBluetooth); Bluetooth controller BCM_4387 firmware 24.1.640.5757. Branch `ionothanus/ws50` @ `6cefa12`.
+
+1. Generate/flash v1023 once; reconnect and require the scale to report **1023**. **Passed 2 Nov 2026.**
+2. Remove and reinsert batteries; confirm the **YOW smiley**, not stock Hello. **Passed 2 Nov 2026.**
+3. Reconnect and read the server; confirm `10.0.1.90`/HTTP without re-entering it. **Passed 2 Nov 2026**; Wi-Fi and timezone also unchanged after boot.
+4. Complete Setup and confirm server contact. **Passed 2 Nov 2026**; scale showed Ready. Server audit shows two sessions opened at 00:27:00 and 00:27:48 UTC, each followed by summary, one committed measurement and session close.
+5. Weigh with a configured user; verify stored user, value and timestamp. **Passed 2 Nov 2026:** reading 2 assigned to Jonathan, 94.845 kg, measured 00:27:22 UTC, received 00:27:49 UTC.
+6. Weigh as an unrecognized person; verify the reading is stored unassigned. **Passed 2 Nov 2026:** reading 1 unassigned, 13.148 kg, measured 18:49:49 UTC, received 00:27:02 UTC.
+7. Record macOS/Python/backend versions and the exact update duration in the PR. **Recorded above.** Bridge log: v1023 OTA started 2026-11-01 19:17:21 UTC and transfer-completed at 19:19:02 UTC for 756,544 bytes — **100 s 761 ms**, no retries; post-flash probe confirmed the running version at 19:19:28 UTC.

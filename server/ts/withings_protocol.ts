@@ -114,6 +114,24 @@ export async function captureWithingsSession(
   if (typeof once !== "string" || once.length < 1 || once.length > 31)
     throw new Error("Withings challenge is invalid");
   const hash = await sha(`${mac}:${scale.secret}:${once}`);
+  const sessionFields: Record<string, string | number> = {
+    action: "new",
+    auth: mac,
+    hash,
+    mfgid: scale.reported_mfgid ?? 0,
+    // Vendor compatibility identity, not the device's observed running version.
+    currentfw: 1181,
+    batterylvl: 100,
+    duration: 300,
+    wstarget: 1,
+    enrich: "t",
+    trademark: 1,
+    network: 1,
+    hashmethod: "sha256",
+    trigger: "weather",
+    withaccids: 1,
+    feature_mask: scale.reported_feature_mask ?? 0,
+  };
   const session = (
     await post(
       "session",

@@ -6,6 +6,7 @@
 import { bridgeHash } from "./bridge.ts";
 import { firmwareVersion } from "./firmware_observation.ts";
 import { validateStoredMetrics } from "./metrics.ts";
+import { SCALE_MODELS } from "./models.ts";
 type Row = Record<string, string | number | null>;
 const columns: Record<string, string[]> = {
   settings: "key value".split(" "),
@@ -225,7 +226,7 @@ function parse(raw: string): Backup {
   const macs = new Set();
   for (const r of b.sections.scales) {
     if (
-      !["WBS06", "WBS03", "WBS13", "WBS04"].includes(String(r.model)) ||
+      !Object.hasOwn(SCALE_MODELS, String(r.model)) ||
       !/^[A-F0-9]{12}$/.test(String(r.mac)) ||
       macs.has(r.mac) ||
       typeof r.secret !== "string" ||

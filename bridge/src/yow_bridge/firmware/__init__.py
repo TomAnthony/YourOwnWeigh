@@ -23,6 +23,7 @@ RELEASES = {
     "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
     # HTTP-only Body Cardio build, flashed and working on hardware; HTTPS pending.
     "WBS04": (100, "a16bc12a14c927f1d08da3037538ed0b888b08a6e892f54a8a68544728864e3f"),
+    "WS50": (1023, "3ed6bcf5d282f84d022644a21d78f577650bd55e9f354607fcdcd5d3938dff4e"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",
@@ -109,7 +110,7 @@ def inspect(data: bytes, model: str) -> dict:
     ):
         raise ValueError("Application flash bounds/reset vector invalid")
     if (
-        u(p["expansionAt"] - 4) != version
+        u(p["expansionAt"] - 4) != p.get("runtimeVersion", version)
         or u(boot[1] + boot[2] - 4) != p["bootloader"]
     ):
         raise ValueError("Runtime or bootloader version differs")

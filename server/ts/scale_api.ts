@@ -1,5 +1,6 @@
 /** Shared scale ingestion, with model-specific authentication/responses. */
 import { ws30MD5 } from "./ws30_md5.ts";
+import { scaleModel } from "./models.ts";
 import { validateMetricJson } from "./metrics.ts";
 import {
   backfillRecognitionWeights,
@@ -43,7 +44,6 @@ const MAX_ONCE_PER_PEER = 32;
 const SESSION_TTL = 3600;
 const MAX_BODY = 128 * 1024;
 const MAC_RE = /^(?:(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}|[0-9a-f]{12})$/i;
-const HASH_RE = /^[0-9a-f]{64}$/i;
 const SID_RE = /^[0-9a-f]{24}$/i;
 const encoder = new TextEncoder();
 
@@ -392,12 +392,14 @@ async function newSession(
     .bind(mac)
     .first<ScaleRow>();
   // Select the protocol from the enrolled device, never from a caller-supplied model.
-  const ws30 = scale?.model === "WBS03";
-  const validHash = ws30
-    ? /^[0-9a-f]{32}$/i.test(submitted) && !params.has("hashmethod")
-    : ["WBS06", "WBS13", "WBS04"].includes(scale?.model ?? "") &&
-      HASH_RE.test(submitted) &&
-      params.get("hashmethod") === "sha256";
+  const model = scaleModel(scale?.model);
+  const classic = model?.transport === "classic";
+  const validHash = model
+    ? new RegExp(`^[0-9a-f]{${model.hashLength}}$`, "i").test(submitted) &&
+      (model.hashParam === null
+        ? !params.has("hashmethod") && !params.has("method")
+        : params.get(model.hashParam.name) === model.hashParam.value)
+    : false;
   if (!validHash) return authenticationFailure(env, scale, request);
   if (scale) {
     const key = await limitKey(request, `scale-session-${scale.id}`);
@@ -424,7 +426,8 @@ async function newSession(
       .all<{ nonce: string }>();
     for (const challenge of results ?? []) {
       const material = `${auth}:${scale.secret}:${challenge.nonce}`;
-      const expected = ws30 ? ws30MD5(material) : await sha256(material);
+      const expected =
+        model?.hash === "md5" ? ws30MD5(material) : await sha256(material);
       if (sameHex(expected, submitted.toLowerCase())) {
         matched = challenge.nonce;
         break;
@@ -452,7 +455,7 @@ async function newSession(
     );
   }
   if (
-    !ws30 &&
+    !classic &&
     (!scale.settings_ready ||
       (!["WBS13", "WBS04"].includes(scale.model) &&
         (!scale.screen_response || !scale.summary_response)))
@@ -476,7 +479,7 @@ async function newSession(
     );
   }
   let users: object[] | undefined;
-  if (!ws30 && (scale.roster_enabled || scale.model === "WBS13")) {
+  if (!classic && (scale.roster_enabled || scale.model === "WBS13")) {
     try {
       users = await roster(env, scale);
     } catch {
@@ -497,7 +500,7 @@ async function newSession(
   try {
     // WS-30 retains its own settings unless a time zone is explicitly supplied.
     // Its clock is still synchronized by syp.utc on every session.
-    if (!ws30 || scale.time_zone) ctp = timeSettings(scale);
+    if (!classic || scale.time_zone) ctp = timeSettings(scale);
   } catch {
     await env.DB.batch([
       ...observations,
@@ -544,7 +547,7 @@ async function newSession(
       ),
     );
   }
-  if (!ws30 && scale.roster_enabled) {
+  if (!classic && scale.roster_enabled) {
     statements.push(
       env.DB.prepare(
         `UPDATE scales SET roster_enabled=0,roster_last_sent_at=? WHERE id=? AND ${present}`,
@@ -570,7 +573,7 @@ async function newSession(
   if (ctp) body.ctp = ctp;
   if (scale.model === "WBS13")
     body.ind = { stp: 0, fm: scale.feature_mask, ws: scale.beta_ws };
-  else if (!ws30)
+  else if (!classic)
     body.ind = {
       stp: 0,
       fm: scale.feature_mask,
@@ -682,7 +685,7 @@ async function fixture(
     await audit(env.DB, scale.id, endpoint, "suppressed").run();
     return json({ status: 0, body: { series: [] } });
   }
-  if (scale.model === "WBS03" && endpoint === "summary") {
+  if (scaleModel(scale.model)?.classicGates && endpoint === "summary") {
     // No historic summary is supplied yet. The captured WS-30 schema is an
     // array; an empty array leaves no graph entries to apply.
     await audit(env.DB, scale.id, endpoint, "served").run();
@@ -1073,7 +1076,7 @@ async function measure(
   if (userId !== null)
     statements.push(refreshRecognitionWeight(env.DB, userId));
   await env.DB.batch(statements);
-  if (scale.model === "WBS03") {
+  if (scaleModel(scale.model)?.classicGates) {
     return json({
       status: 0,
       body: [{ updatetime: timestamp, measuregrps: [] }],
@@ -1115,6 +1118,9 @@ export async function handleScaleRequest(
   const paths = [
     "/once",
     "/session",
+    "/cgi-bin/once",
+    "/cgi-bin/session",
+    "/cgi-bin/measure",
     "/v2/screen",
     "/v2/summary",
     "/v2/weather",
@@ -1126,20 +1132,21 @@ export async function handleScaleRequest(
   if (request.method !== "POST" || !paths.includes(url.pathname)) return null;
   const params = await parameters(request, url);
   if (params instanceof Response) return params;
-  if (url.pathname === "/once") return once(env, request, params);
-  if (url.pathname === "/session") return session(env, request, params);
+  const cgi = url.pathname.startsWith("/cgi-bin/");
+  const base = cgi ? url.pathname.slice("/cgi-bin".length) : url.pathname;
+  if (base === "/once") return once(env, request, params);
+  if (base === "/session") return session(env, request, params);
   if (
-    ["/v2/measure", "/v2/feature"].includes(url.pathname) ||
-    (url.pathname === "/v2/screen" &&
-      params.get("action") === "getcontentbydeviceid")
+    ["/v2/measure", "/v2/feature"].includes(base) ||
+    (base === "/v2/screen" && params.get("action") === "getcontentbydeviceid")
   )
-    return wbs13Query(env, params, url.pathname);
-  if (url.pathname === "/v2/screen")
+    return wbs13Query(env, params, base);
+  if (base === "/v2/screen")
     return fixture(env, params, "screen", "getbydeviceid");
-  if (url.pathname === "/v2/summary")
+  if (base === "/v2/summary")
     return fixture(env, params, "summary", "getforscale");
-  if (url.pathname === "/v2/weather")
+  if (base === "/v2/weather")
     return fixture(env, params, "weather", "getforecast");
-  if (url.pathname === "/measure") return measure(env, params);
+  if (base === "/measure") return measure(env, params);
   return event(env, params);
 }

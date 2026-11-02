@@ -6,6 +6,7 @@ Sources are grouped by scale model and **stock firmware version**. End users gen
 | --- | --- | --- | --- |
 | Body WBS06 | 1181 / 4 | 127 | [WBS06](wbs06/v1181/README.md) |
 | WS-30 / WBS03 | 921 / 15 | 102 | [WS-30](ws30/v921/README.md) |
+| WS-50 / WS50 | 1721 / 12 | 1023 | [WS-50](ws50/v1721/README.md) |
 | Body Smart WBS13 | 1311 / 2 | 103 | [WBS13](wbs13/v1311/BUILD.md) |
 
 Other models and stock versions are unsupported. Vendor firmware and complete patched images are not distributed. The small startup-face `.bin` resources are original artwork.
