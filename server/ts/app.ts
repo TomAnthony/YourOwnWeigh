@@ -13,7 +13,7 @@ import {
   syncPage,
 } from "./integrated_ui.ts";
 import { scaleModel } from "./models.ts";
-import { handleScaleRequest, zoneTriplet, roster } from "./scale_api.ts";
+import { handleScaleRequest, zoneTriplet, roster, screenIds } from "./scale_api.ts";
 import {
   dashboardPage,
   escapeHtml,
@@ -504,6 +504,14 @@ function parseDeviceRecord(raw: string): Row {
       record.firmware_version !== 100)
   )
     throw new Error("BLE identity is outside the reviewed WBS13 profile");
+  if (
+    model.bootloader === 12 &&
+    model.transport === "ble" &&
+    (record.hardware_version !== 0xffffff ||
+      record.bootloader_version !== 12 ||
+      !model.enrolledFirmware.includes(record.firmware_version))
+  )
+    throw new Error("BLE identity is outside the reviewed WBS04 profile");
   if (
     model.transport === "classic" &&
     (record.bootloader_version !== model.bootloader ||
@@ -1222,7 +1230,7 @@ async function previewProfile(db: D1Database, id: number) {
   return {
     scaleId: id,
     model: scale?.model,
-    settingsReady: scaleModel(scale?.model)?.classicGates || scale?.settings_ready === 1,
+    settingsReady: !!scaleModel(scale?.model)?.classicGates || scale?.settings_ready === 1,
     digest: stored?.digest,
     users:
       stored?.capture

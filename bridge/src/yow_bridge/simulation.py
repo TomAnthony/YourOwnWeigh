@@ -57,7 +57,7 @@ class Session(ScaleSession):
             mac="02" + "0" * 8 + self.model[-2:],
             secret="0123456789abcdef",
             hardwareVersion=0xFFFFFF if s.hardware is not None else 0,
-            firmwareVersion=s.owner_firmware[-1],
+            firmwareVersion=self.firmware,
             bootloaderVersion=s.bootloader,
             rescueVersion=0xFFFFFF,
             identifier="simulation",

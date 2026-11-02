@@ -88,6 +88,7 @@ export async function withingsPost(
   }
   return document;
 }
+export const captureWithings = (scale: Record<string, any>): Promise<string> => {
   // Identify the session as the actual model so the query string (appname /
   // appliver) and the session form agree. Body Cardio ships stock 2231.
   const query =
@@ -97,7 +98,7 @@ export async function withingsPost(
   return captureWithingsSession(scale, (path, fields) =>
     withingsPost(path, fields, fetch, query),
   );
-
+}
 export const firmwareOffer = (identity: Record<string, any>) =>
   lookupWithingsFirmware(identity as FirmwareLookupIdentity, (path, fields) =>
     withingsPost(path, fields, fetch, {

@@ -427,9 +427,7 @@ async function newSession(
     for (const challenge of results ?? []) {
       const material = `${auth}:${scale.secret}:${challenge.nonce}`;
       const expected =
-        model?.hash === "md5"
-          ? ws30MD5(material)
-          : await sha256(material);
+        model?.hash === "md5" ? ws30MD5(material) : await sha256(material);
       if (sameHex(expected, submitted.toLowerCase())) {
         matched = challenge.nonce;
         break;
