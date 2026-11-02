@@ -14,7 +14,7 @@
 
 The WBS04 is the same compiler build as WBS06 v1181, so nearly every WBS06 patch
 site relocates cleanly. Addresses were located statically, verified with
-instruction-level assertions (`validate_stock.py`), emulated (`test_owner_target.py`),
+instruction-level assertions (`validate_stock.py`), emulated (`test_owner_target.py`, `test_tls_http_read.py`),
 and the recipe round-trips through the bridge's `firmware.apply()`/`inspect()`.
 
 ## Status
@@ -28,6 +28,7 @@ and the recipe round-trips through the bridge's `firmware.apply()`/`inspect()`.
 | Persistent host (DBLIB item 2, new items 0x1f0/0x1f1) | ✅ reuses stock DBLIB |
 | Server-triggered OTA disable | ✅ located, wired |
 | End-to-end emulation of owner_wpp_170 | ✅ `test_owner_target.py` |
+| Emulation of the HTTPS receive hook | ✅ `test_tls_http_read.py` (records >512 B, malloc/read failures, buffer freeing, both resume paths) |
 | Portable bridge recipe (`recipes/WBS04.json`) | ✅ round-trips to pinned output |
 | **Hardware test (HTTP path)** | ✅ flashed; full measurement set uploaded |
 | **HTTPS: `patch_tls` (cert bypass + common sig schemes)** | ✅ ported from WBS06; byte-identical dispatcher, addresses verified |
@@ -60,6 +61,8 @@ WBS06 512 KB flash ceiling, so the recipe carries `flashLimit: 0x100000`.
 - `make_recipe.py` — emit `recipes/WBS04.json` from the builder output.
 - `build.py` — orchestration (owner → face → TLS → fragments → receive buffer).
 - `test_owner_target.py` — offline emulation of the owner WPP 0x170 handler.
+- `test_tls_http_read.py` — offline emulation of the HTTPS receive hook
+  (port of the WBS06 test to the WBS04 addresses).
 
 ## Build
 
@@ -68,6 +71,8 @@ python3.11 -m venv local/firmware-venv
 local/firmware-venv/bin/pip install -r firmware/wbs04/v2231/requirements.txt
 cd firmware/wbs04/v2231
 ../../../local/firmware-venv/bin/python validate_stock.py PATH/wbs04_2231.bin
+../../../local/firmware-venv/bin/python test_owner_target.py PATH/wbs04_2231.bin
+../../../local/firmware-venv/bin/python test_tls_http_read.py PATH/wbs04_2231.bin
 ../../../local/firmware-venv/bin/python build.py --source PATH/wbs04_2231.bin --check-only
 ```
 
