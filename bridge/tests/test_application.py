@@ -80,7 +80,7 @@ class Commands(unittest.IsolatedAsyncioTestCase):
             )
         )
         identity = await self.connect_demo("WBS04")
-        self.assertEqual(identity["firmwareVersion"], 100)
+        self.assertEqual(identity["firmwareVersion"], 101)
 
     async def test_connect_stops_scan_and_waits_for_radio_cleanup(self):
         from yow_bridge import simulation
