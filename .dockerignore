@@ -1,0 +1,21 @@
+# Keep the build context tiny: only what docker/Dockerfile copies.
+# Ignore everything, then re-include the server runtime inputs.
+*
+!package.json
+!package-lock.json
+!server
+!connectors
+!docker
+# Re-exclude runtime data and secrets pulled back in by the re-includes above
+# (Docker does not honour .gitignore, so a local build could otherwise embed a
+# dev database, bootstrap token, or a deployment .env).
+server/data/
+docker/data/
+docker/.env
+**/*.sqlite3
+**/*.sqlite3-*
+**/bootstrap-token.txt
+# never ship these even if re-included above
+**/node_modules
+**/.git
+**/*.bin
