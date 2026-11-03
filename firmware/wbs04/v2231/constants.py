@@ -75,7 +75,7 @@ HELLO_SHA256 = "58e2390d0f826fd2dbe96887e2583b5083c425bb280ba958f0d25bf82716c059
 def app_offset(va: int) -> int:
     return APP_FILE + va - APP_VA
 
-# --- patch site 6: HTTPS TLS (v100 HTTPS variant; port of WBS06 patch_tls) ---
+# --- patch site 6: HTTPS TLS (v101 HTTPS; port of WBS06 patch_tls) ---
 # ClientHello one-scheme writer (22 bytes) replaced to advertise common schemes.
 WRITER_VA = 0x51E1A              # stock span starts `add r1, sp, #0xb0` (2ca9)
 WRITER_BL_TARGET_VA = 0x6A4F4    # stock sig-scheme writer helper (WBS06 0x5d648)

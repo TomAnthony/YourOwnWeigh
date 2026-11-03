@@ -78,13 +78,17 @@ cd firmware/wbs04/v2231
 
 Drop `--check-only` (optionally with `--output PATH.bin`) to write the image.
 The shipped recipe (`recipes/WBS04.json`, registered in `firmware.RELEASES`) is
-this single v100 build; the scale uses HTTP or HTTPS depending on the transport
+this single v101 build; the scale uses HTTP or HTTPS depending on the transport
 you set in the dashboard's Configure step. On the HTTP path data travels in
 clear text on the LAN (as with WS-30), so keep that path LAN-only.
 
 ## Hardware test
 
 Flashed a Body Cardio (stock 2231, bootloader 12) via the bridge; it rebooted
-into v100, kept its Wi-Fi, adopted the local server over HTTP and uploaded
-weight, fat/muscle/water/bone mass, heart rate, PWV (~6 m/s) and vascular age.
-Pulse wave velocity needs the full standing time or it aborts on the scale.
+into the first HTTP-only build (v100), kept its Wi-Fi, adopted the local server
+over HTTP and uploaded weight, fat/muscle/water/bone mass, heart rate, PWV
+(~6 m/s) and vascular age. Pulse wave velocity needs the full standing time or
+it aborts on the scale.
+
+The combined build (v101) was then flashed the same way, configured for HTTPS,
+and a weigh-in synced to the server over HTTPS.

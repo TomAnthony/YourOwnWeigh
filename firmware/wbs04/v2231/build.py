@@ -44,7 +44,7 @@ def build(source: bytes) -> bytes:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", type=Path, help="pinned stock v2231 .bin (else download)")
-    ap.add_argument("--output", type=Path, default=Path("wbs04_yow_100_EXPERIMENTAL.bin"))
+    ap.add_argument("--output", type=Path, default=Path("wbs04_yow_101.bin"))
     ap.add_argument("--check-only", action="store_true")
     args = ap.parse_args()
 
