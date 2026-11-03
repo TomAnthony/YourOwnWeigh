@@ -18,7 +18,11 @@ An HTTP-only scale (WS-30, or a Body Cardio before the HTTPS firmware) needs a
 **LAN-only** port-80 route on your proxy that forwards to the same container and
 uses the **same subdomain** as the `Host` header — the server only accepts the
 host in `YOW_PUBLIC_ORIGIN`, so a raw LAN IP is rejected. Point the scale at the
-subdomain (resolved to the proxy on your LAN), not at the IP.
+subdomain, not at the IP, and let it resolve to the proxy on your LAN (a local
+DNS entry in your router, Pi-hole or AdGuard) so its unencrypted traffic never
+leaves your network. That port-80 route must **not** redirect to HTTPS (no
+"Force SSL" for this host): the server accepts scale requests over HTTP and
+redirects the dashboard to HTTPS by itself.
 
 ## Run
 
@@ -44,14 +48,41 @@ dashboard URL and set an admin password. To migrate an instance, drop its DB in
 Forward your subdomain to `127.0.0.1:8080`, preserving the `Host` header (it
 must match `YOW_PUBLIC_ORIGIN`), the WebSocket upgrade (the bridge pairs over
 it), and `X-Forwarded-Proto` / `X-Forwarded-For` (the server uses them for the
-request scheme and per-client login limits). The server only accepts that Host,
-so it is reachable only through the proxy.
+request scheme and per-client login limits). The image already sets
+`YOW_TRUST_PROXY=1`, so it honours these headers from loopback and private
+(LAN/Docker) addresses only.
+
+### Proxy on another machine
+
+The compose publishes the port on the host's loopback only, so the proxy must
+run on the same host. If your proxy runs on another machine in your LAN,
+publish the port on all interfaces instead, e.g. `"8095:8080"`, and forward to
+`<host-LAN-IP>:8095`. Every device on your LAN can then reach the container
+directly (and could set the forwarded headers itself), so allow only the
+proxy's IP to that port in the host firewall, and never forward it on your
+router.
+
+### Example: Nginx Proxy Manager
+
+One proxy host serves dashboard, bridge and scale:
+
+- **Details:** your subdomain, scheme `http`, forward host/port = the container
+  (`127.0.0.1:8080`, or `<host-LAN-IP>:8095` from another machine),
+  **Websockets Support on**.
+- **SSL:** a Let's Encrypt certificate. Leave **Force SSL off** if an HTTP-only
+  scale uses this host; HSTS only affects browsers, not the scale.
+
+NPM passes `Host`, `X-Forwarded-Proto` and `X-Forwarded-For` by default, so no
+custom config is needed. If the dashboard shows "too many redirects", the
+forwarded scheme is missing.
 
 ## Point the scale at it
 
 In the bridge's **Firmware Bridge → Configure**, set the server host to your
 subdomain — over `https` for an HTTPS scale, or over `http` for an HTTP-only
 scale (via the LAN-only port-80 route above). Use the subdomain, not the LAN IP.
+The bridge itself (BLE setup and flashing) runs on a computer near the scale and
+connects to this server through the proxy; only the server runs in Docker.
 
 ## Update
 

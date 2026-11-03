@@ -11,3 +11,4 @@ services:
       - ./data:/data           # SQLite DB + first-run bootstrap token
     ports:
       - "127.0.0.1:8080:8080"  # your reverse proxy forwards the subdomain here
+      # Proxy on another LAN machine? Use e.g. "8095:8080" instead (see README).
