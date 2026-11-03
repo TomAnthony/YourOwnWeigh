@@ -3,7 +3,8 @@
 
 Expresses the builder's output as expand-at + sourceCopies + sequential writes,
 exactly the form bridge/yow_bridge/firmware.apply() replays without a compiler.
-The HTTP-only recipe has been flashed on a Body Cardio; the HTTPS variant is unfinished.
+The combined HTTP+HTTPS recipe (v101) has been flashed on a Body Cardio and
+verified over both transports.
 
 Usage: make_recipe.py PATH_TO_STOCK_wbs04_2231.bin [--https]
 """
