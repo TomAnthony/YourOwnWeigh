@@ -214,6 +214,28 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caps["hostnameMaxBytes"], 48)
         self.assertEqual(caps["serverTransports"], ["http"])
 
+    async def test_wbs04_identity_on_wbs05_service_cannot_enable_writes(self):
+        transport = MockTransport("WBS04")
+        transport.identity_only = True
+        transport.wpp_profile = "WBS05"
+        frame = probe("WBS06", name="Body Cardio", boot=12, firmware=100)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertFalse(identity["supported"])
+        for key in ("ota", "serverWrite", "wifiWrite", "completeSetup"):
+            self.assertFalse(identity["capabilities"][key], key)
+        read_only_packets = list(transport.sent)
+        for operation in (
+            lambda: transport.session.set_server("scale.example.net", "http"),
+            lambda: transport.session.connect_wifi("Example", "password123"),
+            lambda: transport.session.complete_setup(),
+            lambda: transport.session.set_time(1793000000, 3600, 1800000000, 7200),
+            lambda: transport.session.install(bytes(1200), lambda *args: None),
+        ):
+            with self.assertRaises(ProtocolError):
+                await operation()
+        self.assertEqual(transport.sent, read_only_packets)
+
     async def test_wbs04_service_needs_matching_body_cardio_identity(self):
         # A …0006… device that is not a boot-12 Body Cardio stays unsupported.
         transport = MockTransport("WBS06")

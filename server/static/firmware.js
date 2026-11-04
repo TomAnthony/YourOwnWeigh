@@ -744,7 +744,12 @@
         ? "WBS04"
         : "WBS06",
     );
-  $("scan-classic").onclick = () => scan("WBS03");
+  $("scan-classic").onclick = () =>
+    scan(
+      snapshot.simulated && CLASSIC.has($("scale-model").value)
+        ? $("scale-model").value
+        : "WBS03",
+    );
   $("disconnect").onclick = () =>
     action(async () => {
       await command("device.disconnect");

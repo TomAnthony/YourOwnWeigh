@@ -164,6 +164,7 @@ class ScaleSession:
             and boot == s.bootloader
             and (s.hardware is None or identity["hardwareVersion"] == s.hardware)
             and (not s.require_modern or modern)
+            and (self.model != "WBS04" or cardio)
         )
         supported = supported and (self.model in ("WBS13", "WBS04") or not getattr(self.transport, "identity_only", False))
         # A factory-new Body Smart returned a valid identity with an empty
