@@ -212,7 +212,18 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         for key in ("ota", "serverWrite", "wifiWrite", "completeSetup"):
             self.assertTrue(caps[key])
         self.assertEqual(caps["hostnameMaxBytes"], 48)
+        # v100 is the HTTP-only image; its owner handler rejects https.
         self.assertEqual(caps["serverTransports"], ["http"])
+
+    async def test_wbs04_v101_advertises_https(self):
+        for version in (101, 102):
+            transport = MockTransport("WBS06")
+            transport.identity_only = True
+            transport.wpp_profile = "WBS04"
+            frame = probe("WBS06", name="Body Cardio", boot=12, firmware=version)
+            with patch(__name__ + ".probe", return_value=frame):
+                identity = await transport.session.probe()
+            self.assertEqual(identity["capabilities"]["serverTransports"], ["http", "https"])
 
     async def test_wbs04_service_needs_matching_body_cardio_identity(self):
         # A …0006… device that is not a boot-12 Body Cardio stays unsupported.

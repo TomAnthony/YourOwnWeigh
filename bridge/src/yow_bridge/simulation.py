@@ -108,7 +108,7 @@ class Session(ScaleSession):
             await asyncio.sleep(0.1)
         # Model the reboot into YOW firmware so a re-probe reflects the new
         # version and server config becomes available (WBS06/WBS04).
-        self.firmware = {"WBS06": 127, "WBS03": 102, "WBS04": 100}.get(
+        self.firmware = {"WBS06": 127, "WBS03": 102, "WBS04": 101}.get(
             self.model, self.firmware
         )
         _INSTALLED[self.model] = self.firmware
