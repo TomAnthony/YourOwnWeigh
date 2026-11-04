@@ -109,5 +109,5 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
 };
 
 export function scaleModel(model: string | null | undefined): ScaleModel | null {
-  return (model != null && SCALE_MODELS[model]) || null;
+  return model != null && Object.hasOwn(SCALE_MODELS, model) ? SCALE_MODELS[model] : null;
 }

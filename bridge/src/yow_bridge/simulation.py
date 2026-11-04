@@ -6,9 +6,6 @@ from .models.registry import MODELS, spec
 from .models.session import ScaleSession, timestamp
 
 
-_DEMO_NAME = {"WBS06": "Demo Body", "WBS03": "Demo WS-30", "WBS04": "Demo Body Cardio"}
-
-
 class Backend:
     def __init__(self, model):
         if model not in MODELS:
@@ -29,11 +26,13 @@ class Backend:
 
 
 _SIM_PROFILE = {
-    "WBS06": dict(name="Body", mac="020000000006", firmware=127, boot=4),
-    "WBS03": dict(name="WS-30", mac="020000000003", firmware=102, boot=15),
+    "WBS06": dict(firmware=127),
+    "WBS13": dict(firmware=1311),
+    "WBS03": dict(firmware=102),
     # Starts on stock 2231 so the dry-run shows the real stock->flash->config
     # progression; install() flips it to the YOW owner version.
-    "WBS04": dict(name="Body Cardio", mac="020000000004", firmware=2231, boot=12),
+    "WBS04": dict(firmware=2231),
+    "WS50": dict(firmware=1721),
 }
 
 
@@ -109,8 +108,7 @@ class Session(ScaleSession):
             await asyncio.sleep(0.1)
         # Model the reboot into YOW firmware so a re-probe reflects the new
         # version and server config becomes available (WBS06/WBS04).
-        self.firmware = {"WBS06": 127, "WBS03": 102, "WBS04": 100}.get(
-            self.model, self.firmware
-        )
+        # Preserve the upstream WBS04 demo's initial owner release.
+        self.firmware = 100 if self.model == "WBS04" else spec(self.model).owner_firmware[-1]
         _INSTALLED[self.model] = self.firmware
         return dict(transferred=True, simulated=True, runningFirmwareConfirmed=False)

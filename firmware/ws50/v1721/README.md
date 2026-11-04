@@ -11,7 +11,7 @@ python3 firmware/ws50/v1721/build.py \
   --output local/firmware/ws50/wbs02_yow_1023.bin
 ```
 
-Add `--offline-source PATH` for an identical stock image, or `--check-only` for in-memory validation. The builder downloads the pinned source and emits a private `.bin` and `.yow.json` receipt; it never connects to hardware.
+Add `--offline-source PATH` for an identical stock image, or `--check-only` for in-memory validation. Both modes validate the generated image against the pinned output SHA-256 after structural checks; a compiler-dependent mismatch fails before any image or receipt is written. The builder downloads the pinned source and emits a private `.bin` and `.yow.json` receipt; it never connects to hardware.
 
 | Artifact | Size | SHA-256 |
 | --- | --- | --- |
@@ -38,6 +38,12 @@ Owner writes commit the hostname to current-bank **DBLIB item 2** using `0x2a509
 - The injected code (1,340 bytes) lives in a 4 KiB expansion appended after the app section; the pinned runtime version word stays at its original address.
 - The boot bitmap at file offset `0x6dfdb` is the only stock artwork changed; the renderer pointer at `0x2b090` still points to `0x71f57`, and the same 37×26 format is used by WS-30.
 
+The startup-face `.bin` is original artwork required by the maintainer builder and is included in the repository. New output directories are created with owner-only `0o700` permissions; these packaging fixes do not change the pinned v1023 image or require reflashing.
+
+Every authenticated server session supplies `syp.utc`; after a power loss, complete an online sync or set the time through the bridge before relying on measurement timestamps. Stock RTC initialization/reset commands are present, but automatic cold-boot reset behavior has not been separately qualified.
+
+Measurement groups retain unknown raw type IDs. A local WS-50 sample contains type 1 and raw type 16 (`526`, exponent `0`), not type 6 (body-fat percentage); no body-fat calculation or guessed label is applied to type 16. Weather responses deliberately contain no forecast, and a displayed weather/CO₂ screen alone does not establish freshness or an upload threshold. Air-quality reporting remains unqualified.
+
 ## Offline Qualification
 
 From the repository root, in a Python environment with `unicorn` installed:
@@ -49,5 +55,5 @@ python3 tools/package_firmware.py WS50 \
   local/wbs02_1721_qrH14m.bin local/firmware/ws50/wbs02_yow_1023.bin
 ```
 
-The seven ARM-emulation/binary regressions cover the stock Wi-Fi read response, owner write/read replies, reload after fresh RAM initialization, matching DNS/HTTP host lookups, the complete native URL builder with both TLS and non-TLS inputs, the exact startup-bitmap replacement, storage/read errors and the hostname limit. The generated patch, stock URL formatter, dispatcher, DBLIB bank selection/swap and serial framing execute; physical DB transactions/reads, serial transmission, scheduler exclusion and debug logging are modelled. Compiler-free bridge generation matches the maintainer build byte for byte, with unchanged radio and bootloader resources.
+The maintainer regressions cover private output-directory creation, rejection of structurally valid compiler drift, the stock Wi-Fi read response, owner write/read replies, reload after fresh RAM initialization, matching DNS/HTTP host lookups, the complete native URL builder with both TLS and non-TLS inputs, the exact startup-bitmap replacement, storage/read errors and the hostname limit. The generated patch, stock URL formatter, dispatcher, DBLIB bank selection/swap and serial framing execute; physical DB transactions/reads, serial transmission, scheduler exclusion and debug logging are modelled. Compiler-free bridge generation matches the maintainer build byte for byte, with unchanged radio and bootloader resources.
 

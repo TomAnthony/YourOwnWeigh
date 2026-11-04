@@ -62,7 +62,7 @@ Logs contain stages, counts and errors, not raw protocol payloads or credentials
 
 ## Development
 
-`--simulate` uses synthetic devices without accessing Bluetooth. It exercises the WebSocket, UI, exports and firmware-generation code; simulated OTA does not write hardware. Use a disposable server database.
+`--simulate` uses synthetic devices without accessing Bluetooth. It exercises the WebSocket, UI, exports and firmware-generation code; simulated OTA does not write hardware. Every registered model has a simulation profile; WS50 starts on stock v1721 and its generated v1023 update remains installed across simulated reconnects. Use a disposable server database.
 
 - `models/protocol.py`: WPP/TLV and Classic framing.
 - `models/session.py`: identity, provisioning and OTA acknowledgments.

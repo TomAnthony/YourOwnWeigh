@@ -16,6 +16,19 @@ For scale traffic, install [Caddy](https://caddyserver.com/docs/install) and run
 
 The scale-only listener accepts WS-50 POST requests to `/cgi-bin/once`, `/cgi-bin/session` and `/cgi-bin/measure`, alongside the other models' existing routes. This does not expose arbitrary `/cgi-bin/*` paths. WS-50 uses HTTP on port 80. After updating the server code, restart the Node process using your existing launch command/environment; the generated Caddy configuration needs no change for these routes.
 
+A custom HTTPS dashboard hostname does not automatically enable HTTP scale traffic at that hostname. WS-50 needs a non-redirecting port-80 route: its `/once` POST must receive JSON with `status: 0` and `body.once`, not a proxy 403/404 or an HTTPS redirect. When Caddy and Node run on the same machine with the scale-only listener enabled on `127.0.0.1:8081`, a separate site can be configured as follows (replace the example hostname and restrict access to the intended LAN):
+
+```caddyfile
+http://scale.example.net {
+    reverse_proxy 127.0.0.1:8081 {
+        header_up Host 127.0.0.1:8081
+        header_up X-Forwarded-For {http.request.remote.host}
+    }
+}
+```
+
+Enable the scale-only listener with `YOW_SCALE_PORT=8081` and retain its loopback bind and expected proxy Host. If Caddy runs elsewhere, use the actual scale-only backend and appropriate network access restrictions. Never forward this site to the dashboard listener just to make scale requests succeed. After reloading the proxy, check `curl --fail-with-body http://scale.example.net/once --data 'action=get'` before triggering a real upload.
+
 Caddy's [`tls internal`](https://caddyserver.com/docs/caddyfile/directives/tls) supplies the scale-facing certificate, with automatic trust-store installation disabled. The patched WBS06 does not authenticate that certificate. This does not make it trusted for iPhone or browser access. The local recipe deliberately uses loopback for administration; use a properly trusted HTTPS application endpoint for remote clients.
 
 For dashboard-only development, `npm run server:start` needs no certificate or proxy. Use the main [README](../README.md) for enrollment, firmware and Wi-Fi setup.
@@ -43,6 +56,10 @@ Approved WBS06/WS-30 enrollment stores the MAC/secret and Bluetooth observations
 WBS06 settings and display responses are required before its sync session can complete. If initial import fails, Finish Device Import retries. WS-30 does not adopt WBS06 display fixtures and keeps its minimal session. The server stores the profile; daily owner syncing does not call Withings. An optional read-only lookup for an unrecognised scale can use its Bluetooth MAC and secret to ask Withings for an advertised firmware URL and SHA-1. The browser receives only those offer fields, and the copyable issue report excludes credentials and users. This does not fetch or install the offered image.
 
 WS-50 owner-server sessions use 32-hex MD5 of `<auth>:<secret>:<once>` with no `method` or `hashmethod` marker, confirmed by a native packet capture. `auth` is hashed exactly as received; MAC canonicalization is for device lookup.
+
+For compatibility with existing WS-30 clients, classic MD5 sessions ignore a stray `method` parameter; it cannot select a different digest algorithm. A `hashmethod` marker is still rejected for these sessions. The enrolled model always determines authentication.
+
+Enrollment accepts only own entries in the shared model registry, not inherited object properties. Imported owner hostnames use the firmware-qualified limits: 48 ASCII bytes for WBS06/WBS13/WBS04 and 59 for WS-30/WS-50, not a generic 63-byte allowance. Storage/readback accepting a longer string does not prove that the firmware's DNS/URL field can use it; see [hostname limits](../firmware/Hostname-DNS-limits.md).
 
 Timezone arithmetic lives in TypeScript. The browser provides an IANA timezone; the server calculates UTC/current offset/next transition/next offset for both Wi-Fi responses and Bluetooth provisioning. Shared fixtures in `contracts/time/v1/` test boundary behavior and Python's wire encoding.
 

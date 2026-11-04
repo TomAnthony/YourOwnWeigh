@@ -82,6 +82,39 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         identity = await self.connect_demo("WBS04")
         self.assertEqual(identity["firmwareVersion"], 100)
 
+    async def test_simulated_ws50_firmware_survives_reconnect(self):
+        identity = await self.connect_demo("WS50")
+        self.assertEqual(identity["model"], "WS50")
+        self.assertEqual(identity["firmwareVersion"], 1721)
+        self.assertRegex(identity["mac"], r"\A[0-9a-f]{12}\Z")
+        await self.app.session.install(bytes(10), lambda *args: None)
+        await self.run_command(
+            command(
+                "device.disconnect",
+                deviceId="demo-scale",
+                connectionGeneration=self.app.generation,
+            )
+        )
+        identity = await self.connect_demo("WS50")
+        self.assertEqual(identity["firmwareVersion"], 1023)
+
+    async def test_all_registry_models_simulate_supported_identities(self):
+        from yow_bridge.models.registry import MODELS
+
+        for model in MODELS:
+            with self.subTest(model=model):
+                identity = await self.connect_demo(model)
+                self.assertEqual(identity["model"], model)
+                self.assertRegex(identity["mac"], r"\A[0-9a-f]{12}\Z")
+                self.assertTrue(identity["capabilities"]["ota"])
+                await self.run_command(
+                    command(
+                        "device.disconnect",
+                        deviceId="demo-scale",
+                        connectionGeneration=self.app.generation,
+                    )
+                )
+
     async def test_connect_stops_scan_and_waits_for_radio_cleanup(self):
         from yow_bridge import simulation
 

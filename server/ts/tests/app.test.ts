@@ -746,6 +746,124 @@ test("reviewed capture can stage users and fixtures without sending a roster", a
   }
 });
 
+test("enrollment accepts only registered models and firmware-safe owner hostnames", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "yow-host-limit-"));
+  const store = new LocalSqlite(join(directory, "host-limit.sqlite3"));
+  const env: AppEnv = {
+    DB: store.asD1(),
+    YOW_BOOTSTRAP_TOKEN: "test-bootstrap-token-123456",
+  };
+  let cookie = "";
+  let csrf = "";
+  const enroll = async (record: Record<string, unknown>) => {
+    const form = new FormData();
+    form.set("_csrf", csrf);
+    form.set("label", "Enrollment boundary test");
+    form.set(
+      "record",
+      new File([JSON.stringify(record)], "device.yow-device.json", {
+        type: "application/json",
+      }),
+    );
+    return handleApp(
+      new Request("https://local.test/scales/import-ble", {
+        method: "POST",
+        headers: { Cookie: cookie },
+        body: form,
+      }),
+      env,
+    );
+  };
+  try {
+    const setup = await handleApp(
+      new Request("https://local.test/setup", {
+        headers: cookie ? { Cookie: cookie } : {},
+      }),
+      env,
+    );
+    cookie = setup.headers.get("set-cookie")!.split(";")[0];
+    csrf = /name="_csrf" value="([a-f0-9]+)"/.exec(await setup.text())![1];
+    const initialized = await handleApp(
+      new Request("https://local.test/setup", {
+        method: "POST",
+        headers: { Cookie: cookie },
+        body: new URLSearchParams({
+          _csrf: csrf,
+          bootstrap_token: "test-bootstrap-token-123456",
+          password: "password-123",
+          confirm: "password-123",
+        }),
+      }),
+      env,
+    );
+    assert.equal(initialized.status, 303);
+    cookie = initialized.headers.get("set-cookie")!.split(";")[0];
+    const dashboard = await handleApp(
+      new Request("https://local.test/", { headers: { Cookie: cookie } }), env,
+    );
+    assert.equal(dashboard.status, 200);
+    csrf = /name="_csrf" value="([a-f0-9]+)"/.exec(await dashboard.text())![1];
+    const base = (model: string, mac: string, firmware: number) => ({
+      format: model === "WBS06" ? "YOW-BLE-device-v1" : "YOW-Classic-device-v1",
+      model,
+      name: model === "WBS06" ? "Body" : model === "WS50" ? "WS-50" : "WS-30",
+      mac,
+      session_secret: "0123456789abcdef",
+      hardware_version: 0xffffff,
+      bootloader_version: model === "WBS06" ? 4 : model === "WS50" ? 12 : 15,
+      firmware_version: firmware,
+      rescue_version: 0xffffffff,
+      captured_at: Math.floor(Date.now() / 1000),
+      owner_transport: model === "WBS06" ? "https" : "http",
+    });
+    const suffix = ".example.com";
+    const host = (n: number) => `${"a".repeat(n - suffix.length)}${suffix}`;
+    // BLE models (WBS06/WBS04) stay at the documented 48-byte firmware cap;
+    // classic models (WS-30/WS50) keep their 59-byte patch buffer limit.
+    const accepted = await enroll({
+      ...base("WBS06", "24:E4:2F:12:34:57", 126),
+      owner_host: host(48),
+    });
+    assert.equal(accepted.status, 303, await accepted.clone().text());
+    const overBle = await enroll({
+      ...base("WBS06", "24:E4:2F:12:34:58", 126),
+      owner_host: host(49),
+    });
+    assert.equal(overBle.status, 303);
+    const acceptedClassic = await enroll({
+      ...base("WS50", "02:00:00:00:00:50", 1023),
+      owner_host: host(59),
+    });
+    assert.equal(acceptedClassic.status, 303, await acceptedClassic.clone().text());
+    const overClassic = await enroll({
+      ...base("WS50", "02:00:00:00:00:51", 1023),
+      owner_host: host(60),
+    });
+    assert.equal(overClassic.status, 303);
+    for (const [index, model] of ["UNKNOWN", "__proto__", "constructor", "toString"].entries()) {
+      const record: Record<string, unknown> = {
+        ...base("WS50", `02:00:00:00:01:${index.toString(16).padStart(2, "0")}`, 1023),
+        model,
+      };
+      // Missing format must not match an inherited object's undefined profile.
+      delete record.format;
+      delete record.owner_transport;
+      const rejected = await enroll(record);
+      assert.equal(rejected.status, 303);
+    }
+    const stored = await store.asD1().prepare(
+      "SELECT model,ble_owner_host AS host FROM scales ORDER BY model",
+    ).all();
+    assert.deepEqual(stored.results.map((row) => ({ ...row })), [
+      { model: "WBS06", host: host(48) },
+      { model: "WS50", host: host(59) },
+    ]);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("portable PBKDF2 hash logs in and admin rotation invalidates other sessions", async () => {
   const directory = mkdtempSync(join(tmpdir(), "yow-password-test-"));
   const store = new LocalSqlite(join(directory, "password.sqlite3"));

@@ -9,7 +9,10 @@ import importlib.util
 import os
 from pathlib import Path
 import struct
+import stat
+import tempfile
 import unittest
+from unittest.mock import patch
 
 try:
     from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_CODE
@@ -135,6 +138,20 @@ class Machine:
         return frame[9:]
 
 
+class WS50BuildOutputTests(unittest.TestCase):
+    def test_new_output_directory_is_private_and_writable(self):
+        spec = importlib.util.spec_from_file_location("ws50_output", ROOT / "firmware/ws50/v1721/patch.py")
+        patch = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(patch)
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "private" / "firmware.bin"
+            patch.write_new(output, b"first image")
+            self.assertEqual(stat.S_IMODE(output.parent.stat().st_mode), 0o700)
+            self.assertEqual(output.read_bytes(), b"first image")
+            patch.write_new(output, b"replacement image")
+            self.assertEqual(output.read_bytes(), b"replacement image")
+
+
 @unittest.skipUnless(Uc is not None and SOURCE, "requires unicorn and YOW_WS50_STOCK")
 class WS50OwnerPatchTests(unittest.TestCase):
     @classmethod
@@ -159,19 +176,14 @@ class WS50OwnerPatchTests(unittest.TestCase):
         self.assertEqual(self.stock.count(hello), 1)
         self.assertEqual(self.patch.u32(self.image, self.patch.HELLO_POINTER_LITERAL),
                          self.patch.HELLO_POINTER)
-        # Assert exact metadata and code/face regions rather than comparing
-        # every stock byte, because the app expansion shifts section starts.
-        for offset, value in {
-            0x00: len(self.image), 0x08: self.patch.VERSION, 0x40: self.patch.VERSION,
-            0x14: self.patch.u32(self.image, 0x14), 0x3C: self.patch.u32(self.image, 0x14),
-            0x28: self.patch.u32(self.image, 0x28), 0x80: self.patch.u32(self.image, 0x80),
-            self.patch.APP_END - 4: self.patch.VERSION,
-            self.patch.APP_END + self.patch.EXTRA - 4: self.patch.VERSION,
-            len(self.image) - 4: self.patch.u32(self.image, len(self.image) - 4),
-        }.items():
-            self.assertEqual(self.patch.u32(self.image, offset), value)
-        self.assertEqual(self.image.count(face), 1)
-        self.assertEqual(self.stock.count(hello), 1)
+
+    def test_structurally_valid_compiler_drift_is_rejected(self):
+        code, symbols = self.patch.compile_code()
+        # A trailing Thumb NOP leaves all entry points and container checks
+        # valid, but it is not the hardware-qualified release.
+        with patch.object(self.patch, "compile_code", return_value=(code + bytes.fromhex("00bf"), symbols)):
+            with self.assertRaises(ValueError):
+                self.patch.build(self.stock)
 
     def test_stock_wifi_read_returns_an_empty_object_when_unconfigured(self):
         m = self.machine()

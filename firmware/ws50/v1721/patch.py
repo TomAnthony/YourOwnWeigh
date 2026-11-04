@@ -30,6 +30,7 @@ from pathlib import Path
 
 CDN = "http://cdnfw.withings.net/wbs02/wbs02_1721_qrH14m.bin"
 SOURCE_HASH = "4aa0d7548c5e093c1740b28101686908f6005d038f4b11a213595704bb690d86"
+OUTPUT_HASH = "3ed6bcf5d282f84d022644a21d78f577650bd55e9f354607fcdcd5d3938dff4e"
 SOURCE_SHA1 = "6f3af68e8a9b063322eb0ff45245fa2e8c5357bc"
 SOURCE_SIZE = 752_448
 # Keep owner versions below stock so they follow the existing two-slot update
@@ -270,6 +271,8 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     put32(result, len(result) - 4, zlib.crc32(result[:-4]))
     output = bytes(result)
     validate_container(output, version=VERSION)
+    if sha(output) != OUTPUT_HASH:
+        raise ValueError(f"v{VERSION} output differs from the pinned build: {sha(output)}")
     # The fixed runtime word and relocated application tail must agree.
     if u32(output, APP_END - 4) != VERSION:
         raise ValueError("WS-50 runtime version word not updated")
@@ -298,7 +301,7 @@ def build(stock: bytes) -> tuple[bytes, dict]:
 
 
 def write_new(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0x700)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, tmp = tempfile.mkstemp(prefix=".yow-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as stream:

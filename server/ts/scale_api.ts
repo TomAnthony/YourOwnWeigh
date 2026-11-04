@@ -397,7 +397,7 @@ async function newSession(
   const validHash = model
     ? new RegExp(`^[0-9a-f]{${model.hashLength}}$`, "i").test(submitted) &&
       (model.hashParam === null
-        ? !params.has("hashmethod") && !params.has("method")
+        ? !params.has("hashmethod")
         : params.get(model.hashParam.name) === model.hashParam.value)
     : false;
   if (!validHash) return authenticationFailure(env, scale, request);
