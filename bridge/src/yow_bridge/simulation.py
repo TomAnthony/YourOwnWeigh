@@ -108,7 +108,7 @@ class Session(ScaleSession):
             await asyncio.sleep(0.1)
         # Model the reboot into YOW firmware so a re-probe reflects the new
         # version and server config becomes available (WBS06/WBS04).
-        # Preserve the upstream WBS04 demo's initial owner release.
-        self.firmware = 100 if self.model == "WBS04" else spec(self.model).owner_firmware[-1]
+        # Preserve the upstream WBS04 demo's HTTPS-capable release.
+        self.firmware = 101 if self.model == "WBS04" else spec(self.model).owner_firmware[-1]
         _INSTALLED[self.model] = self.firmware
         return dict(transferred=True, simulated=True, runningFirmwareConfirmed=False)

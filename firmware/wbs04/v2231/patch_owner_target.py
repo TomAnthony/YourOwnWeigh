@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""WBS04 2231 owner-target injection — HTTP-only build, tested on a Body Cardio (HTTPS unfinished).
+"""WBS04 2231 owner-target injection — base stage of the combined HTTP+HTTPS build (v101),
+tested on a Body Cardio.
 
 Ported from firmware/wbs06/v1181/patch_owner_target.py. The WBS04 is the same
 compiler build as WBS06 and every site was located statically + emulated
 (see analysis/FINDINGS.md, validate_wbs04.py, emu_wbs04.py), but this builder
-has been emulated and flashed on a Body Cardio over HTTP; the HTTPS variant is unfinished.
+has been emulated and flashed on a Body Cardio over HTTP and HTTPS.
 
 Layout: the application is extended by EXTRA bytes at APP_END. The WPP command
 table is relocated to the start of that region and extended with command 0x170;
@@ -179,15 +180,11 @@ def build(original: bytes, *, http_only: bool = False) -> tuple[bytes, dict]:
 
     meta = {"table_va": TABLE_NEW_VA, "handler_va": handler_va,
             "url_va": CODE_VA + syms["owner_url_target"],
-            "wrapper_va": wrapper_va, "code_size": len(code),
+            "wrapper_va": wrapper_va, "wrapper_size": len(wrapper),
+            "code_size": len(code),
             "yow_version": C.YOW_VERSION, "http_only": http_only}
     if not http_only:
         meta["tls_va"] = CODE_VA + syms["owner_tls_accept_ed25519_leaf"]
-    # TODO before any device use:
-    #  - emulate owner_wpp_170 end-to-end (like WBS06 test_owner_target.py)
-    #  - confirm section-descriptor offsets 0x18/0x20/0x48/0x5C/0x70 map 1:1 to WBS04
-    #  - verify owner_tls_accept mbedtls leaf offsets on WBS04
-    #  - add patch_tls_fragments / patch_tls_http_read equivalents for full HTTPS
     return bytes(result), meta
 
 

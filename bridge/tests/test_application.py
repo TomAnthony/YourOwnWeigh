@@ -80,7 +80,7 @@ class Commands(unittest.IsolatedAsyncioTestCase):
             )
         )
         identity = await self.connect_demo("WBS04")
-        self.assertEqual(identity["firmwareVersion"], 100)
+        self.assertEqual(identity["firmwareVersion"], 101)
 
     async def test_simulated_ws50_firmware_survives_reconnect(self):
         identity = await self.connect_demo("WS50")

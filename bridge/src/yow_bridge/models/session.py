@@ -239,9 +239,10 @@ class ScaleSession:
                 ota=version in (2231, 100, 101, 102),
                 serverRead=owner,
                 serverWrite=owner,
-                # The shipped WBS04 recipe is HTTP-only; HTTPS needs the TLS
-                # robustness stages ported before it can be advertised.
-                serverTransports=["http"] if owner else [],
+                # v100 is the HTTP-only image whose owner handler rejects https;
+                # from v101 the firmware carries the ported WBS06 TLS stages and
+                # accepts both. (HTTPS verified on a real Body Cardio.)
+                serverTransports=(["http", "https"] if version >= 101 else ["http"]) if owner else [],
                 hostnameMaxBytes=48,
                 wifiWrite=True,
                 wifiRead="ssid-only",

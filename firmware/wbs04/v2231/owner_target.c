@@ -2,8 +2,8 @@
  * WBS04 (Body Cardio) v2231 owner-target Thumb injection source.
  *
  * NOT a complete firmware image. Ported from the WBS06 v1181 owner_target.c.
- * Addresses are pinned to the stock v2231 dump (see constants.py). The HTTP-only
- * build has been emulated and run on a Body Cardio; the HTTPS path is unfinished.
+ * Addresses are pinned to the stock v2231 dump (see constants.py). The combined
+ * HTTP+HTTPS build (v101) has been emulated and run on a Body Cardio.
  *
  * Key WBS04 deviation vs WBS06: the WPP reply struct is larger. The length
  * field lives at offset 0xc0 (WBS06: 0x80), so the reply buffer is 0xc4 bytes
