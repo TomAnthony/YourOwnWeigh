@@ -13,7 +13,7 @@
   "hostLimit": 59,
   "maxSize": 917504,
   "format": "YOW-recipe-v1",
-  "model": "WS50",
+  "model": "WBS02",
   "sourceCopies": [],
   "writes": [
     {

@@ -45,7 +45,7 @@ PROFILES = {
         hostLimit=59,
         maxSize=0xE0000,
     ),
-    "WS50": dict(
+    "WBS02": dict(
         version=1023,
         stockVersion=1721,
         bootloader=12,
@@ -145,7 +145,7 @@ def package(model, source, target):
     p["releaseSource"] = {
         "WBS06": "firmware/wbs06/v1181/build.py",
         "WBS03": "firmware/ws30/v921/build.py",
-        "WS50": "firmware/ws50/v1721/build.py",
+        "WBS02": "firmware/ws50/v1721/build.py",
         "WBS13": "firmware/wbs13/v1311/build.py",
     }[model]
     return p

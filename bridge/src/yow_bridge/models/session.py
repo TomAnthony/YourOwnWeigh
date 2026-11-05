@@ -390,8 +390,9 @@ class ScaleSession:
         if not self.capabilities()["wifiRead"]:
             return dict(supported=False)
         reply = await self.request(0x104)
-        # The v1311 handler sends an empty reply if its Wi-Fi DB item is absent.
-        if self.model == "WBS13" and not reply.payload:
+        # WBS13 v1311 and WBS02 v1721 (also retained by their owner patches)
+        # send no payload when the stored Wi-Fi DB item is absent.
+        if self.model in ("WBS13", "WBS02") and not reply.payload:
             return dict(ssid="", unset=True, supported=True, observedAt=timestamp())
         data = reply.value(0x104)
         if not data or len(data) < data[0] + 2:

@@ -461,6 +461,8 @@ function parseDeviceRecord(raw: string): Row {
   if (utf8.encode(raw).length < 1 || utf8.encode(raw).length > 4096)
     throw new Error("Device record must be at most 4 KB");
   const record = parseJson(raw);
+  // Early WS-50 bridges exported the product name as the model code.
+  if (record.model === "WS50") record.model = "WBS02";
   const model = scaleModel(record.model);
   if (
     !model ||

@@ -3,7 +3,7 @@
 Examples (with the selected scale in hardware-button setup mode):
     python -m yow_bridge.diagnose --model WBS06 --probe
     python -m yow_bridge.diagnose --model WBS03 --probe --read-configuration
-    python -m yow_bridge.diagnose --model WS50 --probe --read-configuration
+    python -m yow_bridge.diagnose --model WBS02 --probe --read-configuration
     python -m yow_bridge.diagnose --model WBS13 --probe
 
 Scans by default. --probe connects only to the selected --device, or the sole

@@ -78,7 +78,7 @@ MODELS: dict[str, ModelSpec] = {
         hostname_limit=48,
         display="Body Cardio",
     ),
-    "WS50": ModelSpec(
+    "WBS02": ModelSpec(
         transport="classic",
         name=re.compile(r"WS-?50", re.IGNORECASE),
         bootloader=12,

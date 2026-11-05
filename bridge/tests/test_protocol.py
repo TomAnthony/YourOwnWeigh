@@ -323,6 +323,66 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["ssid"], "")
         self.assertTrue(result["unset"])
 
+    async def test_ws50_unconfigured_wifi_accepts_the_stock_serial_reply(self):
+        for firmware in (1721, 1023):
+            with self.subTest(firmware=firmware):
+                transport = MockTransport("WBS03")
+                frame = probe("WBS03", name="Withings WS50", boot=12, firmware=firmware)
+                with patch(__name__ + ".probe", return_value=frame):
+                    identity = await transport.session.probe()
+                self.assertEqual(identity["model"], "WBS02")
+
+                async def reply_wifi(packet):
+                    self.assertEqual(packet, serial_packet(encode(0x104)))
+                    # Exact unconfigured response from test_ws50_owner_patch.py,
+                    # including its SPP envelope; exercise fragmented reception.
+                    response = bytes.fromhex("010100050101040000")
+                    for i in range(0, len(response), 3):
+                        transport.session.receive(response[i:i + 3])
+
+                transport.write = reply_wifi
+                result = await transport.session.read_wifi()
+                self.assertEqual(result["ssid"], "")
+                self.assertTrue(result["unset"])
+                self.assertTrue(result["supported"])
+                self.assertIn("observedAt", result)
+
+    async def test_ws50_configured_wifi_still_validates_and_hides_password(self):
+        transport = MockTransport("WBS03")
+        frame = probe("WBS03", name="Withings WS50", boot=12, firmware=1023)
+        with patch(__name__ + ".probe", return_value=frame):
+            await transport.session.probe()
+        value = b"\x07Test AP\x08password"
+        responses = (
+            (tlv(0x104, value), True),
+            (tlv(0x104), False),  # Empty TLV is malformed, unlike no payload.
+            (tlv(0x104, value[:-1]), False),
+            (tlv(0x104, value) + tlv(0x104, value), False),
+        )
+        for payload, valid in responses:
+            with self.subTest(payload=payload):
+                async def reply_wifi(packet):
+                    self.assertEqual(packet, serial_packet(encode(0x104)))
+                    transport.reply(encode(0x104, payload))
+
+                transport.write = reply_wifi
+                if valid:
+                    result = await transport.session.read_wifi()
+                    self.assertEqual(result["ssid"], "Test AP")
+                    self.assertNotIn("password", result)
+                    self.assertNotIn("unset", result)
+                else:
+                    with self.assertRaises(ProtocolError):
+                        await transport.session.read_wifi()
+
+    async def test_empty_wifi_reply_is_not_accepted_for_other_models(self):
+        for model in ("WBS06", "WBS03"):
+            with self.subTest(model=model):
+                transport = MockTransport(model)
+                await transport.session.probe()
+                with self.assertRaises(ProtocolError):
+                    await transport.session.read_wifi()
+
     async def test_body_smart_without_secret_is_identified_without_followup_commands(self):
         transport = MockTransport("WBS06")
         transport.identity_only = True

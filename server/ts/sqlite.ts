@@ -141,6 +141,12 @@ export class LocalSqlite {
         ),
       );
     }
+    this.database.exec(
+      readFileSync(
+        join(ROOT, "server/migrations/0010_wbs02_model_code.sql"),
+        "utf8",
+      ),
+    );
   }
   private upgradeOlderDatabase(): void {
     const columns = (table: string): Set<string> =>

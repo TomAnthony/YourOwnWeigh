@@ -14,7 +14,8 @@
           "WBS06",
           "WBS03",
           "WBS13",
-          "WBS04"
+          "WBS04",
+          "WBS02"
         ]
       },
       "durationSeconds": {
@@ -155,7 +156,8 @@
           "WBS06",
           "WBS03",
           "WBS13",
-          "WBS04"
+          "WBS04",
+          "WBS02"
         ]
       }
     },
@@ -205,7 +207,8 @@
           "WBS06",
           "WBS03",
           "WBS13",
-          "WBS04"
+          "WBS04",
+          "WBS02"
         ]
       },
       "size": {

@@ -83,8 +83,8 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(identity["firmwareVersion"], 101)
 
     async def test_simulated_ws50_firmware_survives_reconnect(self):
-        identity = await self.connect_demo("WS50")
-        self.assertEqual(identity["model"], "WS50")
+        identity = await self.connect_demo("WBS02")
+        self.assertEqual(identity["model"], "WBS02")
         self.assertEqual(identity["firmwareVersion"], 1721)
         self.assertRegex(identity["mac"], r"\A[0-9a-f]{12}\Z")
         await self.app.session.install(bytes(10), lambda *args: None)
@@ -95,7 +95,7 @@ class Commands(unittest.IsolatedAsyncioTestCase):
                 connectionGeneration=self.app.generation,
             )
         )
-        identity = await self.connect_demo("WS50")
+        identity = await self.connect_demo("WBS02")
         self.assertEqual(identity["firmwareVersion"], 1023)
 
     async def test_all_registry_models_simulate_supported_identities(self):
@@ -417,6 +417,24 @@ class Commands(unittest.IsolatedAsyncioTestCase):
             ).read_text()
         )
         self.assertEqual(set(document), COMMANDS)
+
+    def test_command_model_contracts_match_registry(self):
+        import json
+        from pathlib import Path
+        from yow_bridge.models.registry import MODELS
+
+        root = Path(__file__).resolve().parents[2] / "contracts/bridge/v1"
+        commands = json.loads((root / "commands.json").read_text())
+        envelope = json.loads((root / "command.schema.json").read_text())
+        parameters = {
+            rule["if"]["properties"]["name"]["const"]:
+            rule["then"]["properties"]["parameters"]
+            for rule in envelope["allOf"]
+        }
+        for name in ("device.scan.start", "firmware.generate", "artifact.begin"):
+            with self.subTest(command=name):
+                self.assertEqual(set(commands[name]["properties"]["model"]["enum"]), set(MODELS))
+                self.assertEqual(parameters[name], commands[name])
 
 
 class ProgressLogging(unittest.TestCase):

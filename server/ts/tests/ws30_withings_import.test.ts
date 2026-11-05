@@ -1,5 +1,5 @@
 /** Offline vendor compatibility and WS-30 import regressions using a sanitized
- * WS-30 upstream response; WS50 replay does not establish live compatibility.
+ * WS-30 upstream response; WBS02 replay does not establish live compatibility.
  * Optional YOW_WITHINGS_TEST_CAPTURE selects a private baseline for a local check.
  */
 import test from "node:test";
@@ -19,7 +19,7 @@ const baseline = JSON.parse(readFileSync(process.env.YOW_WITHINGS_TEST_CAPTURE ?
 // A private baseline may be tested without copying its real identity into the DB.
 baseline.mac = MAC;
 
-for (const [model, firmware] of [["WBS03", 102], ["WS50", 1023]] as const) {
+for (const [model, firmware] of [["WBS03", 102], ["WBS02", 1023]] as const) {
 test(`${model} vendor capture keeps compatibility authentication independent of owner firmware`, async (t) => {
   const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {

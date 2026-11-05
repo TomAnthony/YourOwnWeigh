@@ -799,18 +799,19 @@ test("enrollment accepts only registered models and firmware-safe owner hostname
     assert.equal(initialized.status, 303);
     cookie = initialized.headers.get("set-cookie")!.split(";")[0];
     const dashboard = await handleApp(
-      new Request("https://local.test/", { headers: { Cookie: cookie } }), env,
+      new Request("https://local.test/", { headers: { Cookie: cookie } }),
+      env,
     );
     assert.equal(dashboard.status, 200);
     csrf = /name="_csrf" value="([a-f0-9]+)"/.exec(await dashboard.text())![1];
     const base = (model: string, mac: string, firmware: number) => ({
       format: model === "WBS06" ? "YOW-BLE-device-v1" : "YOW-Classic-device-v1",
       model,
-      name: model === "WBS06" ? "Body" : model === "WS50" ? "WS-50" : "WS-30",
+      name: model === "WBS06" ? "Body" : model === "WBS02" ? "WS-50" : "WS-30",
       mac,
       session_secret: "0123456789abcdef",
       hardware_version: 0xffffff,
-      bootloader_version: model === "WBS06" ? 4 : model === "WS50" ? 12 : 15,
+      bootloader_version: model === "WBS06" ? 4 : model === "WBS02" ? 12 : 15,
       firmware_version: firmware,
       rescue_version: 0xffffffff,
       captured_at: Math.floor(Date.now() / 1000),
@@ -819,7 +820,7 @@ test("enrollment accepts only registered models and firmware-safe owner hostname
     const suffix = ".example.com";
     const host = (n: number) => `${"a".repeat(n - suffix.length)}${suffix}`;
     // BLE models (WBS06/WBS04) stay at the documented 48-byte firmware cap;
-    // classic models (WS-30/WS50) keep their 59-byte patch buffer limit.
+    // classic models (WS-30/WBS02) keep their 59-byte patch buffer limit.
     const accepted = await enroll({
       ...base("WBS06", "24:E4:2F:12:34:57", 126),
       owner_host: host(48),
@@ -831,18 +832,31 @@ test("enrollment accepts only registered models and firmware-safe owner hostname
     });
     assert.equal(overBle.status, 303);
     const acceptedClassic = await enroll({
-      ...base("WS50", "02:00:00:00:00:50", 1023),
+      ...base("WBS02", "02:00:00:00:00:50", 1023),
       owner_host: host(59),
     });
-    assert.equal(acceptedClassic.status, 303, await acceptedClassic.clone().text());
+    assert.equal(
+      acceptedClassic.status,
+      303,
+      await acceptedClassic.clone().text(),
+    );
     const overClassic = await enroll({
-      ...base("WS50", "02:00:00:00:00:51", 1023),
+      ...base("WBS02", "02:00:00:00:00:51", 1023),
       owner_host: host(60),
     });
     assert.equal(overClassic.status, 303);
-    for (const [index, model] of ["UNKNOWN", "__proto__", "constructor", "toString"].entries()) {
+    for (const [index, model] of [
+      "UNKNOWN",
+      "__proto__",
+      "constructor",
+      "toString",
+    ].entries()) {
       const record: Record<string, unknown> = {
-        ...base("WS50", `02:00:00:00:01:${index.toString(16).padStart(2, "0")}`, 1023),
+        ...base(
+          "WBS02",
+          `02:00:00:00:01:${index.toString(16).padStart(2, "0")}`,
+          1023,
+        ),
         model,
       };
       // Missing format must not match an inherited object's undefined profile.
@@ -851,13 +865,34 @@ test("enrollment accepts only registered models and firmware-safe owner hostname
       const rejected = await enroll(record);
       assert.equal(rejected.status, 303);
     }
-    const stored = await store.asD1().prepare(
-      "SELECT model,ble_owner_host AS host FROM scales ORDER BY model",
-    ).all();
-    assert.deepEqual(stored.results.map((row) => ({ ...row })), [
-      { model: "WBS06", host: host(48) },
-      { model: "WS50", host: host(59) },
-    ]);
+    const stored = await store
+      .asD1()
+      .prepare("SELECT model,ble_owner_host AS host FROM scales ORDER BY model")
+      .all();
+    assert.deepEqual(
+      stored.results.map((row) => ({ ...row })),
+      [
+        { model: "WBS02", host: host(59) },
+        { model: "WBS06", host: host(48) },
+      ],
+    );
+
+    // Imports made with the contributor's earlier bridge keep working, but
+    // new records are always stored under the canonical firmware model code.
+    const oldExport = {
+      ...base("WBS02", "02:00:00:00:00:52", 1023),
+      model: "WS50",
+      owner_host: host(59),
+    };
+    assert.equal((await enroll(oldExport)).status, 303);
+    assert.equal(
+      (
+        await store
+          .prepare("SELECT model FROM scales WHERE mac='020000000052'")
+          .first<{ model: string }>()
+      )?.model,
+      "WBS02",
+    );
   } finally {
     store.close();
     rmSync(directory, { recursive: true, force: true });

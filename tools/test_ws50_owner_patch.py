@@ -1,6 +1,6 @@
 """Execute the WS-50 owner patch and stock WPP/DBLIB wrappers under Unicorn.
 
-Requires Clang, unicorn, and YOW_WS50_STOCK pointing to the private pinned v1721
+Requires Clang, unicorn, and YOW_WBS02_STOCK pointing to the private pinned v1721
 image. Physical DB transactions/reads, serial-send and logging boundaries are
 modelled; the patch, stock URL formatter, bank swap and reply framing execute.
 No device access, downloads, or firmware outputs.
@@ -24,7 +24,7 @@ except ImportError:
     Uc = None
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = os.environ.get("YOW_WS50_STOCK")
+SOURCE = os.environ.get("YOW_WBS02_STOCK")
 CONTEXT = 0x20008000
 ARG = 0x20002000
 DEST = 0x20003000
@@ -138,7 +138,7 @@ class Machine:
         return frame[9:]
 
 
-class WS50BuildOutputTests(unittest.TestCase):
+class WBS02BuildOutputTests(unittest.TestCase):
     def test_new_output_directory_is_private_and_writable(self):
         spec = importlib.util.spec_from_file_location("ws50_output", ROOT / "firmware/ws50/v1721/patch.py")
         patch = importlib.util.module_from_spec(spec)
@@ -152,8 +152,8 @@ class WS50BuildOutputTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), b"replacement image")
 
 
-@unittest.skipUnless(Uc is not None and SOURCE, "requires unicorn and YOW_WS50_STOCK")
-class WS50OwnerPatchTests(unittest.TestCase):
+@unittest.skipUnless(Uc is not None and SOURCE, "requires unicorn and YOW_WBS02_STOCK")
+class WBS02OwnerPatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         spec = importlib.util.spec_from_file_location("ws50_patch", ROOT / "firmware/ws50/v1721/patch.py")

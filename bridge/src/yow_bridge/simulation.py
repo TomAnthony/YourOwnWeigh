@@ -32,7 +32,7 @@ _SIM_PROFILE = {
     # Starts on stock 2231 so the dry-run shows the real stock->flash->config
     # progression; install() flips it to the YOW owner version.
     "WBS04": dict(firmware=2231),
-    "WS50": dict(firmware=1721),
+    "WBS02": dict(firmware=1721),
 }
 
 

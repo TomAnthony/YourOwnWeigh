@@ -91,13 +91,13 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 59,
     classicGates: true,
   },
-  WS50: {
+  WBS02: {
     transport: "classic",
     hash: "md5",
     hashParam: null,
     hashLength: 32,
-    label: "WS-50 (WS50)",
-    fullLabel: "Smart Body Analyzer (WS50)",
+    label: "WS-50 (WBS02)",
+    fullLabel: "Smart Body Analyzer (WBS02)",
     namePattern: "WS-?50",
     exportFormat: "YOW-Classic-device-v1",
     bootloader: 12,

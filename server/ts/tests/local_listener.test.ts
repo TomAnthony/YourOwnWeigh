@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { localListener } from "../local.ts";
 import { LocalSqlite } from "../sqlite.ts";
 
-test("scale-only HTTP listener ingests WS50 CGI uploads without exposing application routes", async () => {
+test("scale-only HTTP listener ingests WBS02 CGI uploads without exposing application routes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "yow-local-cgi-"));
   const store = new LocalSqlite(join(directory, "test.sqlite3"));
   const db = store.asD1();
@@ -20,7 +20,7 @@ test("scale-only HTTP listener ingests WS50 CGI uploads without exposing applica
   try {
     const mac = "02:00:00:00:00:50", secret = "0123456789abcdef";
     await db.prepare(
-      "INSERT INTO scales(id,label,model,mac,secret) VALUES(1,'Test WS50','WS50','020000000050',?)",
+      "INSERT INTO scales(id,label,model,mac,secret) VALUES(1,'Test WBS02','WBS02','020000000050',?)",
     ).bind(secret).run();
     const listening = once(server, "listening");
     server.listen(0, "127.0.0.1");
@@ -41,7 +41,7 @@ test("scale-only HTTP listener ingests WS50 CGI uploads without exposing applica
     assert.ok(challengeBody && typeof challengeBody === "object" && "once" in challengeBody);
     const nonce = challengeBody.once;
     assert.ok(typeof nonce === "string");
-    // Sanitized native WS50 request shape from an owner packet capture:
+    // Sanitized native WBS02 request shape from an owner packet capture:
     // root /session, MD5, no query parameters or hash-method marker.
     const sessionFields = {
       action: "new", auth: mac, currentfw: "1023", mfgid: "0",

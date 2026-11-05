@@ -10,6 +10,7 @@ class FirmwareTests(unittest.TestCase):
     def test_recipes_bounded_and_hashed(self):
         for model in RELEASES:
             p = recipe(model)
+            self.assertEqual(p["model"], model)
             end = 0
             self.assertLess(p["outputSize"], 2 * 1024 * 1024)
             for w in p["writes"]:

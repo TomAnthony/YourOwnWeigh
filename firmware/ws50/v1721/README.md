@@ -49,9 +49,9 @@ Measurement groups retain unknown raw type IDs. A local WS-50 sample contains ty
 From the repository root, in a Python environment with `unicorn` installed:
 
 ```sh
-YOW_WS50_STOCK=local/wbs02_1721_qrH14m.bin \
+YOW_WBS02_STOCK=local/wbs02_1721_qrH14m.bin \
   python -m unittest discover -s tools -p test_ws50_owner_patch.py -v
-python3 tools/package_firmware.py WS50 \
+python3 tools/package_firmware.py WBS02 \
   local/wbs02_1721_qrH14m.bin local/firmware/ws50/wbs02_yow_1023.bin
 ```
 

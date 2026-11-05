@@ -284,7 +284,7 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     if output[HELLO_OFFSET:HELLO_OFFSET + BITMAP_SIZE] != face or \
        u32(output, HELLO_POINTER_LITERAL) != HELLO_POINTER:
         raise ValueError("startup face or its renderer pointer changed")
-    metadata = {"format": "YOW-image-v1", "model": "WS50",
+    metadata = {"format": "YOW-image-v1", "model": "WBS02",
                 "imageFile": f"wbs02_yow_{VERSION}.bin", "sha256": sha(output),
                 "firmwareVersion": VERSION, "sourceFirmwareVersions": SOURCE_VERSIONS,
                 "bootloaderVersion": 12, "ownerConfigProtocolVersion": 2,

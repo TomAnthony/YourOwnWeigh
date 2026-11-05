@@ -225,6 +225,7 @@ function parse(raw: string): Backup {
   }
   const macs = new Set();
   for (const r of b.sections.scales) {
+    if (r.model === "WS50") r.model = "WBS02";
     if (
       !Object.hasOwn(SCALE_MODELS, String(r.model)) ||
       !/^[A-F0-9]{12}$/.test(String(r.mac)) ||

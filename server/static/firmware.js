@@ -42,8 +42,8 @@
     "download-firmware",
     "check-firmware-offer",
   ];
-  const SCALE_LABELS = { WBS06: "Body (WBS06)", WBS03: "WS-30 (WBS03)", WS50: "WS-50 (WS50)", WBS13: "Body Smart (WBS13)", WBS04: "Body Cardio (WBS04)" };
-  const CLASSIC = new Set(["WBS03", "WS50"]);
+  const SCALE_LABELS = { WBS06: "Body (WBS06)", WBS03: "WS-30 (WBS03)", WBS02: "WS-50 (WBS02)", WBS13: "Body Smart (WBS13)", WBS04: "Body Cardio (WBS04)" };
+  const CLASSIC = new Set(["WBS03", "WBS02"]);
   const label = (model) => SCALE_LABELS[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
@@ -738,12 +738,16 @@
   // Real BLE discovery is model-agnostic (the probe identifies the scale). The
   // demonstration bridge only invents the model it is asked for, so keep the
   // selected BLE demo model there instead of always resetting to WBS06.
-  $("scan-ble").onclick = () =>
-    scan(
-      snapshot.simulated && $("scale-model").value === "WBS04"
-        ? "WBS04"
+  $("scan-ble").onclick = () => {
+    const selected = $("scale-model").value;
+    return scan(
+      snapshot.simulated &&
+      Object.hasOwn(SCALE_LABELS, selected) &&
+      !CLASSIC.has(selected)
+        ? selected
         : "WBS06",
     );
+  };
   $("scan-classic").onclick = () =>
     scan(
       snapshot.simulated && CLASSIC.has($("scale-model").value)
