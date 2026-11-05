@@ -24,6 +24,7 @@ RELEASES = {
     # Body Cardio: one firmware speaking HTTP + HTTPS (transport chosen at
     # configure time). HTTP flashed and working; the HTTPS path is experimental.
     "WBS04": (101, "1596278ebdf4ba09bc22e7b519087add8f2e5548f630fad235cbdb2f24681a6d"),
+    "WBS02": (1023, "3ed6bcf5d282f84d022644a21d78f577650bd55e9f354607fcdcd5d3938dff4e"),
 }
 BLOCKED = {
     "cb8ba4abb04deebceea69c8ca313b6166e9710eb95cd811862500c80a55c1854",
@@ -110,7 +111,7 @@ def inspect(data: bytes, model: str) -> dict:
     ):
         raise ValueError("Application flash bounds/reset vector invalid")
     if (
-        u(p["expansionAt"] - 4) != version
+        u(p["expansionAt"] - 4) != p.get("runtimeVersion", version)
         or u(boot[1] + boot[2] - 4) != p["bootloader"]
     ):
         raise ValueError("Runtime or bootloader version differs")

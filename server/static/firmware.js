@@ -42,12 +42,9 @@
     "download-firmware",
     "check-firmware-offer",
   ];
-  const label = (model) =>
-    ({
-      WBS03: "WS-30 (WBS03)",
-      WBS13: "Body Smart (WBS13)",
-      WBS04: "Body Cardio (WBS04)",
-    })[model] || "WBS06";
+  const SCALE_LABELS = { WBS06: "Body (WBS06)", WBS03: "WS-30 (WBS03)", WBS02: "WS-50 (WBS02)", WBS13: "Body Smart (WBS13)", WBS04: "Body Cardio (WBS04)" };
+  const CLASSIC = new Set(["WBS03", "WBS02"]);
+  const label = (model) => SCALE_LABELS[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
   const unknownFirmware = (artifact) =>
@@ -194,13 +191,13 @@
       : "Disconnected";
     $("generate-firmware").textContent =
       `Generate Firmware For ${label(model())}`;
-    const limit = caps.hostnameMaxBytes || (model() === "WBS03" ? 59 : 48);
+    const limit = caps.hostnameMaxBytes || (CLASSIC.has(model()) ? 59 : 48);
     $("server-host").maxLength = limit;
     $("host-limits").textContent =
       `Hostname Or IPv4 Address · Maximum ${limit} ASCII Bytes · No Scheme, Path Or Port`;
     const transports =
       caps.serverTransports ||
-      (model() === "WBS03" ? ["http"] : ["http", "https"]);
+      (CLASSIC.has(model()) ? ["http"] : ["http", "https"]);
     for (const option of $("server-transport").options)
       option.disabled = !transports.includes(option.value);
     if (!transports.includes($("server-transport").value))
@@ -245,7 +242,7 @@
       [
         "Model",
         unsupported
-          ? `${d.name || "Unknown"} (Unrecognised ${d.model === "WBS03" ? "Classic" : "BLE"})`
+          ? `${d.name || "Unknown"} (Unrecognised ${CLASSIC.has(d.model) ? "Classic" : "BLE"})`
           : label(d.model),
       ],
       ["MAC", d.mac],
@@ -741,13 +738,22 @@
   // Real BLE discovery is model-agnostic (the probe identifies the scale). The
   // demonstration bridge only invents the model it is asked for, so keep the
   // selected BLE demo model there instead of always resetting to WBS06.
-  $("scan-ble").onclick = () =>
-    scan(
-      snapshot.simulated && $("scale-model").value === "WBS04"
-        ? "WBS04"
+  $("scan-ble").onclick = () => {
+    const selected = $("scale-model").value;
+    return scan(
+      snapshot.simulated &&
+      Object.hasOwn(SCALE_LABELS, selected) &&
+      !CLASSIC.has(selected)
+        ? selected
         : "WBS06",
     );
-  $("scan-classic").onclick = () => scan("WBS03");
+  };
+  $("scan-classic").onclick = () =>
+    scan(
+      snapshot.simulated && CLASSIC.has($("scale-model").value)
+        ? $("scale-model").value
+        : "WBS03",
+    );
   $("disconnect").onclick = () =>
     action(async () => {
       await command("device.disconnect");
@@ -820,7 +826,7 @@
       $("firmware-offer-result").hidden = false;
       offerReport = [
         `Model code: ${modelCode}`,
-        `Transport: ${d.model === "WBS03" ? "Bluetooth Classic" : "BLE"}`,
+        `Transport: ${CLASSIC.has(d.model) ? "Bluetooth Classic" : "BLE"}`,
         `Probed firmware: ${d.firmwareVersion}`,
         `Reported firmware: ${currentFirmware}`,
         `Bootloader: ${d.bootloaderVersion}`,

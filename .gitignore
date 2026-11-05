@@ -23,6 +23,7 @@
 !design/startup-face/face-user-wbs06-37x26.bin
 !firmware/ws30/v921/startup_face_37x26.bin
 !firmware/wbs06/v1181/startup_face_37x26.bin
+!firmware/ws50/v1721/startup_face_37x26.bin
 *.img
 *.dump
 *.raw.log

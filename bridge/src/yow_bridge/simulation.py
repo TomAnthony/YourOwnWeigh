@@ -2,15 +2,13 @@
 
 import asyncio
 
+from .models.registry import MODELS, spec
 from .models.session import ScaleSession, timestamp
-
-
-_DEMO_NAME = {"WBS06": "Demo Body", "WBS03": "Demo WS-30", "WBS04": "Demo Body Cardio"}
 
 
 class Backend:
     def __init__(self, model):
-        if model not in ("WBS06", "WBS03", "WBS04"):
+        if model not in MODELS:
             raise ValueError("Unsupported model")
         self.model, self.stop = model, asyncio.Event()
 
@@ -19,7 +17,7 @@ class Backend:
         found(
             dict(
                 deviceId="demo-scale",
-                name=_DEMO_NAME[self.model],
+                name=f"Demo {spec(self.model).display}",
                 rssi=-45,
                 modelCandidate=self.model,
                 presence="seen",
@@ -28,11 +26,13 @@ class Backend:
 
 
 _SIM_PROFILE = {
-    "WBS06": dict(name="Body", mac="020000000006", firmware=127, boot=4),
-    "WBS03": dict(name="WS-30", mac="020000000003", firmware=102, boot=15),
+    "WBS06": dict(firmware=127),
+    "WBS13": dict(firmware=1311),
+    "WBS03": dict(firmware=102),
     # Starts on stock 2231 so the dry-run shows the real stock->flash->config
     # progression; install() flips it to the YOW owner version.
-    "WBS04": dict(name="Body Cardio", mac="020000000004", firmware=2231, boot=12),
+    "WBS04": dict(firmware=2231),
+    "WBS02": dict(firmware=1721),
 }
 
 
@@ -49,15 +49,15 @@ class Session(ScaleSession):
         self.firmware = _INSTALLED.get(model, _SIM_PROFILE[model]["firmware"])
 
     async def probe(self):
-        p = _SIM_PROFILE[self.model]
+        s = spec(self.model)
         self.identity = dict(
-            name=p["name"],
+            name=s.display,
             model=self.model,
-            mac=p["mac"],
+            mac="02" + "0" * 8 + self.model[-2:],
             secret="0123456789abcdef",
-            hardwareVersion=0xFFFFFF,
+            hardwareVersion=0xFFFFFF if s.hardware is not None else 0,
             firmwareVersion=self.firmware,
-            bootloaderVersion=p["boot"],
+            bootloaderVersion=s.bootloader,
             rescueVersion=0xFFFFFF,
             identifier="simulation",
             observedAt=timestamp(),
@@ -108,8 +108,7 @@ class Session(ScaleSession):
             await asyncio.sleep(0.1)
         # Model the reboot into YOW firmware so a re-probe reflects the new
         # version and server config becomes available (WBS06/WBS04).
-        self.firmware = {"WBS06": 127, "WBS03": 102, "WBS04": 101}.get(
-            self.model, self.firmware
-        )
+        # Preserve the upstream WBS04 demo's HTTPS-capable release.
+        self.firmware = 101 if self.model == "WBS04" else spec(self.model).owner_firmware[-1]
         _INSTALLED[self.model] = self.firmware
         return dict(transferred=True, simulated=True, runningFirmwareConfirmed=False)

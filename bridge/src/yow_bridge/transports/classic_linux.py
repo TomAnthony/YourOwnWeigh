@@ -18,6 +18,7 @@ import socket
 from dbus_fast import DBusError, Message, MessageType, Variant
 from dbus_fast.service import ServiceInterface, method
 
+from ..models.registry import MODELS
 from .bluez import ADAPTER, DEVICE, OBJECT_MANAGER, PROPERTIES, BlueZ, values
 
 LOG = logging.getLogger("yow")
@@ -28,7 +29,17 @@ PROFILE_PATH = "/org/yourownweigh/serial"
 def scale_candidate(properties):
     name = properties.get("Name", properties.get("Alias", "")).upper()
     address = properties.get("Address", "").upper()
-    return "WS30" in name or "WS-30" in name or address.startswith("00:24:E4:")
+    return any(
+        s.name.search(name) for s in MODELS.values() if s.transport == "classic"
+    ) or address.startswith("00:24:E4:")
+
+
+def candidate_model(properties):
+    name = properties.get("Name", properties.get("Alias", ""))
+    for model, s in MODELS.items():
+        if s.transport == "classic" and s.name.search(name):
+            return model
+    return "WBS03"
 
 
 class Backend:
@@ -56,7 +67,7 @@ class Backend:
                 self.devices[address] = path
                 found(dict(deviceId=address, name=props.get("Name", props.get("Alias", "Withings device")),
                            rssi=props.get("RSSI") if path in seen else None,
-                           modelCandidate="WBS03",
+                           modelCandidate=candidate_model(props),
                            presence="connected" if props.get("Connected") else
                            "seen" if path in seen else "paired_only"))
 

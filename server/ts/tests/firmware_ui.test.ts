@@ -54,7 +54,11 @@ function browser(classification: string | undefined) {
   runInNewContext(
     readFileSync(new URL("../../static/firmware.js", import.meta.url), "utf8"),
     {
-      document: { getElementById: get, createElement: element },
+      document: {
+        getElementById: get,
+        createElement: element,
+        createTextNode: (text: string) => ({ textContent: text }),
+      },
       location: new URL("https://example.test/firmware"),
       crypto,
       setTimeout: () => 1,
@@ -76,6 +80,14 @@ function browser(classification: string | undefined) {
               kind: "error",
               id: command.id,
               error: { message: "Rejected Test Upload" },
+            }),
+          );
+        else if (command.name === "device.scan.start")
+          queueMicrotask(() =>
+            emit({
+              kind: "result",
+              id: command.id,
+              result: { candidates: [] },
             }),
           );
         else {
@@ -110,7 +122,42 @@ function browser(classification: string | undefined) {
       candidates: [],
     },
   });
-  return { get, commands, artifact };
+  return { get, commands, artifact, emit };
+}
+
+for (const simulated of [true, false]) {
+  for (const [selected, family] of [
+    ["WBS06", "ble"],
+    ["WBS13", "ble"],
+    ["WBS04", "ble"],
+    ["WBS03", "classic"],
+    ["WBS02", "classic"],
+    ["UNKNOWN", "unknown"],
+  ]) {
+    for (const transport of ["ble", "classic"]) {
+      test(`${simulated ? "simulated" : "real"} ${transport} scan with ${selected} selected`, async () => {
+        const { get, commands, emit } = browser("known_release");
+        emit({
+          kind: "ready",
+          clientId: "browser",
+          connected: true,
+          snapshot: { state: "disconnected", simulated, candidates: [] },
+        });
+        get("scale-model").value = selected;
+        await get(`scan-${transport}`).onclick();
+        const expected = simulated && family === transport
+          ? selected
+          : transport === "ble" ? "WBS06" : "WBS03";
+        assert.equal(commands.length, 1);
+        assert.equal(commands[0].name, "device.scan.start");
+        assert.deepEqual(commands[0].parameters, {
+          model: expected,
+          durationSeconds: 15,
+        });
+        assert.equal(get("scale-model").value, expected);
+      });
+    }
+  }
 }
 
 for (const classification of [

@@ -5,6 +5,7 @@ callbacks arrive on that thread; delegates are retained until disconnect. No
 Swift helper, Xcode installation, or private Bluetooth API is required.
 """
 
+from ..models.registry import MODELS
 import asyncio
 import ctypes
 import logging
@@ -145,11 +146,9 @@ class Backend:
     def remember(self, device, discovered=False):
         name, address = str(device.name() or ""), str(device.addressString())
         upper = name.upper()
-        if (
-            "WS30" not in upper
-            and "WS-30" not in upper
-            and not address.upper().startswith(("00-24-E4", "00:24:E4"))
-        ):
+        if not any(
+            s.name.search(name) for s in MODELS.values() if s.transport == "classic"
+        ) and not address.upper().startswith(("00-24-E4", "00:24:E4")):
             return
         self.devices[address] = device
         if discovered:
@@ -159,7 +158,11 @@ class Backend:
                 deviceId=address,
                 name=name or "Withings device",
                 rssi=None,
-                modelCandidate="WBS03",
+                modelCandidate=next(
+                    (m for m, s in MODELS.items()
+                     if s.transport == "classic" and s.name.search(name)),
+                    "WBS03",
+                ),
                 # Pairing survives power-off. Only inquiry callbacks establish
                 # current discoverability; neither proves the setup screen.
                 presence="connected" if device.isConnected() else

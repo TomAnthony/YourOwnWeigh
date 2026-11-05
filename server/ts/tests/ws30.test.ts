@@ -129,7 +129,11 @@ test("WS-30 authentication is model-bound, expires, consumes nonces and rejects 
     const n = await h.nonce();
     assert.equal((await h.post("/session", { ...h.form(n), hash: "0".repeat(32) })).status, 403);
     assert.equal((await h.post("/session", { ...h.form(n), hashmethod: "sha256", hash: hash(n, MAC, SECRET, "sha256") })).status, 403);
-    assert.equal((await h.post("/session", h.form(n))).status, 200);
+    // Upstream ignored a stray `method` param in MD5 classic sessions; keep that
+    // compatibility without letting it select or downgrade the hash algorithm.
+    assert.equal((await h.post("/session", { ...h.form(n), method: "md5" })).status, 200);
+    const downgrade = await h.nonce();
+    assert.equal((await h.post("/session", { ...h.form(downgrade), method: "sha256", hash: hash(downgrade, MAC, SECRET, "sha256") })).status, 403);
     assert.equal((await h.post("/session", h.form(n))).status, 403);
     const expired = await h.nonce();
     await h.db.prepare("UPDATE challenges SET issued_at=0 WHERE nonce=?").bind(expired).run();

@@ -98,8 +98,7 @@ export const captureWithings = (scale: Record<string, any>): Promise<string> => 
   return captureWithingsSession(scale, (path, fields) =>
     withingsPost(path, fields, fetch, query),
   );
-};
-
+}
 export const firmwareOffer = (identity: Record<string, any>) =>
   lookupWithingsFirmware(identity as FirmwareLookupIdentity, (path, fields) =>
     withingsPost(path, fields, fetch, {

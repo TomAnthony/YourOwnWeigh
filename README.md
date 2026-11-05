@@ -38,7 +38,8 @@ The below models are currently supported. Pull Requests to add more models are v
 | Body Smart (**WBS13**) | v1311 | v103 | BLE | |
 | Body (**WBS06**) | v1181 | v127 | BLE | |
 | Body Cardio (**WBS04**) | v2231 | v100 | BLE | Thx [KindOfNerdy](https://github.com/KindOfNerdy)! |
-| Wireless Scale (**WS-30 / WBS03**) | v921 | v102 | Classic | Scales->YOW is HTTP only |
+| Wireless Scale (**WS-30 / WBS03**) | v921 | v102 | Classic | Scale sync is HTTP only |
+| Smart Body Analyzer (**WS-50 / WBS02**) | v1721 | v1023 | Classic | Thx [ionothanus](https://github.com/ionothanus)! / Scale sync is HTTP only |
 
 You can check your model under the batteries. Not all models with the same name (e.g. "Body Smart") are equivalent to one another, so please check the actual model number.
 

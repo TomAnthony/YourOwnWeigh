@@ -1,4 +1,5 @@
 /** Small server-rendered views shared by the Worker and local Node entrypoint. */
+import { scaleModel } from "./models.ts";
 import { METRICS, storedMeasures, type Metric } from "./metrics.ts";
 import { WEB_APP_VERSION } from "./version.ts";
 type Row = Record<string, any>;
@@ -255,7 +256,7 @@ export function usersPage(
   return `<section><div class="page-heading"><div><h1>Users</h1></div><div class="actions"><button type="button" class="secondary" data-open-dialog="import-users-dialog">Import From Withings</button><button type="button" data-open-dialog="add-user-dialog">Add User</button></div></div>
     ${
       preview
-        ? `<dialog id="import-preview-dialog" data-auto-open><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Users From ${e(preview.scale.label)}</h2><p>${preview.settingsStatus === "configured" || preview.scale.model === "WBS03" ? "Device settings are ready." : "Device settings import is incomplete; use Finish Device Import on Scales to retry."} Existing users are retained.</p>
+        ? `<dialog id="import-preview-dialog" data-auto-open><button class="dialog-close" type="button" data-close-dialog>×</button><h2>Import Users From ${e(preview.scale.label)}</h2><p>${preview.settingsStatus === "configured" || scaleModel(preview.scale.model)?.classicGates ? "Device settings are ready." : "Device settings import is incomplete; use Finish Device Import on Scales to retry."} Existing users are retained.</p>
       <form action="/users/import-withings/confirm" method="post">${hidden(csrf)}<input type="hidden" name="scale_id" value="${e(preview.scale.id)}"><input type="hidden" name="capture_digest" value="${e(preview.digest)}">
       ${preview.users.length ? preview.users.map((u) => `<label><input type="checkbox" name="user_ids" value="${e(u.id)}" checked> ${e(u.fn || u.sn)} · ${e(u.sn)} · ID ${e(u.id)}</label>`).join("") : "<p>All users are already in this household.</p>"}
       <div class="dialog-actions"><button>Import Selected Users</button><button type="button" class="secondary" data-close-dialog>Later</button></div></form></dialog>`

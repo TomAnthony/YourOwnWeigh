@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from . import __version__
+from .models.registry import MODELS
 from .firmware import RELEASES, atomic_write, generate, inspect
 from .models.protocol import ProtocolError
 from .models.session import ScaleSession, timestamp
@@ -121,7 +122,7 @@ class Application:
             helperVersion=__version__,
             os=platform.system(),
             simulated=self.simulate,
-            models=["WBS06", "WBS03", "WBS13", "WBS04"],
+            models=list(MODELS),
             backends=["CoreBluetooth", "IOBluetooth"]
             if platform.system() == "Darwin"
             else ["BlueZ GATT", "BlueZ RFCOMM"] if platform.system() == "Linux" else [],

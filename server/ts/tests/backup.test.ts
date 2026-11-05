@@ -46,13 +46,15 @@ async function seed(db: LocalSqlite, scaleId = 7, readingId = 11) {
     .bind(scaleId)
     .run();
 }
-test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge deduplicates", async () => {
+test("WBS02 backup merge remaps linked readings, preserves local edits/receipts, and replace restores IDs", async () => {
   const dir = mkdtempSync(join(tmpdir(), "yow-backup-")),
     source = new LocalSqlite(join(dir, "source.db")),
     target = new LocalSqlite(join(dir, "target.db"));
   try {
     await seed(source);
     await seed(target, 2, 3);
+    await source.prepare("UPDATE scales SET model='WBS02'").run();
+    await target.prepare("UPDATE scales SET model='WBS02'").run();
     await target
       .prepare("UPDATE users SET name='Edited Locally' WHERE id=101")
       .run();
@@ -61,10 +63,21 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
     assert.deepEqual(backup.sections.sync_audit, []);
     assert.equal(backup.accessSettings.length, 1);
     assert.equal("admin_sessions" in backup.sections, false);
-    for (let n = 0; n < 2; n++) {
+    assert.equal(backup.sections.scales[0].model, "WBS02");
+    for (const model of ["UNKNOWN", "__proto__", "constructor"]) {
+      const invalid = structuredClone(backup);
+      invalid.sections.scales[0].model = model;
+      await assert.rejects(
+        stageBackup(target.asD1(), JSON.stringify(invalid), "admin"),
+        /Invalid or duplicate scale identity/,
+      );
+    }
+    for (const model of ["WS50", "WBS02"]) {
+      const incoming = structuredClone(backup);
+      incoming.sections.scales[0].model = model;
       const preview = await stageBackup(
         target.asD1(),
-        JSON.stringify(backup),
+        JSON.stringify(incoming),
         "admin",
       );
       await commitBackup(
@@ -76,6 +89,16 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
         false,
       );
     }
+    assert.deepEqual(
+      {
+        ...(await target
+          .prepare(
+            "SELECT scales.model,readings.scale_id,readings.id,readings.weight_value FROM readings JOIN scales ON scales.id=readings.scale_id",
+          )
+          .first()),
+      },
+      { model: "WBS02", scale_id: 2, id: 3, weight_value: 70000 },
+    );
     assert.equal(
       (await target.prepare("SELECT count(*) n FROM readings").first<any>()).n,
       1,
@@ -98,7 +121,13 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
       },
       { user_id: 101, reading_id: 3 },
     );
-    const p = await stageBackup(target.asD1(), JSON.stringify(backup), "admin");
+    const oldBackup = structuredClone(backup);
+    oldBackup.sections.scales[0].model = "WS50";
+    const p = await stageBackup(
+      target.asD1(),
+      JSON.stringify(oldBackup),
+      "admin",
+    );
     await assert.rejects(
       commitBackup(target.asD1(), p.id, p.digest, "other", "replace", false),
       /confirmation/,
@@ -119,6 +148,16 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
       (await target.prepare("SELECT name FROM users").first<any>()).name,
       "Alex",
     );
+    assert.deepEqual(
+      {
+        ...(await target
+          .prepare(
+            "SELECT scales.model,readings.scale_id,readings.id,readings.weight_value FROM readings JOIN scales ON scales.id=readings.scale_id",
+          )
+          .first()),
+      },
+      { model: "WBS02", scale_id: 7, id: 11, weight_value: 70000 },
+    );
     await assert.rejects(
       commitBackup(target.asD1(), p.id, p.digest, "admin", "replace", true),
       /expired/,
@@ -126,6 +165,66 @@ test("backup merge remaps IDs, preserves local edits/receipts, and repeat merge 
   } finally {
     source.close();
     target.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("database upgrade normalises WS50 records and pending restores without changing linked data", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-wbs02-migration-"));
+  const path = join(dir, "db");
+  let store = new LocalSqlite(path);
+  try {
+    await seed(store);
+    await store.prepare("UPDATE scales SET model='WBS02'").run();
+    const before = await exportBackup(store.asD1());
+    const preview = await stageBackup(
+      store.asD1(),
+      JSON.stringify(before),
+      "admin",
+    );
+    // Reproduce a database and restore preview created by the earlier server.
+    await store.prepare("UPDATE scales SET model='WS50'").run();
+    await store
+      .prepare(
+        "UPDATE backup_staging_rows SET row_json=json_set(row_json,'$.model','WS50') WHERE section='scales'",
+      )
+      .run();
+    store.close();
+    store = new LocalSqlite(path);
+    assert.deepEqual(
+      (await exportBackup(store.asD1())).sections,
+      before.sections,
+    );
+    assert.equal(
+      (
+        await store
+          .prepare(
+            "SELECT json_extract(row_json,'$.model') AS model FROM backup_staging_rows WHERE section='scales'",
+          )
+          .first<{ model: string }>()
+      )?.model,
+      "WBS02",
+    );
+    await commitBackup(
+      store.asD1(),
+      preview.id,
+      preview.digest,
+      "admin",
+      "merge",
+      false,
+    );
+    assert.deepEqual(
+      (await exportBackup(store.asD1())).sections,
+      before.sections,
+    );
+    // The local startup migration is deliberately safe to run again.
+    store.close();
+    store = new LocalSqlite(path);
+    assert.deepEqual(
+      (await exportBackup(store.asD1())).sections,
+      before.sections,
+    );
+  } finally {
+    store.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
