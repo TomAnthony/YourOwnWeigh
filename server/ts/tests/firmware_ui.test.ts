@@ -176,11 +176,11 @@ test("an older bridge's explicit enrollment restriction is respected", async () 
 });
 
 for (const joined of [true, false]) {
-  for (const saved of [true, false]) {
-    test(`Wi-Fi status distinguishes join=${joined} from saved=${saved}`, async () => {
+  for (const ssidMatches of [true, false]) {
+    test(`Wi-Fi status distinguishes join=${joined} from SSID match=${ssidMatches}`, async () => {
       const { get, commands } = browser("known_release", "WBS05", "candidate", {
         joinStatus: joined ? "success" : "failed",
-        storedSsidMatches: saved,
+        storedSsidMatches: ssidMatches,
       });
       get("wifi-ssid").value = "Test Network";
       get("wifi-password").value = "synthetic-password";
@@ -191,17 +191,40 @@ for (const joined of [true, false]) {
         ssid: "Test Network", password: "synthetic-password",
       });
       assert.equal(get("wifi-password").value, "");
-      assert.equal(get("wifi-password").placeholder, joined && saved ? "••••••" : "");
+      assert.equal(get("wifi-password").placeholder, "");
+      assert.match(get("wifi-password-hint").textContent, /saving it has not been verified/);
       assert.equal(get("wifi-status").textContent, joined
-        ? saved ? "Wi-Fi Connected · Settings Saved" : "Wi-Fi Connected · Settings Not Saved"
+        ? ssidMatches ? "Wi-Fi Connected · Stored SSID Matches" : "Wi-Fi Connected · Stored SSID Not Confirmed"
         : "Wi-Fi Connection Failed · Check Credentials And 2.4 GHz WPA2 Network");
       const toast = get("toast-region").children.at(-1);
-      assert.equal(toast.className, joined && saved ? "toast" : "toast toast-error");
+      assert.equal(toast.className, joined && ssidMatches ? "toast" : "toast toast-error");
       assert.match(toast.children[1].textContent, !joined
-        ? /Connection Failed/ : saved ? /Settings Saved/ : /Did Not Save These Settings/);
+        ? /Connection Failed/ : ssidMatches ? /password was saved is unverified/ : /stored SSID could not be confirmed/);
     });
   }
 }
+
+test("a successful same-SSID password change never claims credential persistence", async () => {
+  // WBS05 may join using the new password yet retain its old credentials if
+  // the subsequent server probe fails. Both attempts have identical readback.
+  const { get, commands } = browser("known_release", "WBS05", "candidate", {
+    joinStatus: "success", storedSsidMatches: true,
+  });
+  get("wifi-ssid").value = "Existing Network";
+  get("wifi-password").placeholder = "••••••";
+  for (const password of ["original-password", "replacement-password"]) {
+    get("wifi-password").value = password;
+    await get("wifi-form").onsubmit({ preventDefault() {} });
+    assert.deepEqual(commands.at(-1).parameters, { ssid: "Existing Network", password });
+    const status = get("wifi-status").textContent;
+    const toast = get("toast-region").children.at(-1).children[1].textContent;
+    assert.match(status, /Stored SSID Matches/);
+    assert.match(toast, /password was saved is unverified/);
+    assert.doesNotMatch(`${status} ${toast}`, /settings saved|credentials saved|complete setup/i);
+    assert.equal(get("wifi-password").value, "");
+    assert.equal(get("wifi-password").placeholder, "");
+  }
+});
 
 test("WBS05 candidate is labeled, uses FLASH, and allows enrollment", async () => {
   assert.match(firmwareWorkspace("test"), /value="WBS05">Body\+ \(WBS05\)/);

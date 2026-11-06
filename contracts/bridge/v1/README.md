@@ -24,7 +24,7 @@ The helper sends `hello` and `snapshot` events containing model capabilities, co
 - Connection mutations return a monotonically increasing `connectionGeneration`. Device commands and install must repeat it with the opaque `deviceId`. Reconnect requires a new probe.
 - `device.enroll` requires `approved:true` and returns the existing portable device-export schema plus observations. Failed optional reads are represented as unavailable, not invented defaults. The server's separate `/api/scales/enroll` then stores and migrates the approved device.
 - `device.set_time` receives UTC/goff/dst/ngoff already calculated by the server; Python only validates and packs them. [Clock vectors](../../time/v1/vectors.json).
-- Wi-Fi result distinguishes `storedSsidMatches` from `joinStatus`. Server contact is a separate authenticated-session observation through `/api/scales/:id/connection-status`.
+- Wi-Fi result distinguishes `storedSsidMatches` from `joinStatus`. Neither confirms password persistence: changing a password for the same SSID can join successfully and still leave the old stored credentials if the later server probe fails. The UI must describe SSID readback and leave password saving explicitly unverified. Server contact is a separate authenticated-session observation through `/api/scales/:id/connection-status`, also not proof of credential persistence.
 
 ## Firmware, Idempotency And Reconnect
 

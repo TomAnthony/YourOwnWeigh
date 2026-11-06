@@ -166,6 +166,12 @@ probe response and distinguishes connection success from matching stored SSID
 in the UI. The maintainer confirmed Wi-Fi setup working after that fix; it
 needs no additional firmware patch.
 
+SSID readback does not verify password persistence. A password change for the
+same network can join successfully, fail the web probe and retain the old
+credentials while still returning a matching SSID. Web app 0.4.12 reports the
+SSID match and explicitly leaves password saving unverified; it does not infer
+"Settings Saved" or recommend Complete Setup from those two observations.
+
 ### GATT identity
 
 The bridge already knows the WBS05 GATT pair:

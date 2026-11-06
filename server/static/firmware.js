@@ -1119,27 +1119,31 @@
       if (!password)
         throw new Error("Enter the Wi-Fi password before saving this network.");
       $("wifi-password").value = "";
+      $("wifi-password").placeholder = "";
       watchContact();
       const r = await command("device.connect_wifi", {
         ssid: $("wifi-ssid").value,
         password,
       });
       const joined = r.joinStatus === "success";
-      const saved = r.storedSsidMatches === true;
-      $("wifi-password").placeholder = joined && saved ? "••••••" : "";
+      // Readback only checks the SSID. It can still match the old record when
+      // a same-network password change joins successfully but is not saved.
+      const ssidMatches = r.storedSsidMatches === true;
+      $("wifi-password-hint").textContent =
+        "The password is not read back, so saving it has not been verified.";
       $("wifi-status").textContent =
         joined
-          ? saved
-            ? "Wi-Fi Connected · Settings Saved"
-            : "Wi-Fi Connected · Settings Not Saved"
+          ? ssidMatches
+            ? "Wi-Fi Connected · Stored SSID Matches"
+            : "Wi-Fi Connected · Stored SSID Not Confirmed"
           : "Wi-Fi Connection Failed · Check Credentials And 2.4 GHz WPA2 Network";
       message(
         !joined
           ? "Wi-Fi Connection Failed. Check The Network Name And Password."
-          : saved
-            ? "Wi-Fi Settings Saved. Use Complete Setup To Start Normal Operation."
-            : "The Scale Joined Wi-Fi But Did Not Save These Settings. Check The Server Hostname And Connectivity Before Retrying.",
-        !joined || !saved,
+          : ssidMatches
+            ? "The scale joined Wi-Fi and its stored SSID matches. Whether the password was saved is unverified."
+            : "The scale joined Wi-Fi, but its stored SSID could not be confirmed. Check the server hostname and connectivity before retrying.",
+        !joined || !ssidMatches,
       );
     });
   };
