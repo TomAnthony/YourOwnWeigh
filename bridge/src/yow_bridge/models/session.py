@@ -1,4 +1,4 @@
-"""Application commands for WBS06/WBS13 (BLE) and WS-30/WBS03, WS-50 (RFCOMM).
+"""Application commands for registered BLE and Classic (RFCOMM) scale models.
 
 Transport objects provide write(bytes), disconnect(), max_write, and deliver raw
 bytes through receive(). No Wi-Fi password or device secret is logged here.
@@ -148,10 +148,13 @@ class ScaleSession:
         # identity and service profile, never another device on the same UUIDs.
         modern = getattr(self.transport, "wpp_profile", None) == "WBS13"
         cardio = getattr(self.transport, "wpp_profile", None) == "WBS04"
+        body_plus = getattr(self.transport, "wpp_profile", None) == "WBS05"
         if self.spec.transport != "classic" and modern:
             self.model, self.spec = "WBS13", MODELS["WBS13"]
         if self.spec.transport != "classic" and cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF:
             self.model, self.spec = "WBS04", MODELS["WBS04"]
+        if self.spec.transport != "classic" and body_plus and name == "Body+" and boot == 6 and identity["hardwareVersion"] == 0xFFFFFF:
+            self.model, self.spec = "WBS05", MODELS["WBS05"]
         classic = self.spec.transport == "classic"
         if classic:
             # Normalize the candidate model from the observed probe identity.
@@ -165,8 +168,9 @@ class ScaleSession:
             and (s.hardware is None or identity["hardwareVersion"] == s.hardware)
             and (not s.require_modern or modern)
             and (self.model != "WBS04" or cardio)
+            and (self.model != "WBS05" or body_plus)
         )
-        supported = supported and (self.model in ("WBS13", "WBS04") or not getattr(self.transport, "identity_only", False))
+        supported = supported and (self.model in ("WBS13", "WBS04", "WBS05") or not getattr(self.transport, "identity_only", False))
         # A factory-new Body Smart returned a valid identity with an empty
         # secret. Show that identity without enabling provisioning or claiming
         # credentials are available. Supported models still require their key;
@@ -217,6 +221,22 @@ class ScaleSession:
                 completeSetup=False, firmwareRead=False, otaDestinationRead=False,
             )
         version = self.identity["firmwareVersion"]
+        if self.model == "WBS05":
+            # The normal probe supplies the secret on stock and YOW firmware.
+            # YOW uses local users; vendor import needs a client certificate.
+            owner = version in self.spec.owner_firmware
+            known = version in self.spec.known_firmware
+            return dict(
+                ota=known, serverRead=owner, serverWrite=owner,
+                serverTransports=["http", "https"] if owner else [],
+                hostnameMaxBytes=self.spec.hostname_limit,
+                wifiWrite=known, wifiRead="ssid-only" if known else False,
+                wifiConnectionResult="device-reported" if known else False,
+                completeSetup=known, setTime=known,
+                enrollment=known and bool(self.identity["secret"]),
+                vendorFirmwareOfferRead=False,
+                firmwareRead=False, otaDestinationRead=False,
+            )
         if self.model == "WBS13":
             owner = version in self.spec.owner_firmware
             return dict(
@@ -248,6 +268,7 @@ class ScaleSession:
                 wifiRead="ssid-only",
                 wifiConnectionResult="device-reported",
                 completeSetup=True,
+                enrollment=version in self.spec.known_firmware and bool(self.identity["secret"]),
                 firmwareRead=False,
                 otaDestinationRead=False,
             )
@@ -264,6 +285,7 @@ class ScaleSession:
             wifiRead="ssid-only",
             wifiConnectionResult="device-reported",
             completeSetup=True,
+            enrollment=known and bool(self.identity["secret"]),
             firmwareRead=False,
             otaDestinationRead=False,
         )
@@ -278,8 +300,9 @@ class ScaleSession:
 
     def export(self, label):
         self.require_probe()
-        if self.model == "WBS13" and not self.capabilities()["enrollment"]:
-            raise ProtocolError("WBS13 import requires supported YOW firmware and a device secret")
+        if not self.capabilities().get("enrollment"):
+            firmware = "supported YOW firmware" if self.model == "WBS13" else "supported firmware"
+            raise ProtocolError(f"{self.model} import requires {firmware} and a device secret")
         i = self.identity
         return dict(
             format=self.spec.export_format,

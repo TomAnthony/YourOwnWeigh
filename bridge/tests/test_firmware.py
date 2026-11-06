@@ -30,11 +30,15 @@ class FirmwareTests(unittest.TestCase):
             ("WBS06", "wbs06_1181_device.bin", "wbs06_yow_127.bin"),
             ("WBS03", "ws30/wbs03_921_dR7wKb.bin", "ws30/wbs03_yow_102.bin"),
             ("WBS13", "wbs13/wbs13_1311_lb2w93.bin", "wbs13/wbs13_yow_103.bin"),
+            ("WBS05", "wbs05/wbs05_1651_LJ24pf.bin", "wbs05/wbs05_yow_100.bin"),
         ]:
             raw = (root / source).read_bytes()
             out = apply(raw, model)
             self.assertEqual(out, (root / target).read_bytes())
             self.assertEqual(inspect(out, model)["classification"], "known_release")
+            if model == "WBS05":
+                self.assertEqual(inspect(out, model)["releaseStatus"], "candidate")
+                self.assertEqual(inspect(raw, model)["classification"], "known_stock")
             other = "WBS03" if model == "WBS06" else "WBS06"
             with self.assertRaises(ValueError):
                 inspect(out, other)

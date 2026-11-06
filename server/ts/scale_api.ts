@@ -169,6 +169,10 @@ async function once(
   request: Request,
   params: URLSearchParams,
 ): Promise<Response> {
+  // Wi-Fi provisioning (including WBS05 v1651/YOW v100) probes the web
+  // service before persisting credentials. This is reachability only: no
+  // device enrollment, authentication challenge or session is created.
+  if (params.get("action") === "probe") return json({ status: 0 });
   if (params.get("action") !== "get") return error(400, "unsupported action");
   const timestamp = now();
   const key = await limitKey(request, "scale-once");
@@ -278,7 +282,7 @@ export async function roster(
   env: ScaleEnv,
   scale: ScaleRow,
 ): Promise<object[]> {
-  if (scale.model === "WBS13") {
+  if (scaleModel(scale.model)?.localRoster) {
     const { results } = await env.DB.prepare(
       "SELECT u.* FROM users u JOIN scale_users su ON su.user_id=u.id WHERE su.scale_id=? AND u.active=1 ORDER BY su.rank,u.id",
     )
@@ -311,7 +315,8 @@ export async function roster(
         fm: 3,
         cr: u.reference_weight_at ?? u.created_at,
         att: 0,
-        cs: composition ? "2,1,3" : "2",
+        // Body+ has weight/composition screens, but no heart-rate sensor.
+        cs: composition ? (scale.model === "WBS05" ? "2,1" : "2,1,3") : "2",
       };
     });
   }
@@ -457,7 +462,7 @@ async function newSession(
   if (
     !classic &&
     (!scale.settings_ready ||
-      (!["WBS13", "WBS04"].includes(scale.model) &&
+      (!model?.localRoster && scale.model !== "WBS04" &&
         (!scale.screen_response || !scale.summary_response)))
   ) {
     await env.DB.batch([
@@ -479,7 +484,7 @@ async function newSession(
     );
   }
   let users: object[] | undefined;
-  if (!classic && (scale.roster_enabled || scale.model === "WBS13")) {
+  if (!classic && (scale.roster_enabled || model?.localRoster)) {
     try {
       users = await roster(env, scale);
     } catch {
@@ -647,11 +652,13 @@ async function fixture(
     return error(400, "unsupported action");
   const scale = await requireDeviceSession(env, params, endpoint);
   if (!scale) return error(403, "invalid session");
-  if (scale.model === "WBS13" || scale.model === "WBS04") {
-    // WBS04 (Body Cardio) builds its screen config dynamically from the roster
-    // `cs` screen IDs, like WBS13, instead of a captured Withings fixture. This
-    // supplies the heart-rate / PWV / vascular-age screens so the scale runs the
-    // full measurement sequence rather than weight only.
+  if (scaleModel(scale.model)?.localRoster || scale.model === "WBS04") {
+    // Build display settings from this model's roster screen IDs. Body Cardio
+    // preserves imported screen selections; local rosters supply their own.
+    if (endpoint === "weather") {
+      await audit(env.DB, scale.id, endpoint, "suppressed").run();
+      return json({ status: 0, body: scale.model === "WBS05" ? { series: [] } : {} });
+    }
     let body: object = endpoint === "summary" ? [] : {};
     if (endpoint === "screen") {
       const users = (await roster(env, scale)) as Array<{

@@ -73,7 +73,7 @@ class FramingTests(unittest.TestCase):
                 hostname(name, 48)
 
 
-def probe(model, *, name=None, secret="0123456789abcdef", boot=None, firmware=None):
+def probe(model, *, name=None, secret="0123456789abcdef", boot=None, firmware=None, hardware=0xFFFFFF):
     def text(s):
         return bytes([len(s.encode())]) + s.encode()
 
@@ -82,7 +82,7 @@ def probe(model, *, name=None, secret="0123456789abcdef", boot=None, firmware=No
         + text(name if name is not None else "Body" if model == "WBS06" else "WS-30")
         + text("02:00:00:00:00:06")
         + text(secret)
-        + struct.pack(">I", 0xFFFFFF)
+        + struct.pack(">I", hardware)
         + text("test")
         + struct.pack(
             ">III",
@@ -148,6 +148,54 @@ class MockTransport:
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_wbs05_stock_and_candidate_probe_and_ota(self):
+        for version in (1651, 100):
+            with self.subTest(version=version):
+                transport = MockTransport("WBS06")
+                transport.identity_only = True
+                transport.wpp_profile = "WBS05"
+                frame = probe("WBS06", name="Body+", boot=6, firmware=version)
+                with patch(__name__ + ".probe", return_value=frame):
+                    identity = await transport.session.probe()
+                self.assertEqual(identity["model"], "WBS05")
+                self.assertTrue(identity["supported"])
+                self.assertNotIn("secret", identity)
+                caps = identity["capabilities"]
+                self.assertTrue(caps["ota"])
+                self.assertEqual(caps["serverWrite"], version == 100)
+                self.assertEqual(caps["serverTransports"], ["http", "https"] if version == 100 else [])
+                self.assertEqual(caps["hostnameMaxBytes"], 48)
+                self.assertTrue(caps["enrollment"])
+                self.assertFalse(caps["vendorFirmwareOfferRead"])
+                record = transport.session.export("Body+")
+                self.assertEqual(record["model"], "WBS05")
+                self.assertEqual(record["firmware_version"], version)
+                self.assertEqual(record["session_secret"], "0123456789abcdef")
+                progress = []
+                result = await transport.session.install(bytes(1200), lambda *p: progress.append(p))
+                self.assertTrue(result["transferred"])
+                self.assertEqual(progress[-1], ("transfer_complete", 1200, 1200))
+
+    async def test_wbs05_requires_matching_service_identity_and_reviewed_version(self):
+        for changes in (
+            {"name": "Body"}, {"boot": 4}, {"hardware": 1},
+            {"profile": "WBS04"}, {"firmware": 1511}, {"firmware": 1652},
+        ):
+            with self.subTest(changes=changes):
+                options = dict(name="Body+", boot=6, firmware=1651)
+                options.update({k: v for k, v in changes.items() if k != "profile"})
+                transport = MockTransport("WBS05")
+                transport.identity_only = True
+                transport.wpp_profile = changes.get("profile", "WBS05")
+                frame = probe("WBS05", **options)
+                with patch(__name__ + ".probe", return_value=frame):
+                    identity = await transport.session.probe()
+                self.assertFalse(identity["capabilities"]["ota"])
+                packets = list(transport.sent)
+                with self.assertRaises(ProtocolError):
+                    await transport.session.install(bytes(1200), lambda *args: None)
+                self.assertEqual(transport.sent, packets)
+
     async def test_wbs13_stock_identity_enables_only_update(self):
         transport = MockTransport("WBS06")
         transport.identity_only = True

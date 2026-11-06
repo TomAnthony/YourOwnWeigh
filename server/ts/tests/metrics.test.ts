@@ -11,7 +11,7 @@ import { exportBackup, stageBackup, commitBackup } from "../backup.ts";
 // Synthetic identities and sensor values, retaining the observed WBS13 wire shape.
 const MAC = "02:00:00:00:00:13",
   SECRET = "0123456789abcdef";
-async function harness() {
+async function harness(model = "WBS13") {
   const dir = mkdtempSync(join(tmpdir(), "yow-metrics-"));
   const store = new LocalSqlite(join(dir, "source.db")),
     db = store.asD1();
@@ -23,7 +23,7 @@ async function harness() {
     ALLOW_HTTP_SCALE: true,
     captureWithings: async () => {
       vendorCalls++;
-      throw new Error("Must not fetch WBS13 vendor profile");
+      throw new Error(`Must not fetch ${model} vendor profile`);
     },
   };
   const web = async (
@@ -93,7 +93,7 @@ async function harness() {
     const challenge = (await (
       await post("/once", { action: "get" })
     ).json()) as any;
-    return post("/session?appname=WBS13&appliver=100", {
+    return post(`/session?appname=${model}&appliver=100`, {
       action: "new",
       auth: MAC,
       hashmethod: "sha256",
@@ -105,12 +105,12 @@ async function harness() {
   };
   const device = {
     format: "YOW-BLE-device-v1",
-    model: "WBS13",
-    name: "Body Smart",
+    model,
+    name: model === "WBS05" ? "Body+" : "Body Smart",
     mac: MAC,
     session_secret: SECRET,
     hardware_version: 0xffffff,
-    bootloader_version: 2,
+    bootloader_version: model === "WBS05" ? 6 : 2,
     firmware_version: 100,
     rescue_version: 0xffffff,
     captured_at: Math.floor(Date.now() / 1000),
@@ -126,7 +126,7 @@ async function harness() {
   assert.equal((await open()).status, 503); // Never clear an unconfigured scale's existing roster.
   const settings = new URLSearchParams({
     purpose: "device_config",
-    label: "Test Body Smart",
+    label: `Test ${model}`,
     time_zone: "Europe/Berlin",
     user_ids: "17",
   });
@@ -155,6 +155,77 @@ async function harness() {
     },
   };
 }
+
+test("WBS05 imports local users, serves its display profile and accepts grouped weight/composition readings", async () => {
+  const h = await harness("WBS05");
+  try {
+    const page = await (await h.web("/scales")).text();
+    assert.match(page, /Users On This Scale/);
+    assert.doesNotMatch(page, /Finish Device Import|Import Users From Withings/);
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const response = await h.open();
+      assert.equal(response.status, 200);
+      const session = (await response.json() as any).body;
+      assert.deepEqual(session.ind, { stp: 0, fm: 3, ws: 0, tmp: 11, w: 1 });
+      assert.equal(session.sp.users[0].id, 17);
+      assert.equal(session.sp.users[0].cs, "2,1");
+      assert.equal(session.sp.users[0].wt, 80);
+      assert.equal(session.sp.users.length, 1);
+    }
+    const sid = (await (await h.open()).json() as any).body.sessionid;
+    const screen = await h.post("/v2/screen", { sessionid: sid, action: "getbydeviceid" });
+    assert.equal(screen.status, 200);
+    assert.deepEqual((await screen.json() as any).body, {
+      device: [], user: [{ userid: 17, screens: [
+        { id: 2, src: 1, embid: 2, rk: 1 }, { id: 1, src: 1, embid: 1, rk: 2 },
+      ] }],
+    });
+    for (const [path, action, body] of [
+      ["/v2/summary", "getforscale", []],
+      ["/v2/weather", "getforecast", { series: [] }],
+    ] as const) {
+      const response = await h.post(path, { sessionid: sid, action });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { status: 0, body });
+    }
+    // Wire values emitted by the stock WBS05 serializer in offline emulation.
+    const group = {
+      meastime: Math.floor(Date.now() / 1000) - 60,
+      measures: [
+        { value: 75250, type: 1, unit: -3 }, { value: 543, type: 16, unit: 0 },
+        { value: 1850, type: 8, unit: -2 }, { value: 4200, type: 77, unit: -2 },
+        { value: 300, type: 88, unit: -2 }, { value: 5300, type: 76, unit: -2 },
+      ],
+    };
+    const fields = {
+      sessionid: sid, action: "batchstore", macaddress: MAC, userid: "17",
+      devtype: "1", category: "1", attribstatus: "0",
+      measuregrps: JSON.stringify({ measuregrps: [group] }),
+    };
+    for (let i = 0; i < 2; i++) assert.equal((await h.post("/measure", fields)).status, 200);
+    const rows = (await h.db.prepare("SELECT * FROM readings").all<any>()).results;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].attempts, 2);
+    assert.deepEqual(JSON.parse(rows[0].group_json), group);
+    const api = await h.api("/api/users/ALX/readings");
+    assert.equal(api.status, 200);
+    const reading = (await api.json() as any).readings[0];
+    assert.equal(reading.weight_kg, "75.250");
+    assert.equal(reading.metrics.fat_mass_kg, "18.50");
+    assert.equal(reading.metrics.water_mass_kg, "42.00");
+    assert.equal(reading.metrics.bone_mass_kg, "3.00");
+    assert.equal(reading.metrics.muscle_mass_kg, "53.00");
+    // The next sync uses the latest recognition weight and current user edits.
+    await h.db.prepare("UPDATE users SET short_name='NEW',height_cm=182 WHERE id=17").run();
+    const updated = (await (await h.open()).json() as any).body.sp.users[0];
+    assert.equal(updated.sn, "NEW");
+    assert.equal(updated.ht, 1.82);
+    assert.equal(updated.wt, 75.25);
+    assert.equal((await h.post("/session", { sessionid: sid, action: "delete" })).status, 200);
+  } finally {
+    h.cleanup();
+  }
+});
 
 test("assigning a WBS13 reading updates recognition on the next session without older or non-weight groups rolling it back", async () => {
   const h = await harness();

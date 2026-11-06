@@ -5,8 +5,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { firmwareWorkspace } from "../integrated_ui.ts";
+import { SCALE_MODELS } from "../models.ts";
 
-function browser(classification: string | undefined) {
+function browser(
+  classification: string | undefined,
+  model = "WBS13",
+  releaseStatus?: string,
+  wifiResult?: { joinStatus: string; storedSsidMatches: boolean },
+  knownDevices: Record<string, unknown>[] = [],
+) {
   const element = (): any => ({
     hidden: false,
     disabled: false,
@@ -15,7 +22,8 @@ function browser(classification: string | undefined) {
     options: [],
     dataset: {},
     classList: { toggle() {}, add() {} },
-    append() {},
+    children: [],
+    append(...children: any[]) { this.children.push(...children); },
     replaceChildren() {},
     setAttribute() {},
     addEventListener() {},
@@ -38,18 +46,25 @@ function browser(classification: string | undefined) {
     assert.ok(elements.has(id), `Missing rendered element: ${id}`);
     return elements.get(id);
   };
-  get("scale-model").value = "WBS13";
+  get("scale-model").value = model;
+  get("firmware-workspace").dataset.localRosterModels =
+    /data-local-roster-models="([^"]*)"/.exec(firmwareWorkspace("test-csrf"))![1];
   let socket: any;
   const emit = (data: any) => socket.onmessage({ data: JSON.stringify(data) });
   const commands: any[] = [];
+  const device = {
+    model, mac: "020000000013", firmwareVersion: 100,
+    capabilities: { ota: true, enrollment: true },
+  };
   const artifact = {
     artifactId: "fixture",
     filename: "custom.bin",
-    version: 104,
-    model: "WBS13",
+    version: model === "WBS05" ? 100 : 104,
+    model,
     size: 1200,
     sha256: "a".repeat(64),
     classification,
+    releaseStatus,
   };
   runInNewContext(
     readFileSync(new URL("../../static/firmware.js", import.meta.url), "utf8"),
@@ -63,6 +78,7 @@ function browser(classification: string | undefined) {
       crypto,
       setTimeout: () => 1,
       clearTimeout() {},
+      clearInterval() {},
       WebSocket: class {
         constructor() {
           socket = this;
@@ -70,7 +86,9 @@ function browser(classification: string | undefined) {
       },
       fetch: async (path: string, init: any) => {
         if (path === "/api/devices")
-          return { ok: true, json: async () => ({ devices: [] }) };
+          return { ok: true, json: async () => ({ devices: knownDevices }) };
+        if (/^\/api\/scales\/\d+\/firmware-observation$/.test(path))
+          return { ok: true, json: async () => ({ saved: true }) };
         assert.equal(path, "/api/bridge/commands");
         const command = JSON.parse(init.body);
         commands.push(command);
@@ -89,6 +107,12 @@ function browser(classification: string | undefined) {
               id: command.id,
               result: { candidates: [] },
             }),
+          );
+        else if (command.name === "device.probe")
+          queueMicrotask(() => emit({ kind: "result", id: command.id, result: device }));
+        else if (command.name === "device.connect_wifi")
+          queueMicrotask(() =>
+            emit({ kind: "result", id: command.id, result: wifiResult }),
           );
         else {
           assert.equal(command.name, "firmware.install");
@@ -112,24 +136,95 @@ function browser(classification: string | undefined) {
       state: "connected",
       deviceId: "test-scale",
       connectionGeneration: 1,
-      device: {
-        model: "WBS13",
-        mac: "020000000013",
-        firmwareVersion: 100,
-        capabilities: { ota: true },
-      },
+      device,
       artifacts: [artifact],
       candidates: [],
     },
   });
-  return { get, commands, artifact, emit };
+  return { get, commands, artifact, emit, device };
 }
+
+for (const [model, profile] of Object.entries(SCALE_MODELS)) {
+  test(`${model}: new scale prompts for import and keeps a manual import link`, async () => {
+    const { get } = browser("known_release", model);
+    await get("probe").onclick();
+    assert.equal(get("enroll-dialog").open, true);
+    assert.equal(get("import-device").hidden, false);
+    assert.equal(get("import-device").disabled, false);
+    assert.match(get("enroll-description").textContent, profile.localRoster
+      ? /choose its local users/ : /check Withings/);
+    get("enroll-dialog").close();
+    await get("probe").onclick();
+    assert.equal(get("enroll-dialog").open, false, "Do not repeat an already dismissed prompt");
+    get("import-device").onclick();
+    assert.equal(get("enroll-dialog").open, true);
+  });
+  test(`${model}: registered scale does not prompt for import again`, async () => {
+    const { get } = browser("known_release", model, undefined, undefined,
+      [{ id: 1, model, mac: "020000000013" }]);
+    await get("probe").onclick();
+    assert.notEqual(get("enroll-dialog").open, true);
+  });
+}
+
+test("an older bridge's explicit enrollment restriction is respected", async () => {
+  const { get, device } = browser("known_release", "WBS05");
+  device.capabilities.enrollment = false;
+  await get("probe").onclick();
+  assert.notEqual(get("enroll-dialog").open, true);
+  assert.equal(get("import-device").hidden, true);
+});
+
+for (const joined of [true, false]) {
+  for (const saved of [true, false]) {
+    test(`Wi-Fi status distinguishes join=${joined} from saved=${saved}`, async () => {
+      const { get, commands } = browser("known_release", "WBS05", "candidate", {
+        joinStatus: joined ? "success" : "failed",
+        storedSsidMatches: saved,
+      });
+      get("wifi-ssid").value = "Test Network";
+      get("wifi-password").value = "synthetic-password";
+      await get("wifi-form").onsubmit({ preventDefault() {} });
+      assert.equal(commands.length, 1);
+      assert.equal(commands[0].name, "device.connect_wifi");
+      assert.deepEqual(commands[0].parameters, {
+        ssid: "Test Network", password: "synthetic-password",
+      });
+      assert.equal(get("wifi-password").value, "");
+      assert.equal(get("wifi-password").placeholder, joined && saved ? "••••••" : "");
+      assert.equal(get("wifi-status").textContent, joined
+        ? saved ? "Wi-Fi Connected · Settings Saved" : "Wi-Fi Connected · Settings Not Saved"
+        : "Wi-Fi Connection Failed · Check Credentials And 2.4 GHz WPA2 Network");
+      const toast = get("toast-region").children.at(-1);
+      assert.equal(toast.className, joined && saved ? "toast" : "toast toast-error");
+      assert.match(toast.children[1].textContent, !joined
+        ? /Connection Failed/ : saved ? /Settings Saved/ : /Did Not Save These Settings/);
+    });
+  }
+}
+
+test("WBS05 candidate is labeled, uses FLASH, and allows enrollment", async () => {
+  assert.match(firmwareWorkspace("test"), /value="WBS05">Body\+ \(WBS05\)/);
+  const { get, commands } = browser("known_release", "WBS05", "candidate");
+  assert.match(get("firmware-info").textContent, /v100.*YOW Candidate · Awaiting Hardware Test/);
+  assert.match(get("generate-firmware").textContent, /Body\+ \(WBS05\)/);
+  assert.equal(get("import-device").hidden, false);
+  assert.equal(get("install-firmware").disabled, false);
+  get("install-firmware").onclick();
+  assert.equal(get("flash-prompt").textContent, "Type FLASH");
+  get("flash-confirmation").value = "FLASH";
+  get("flash-confirmation").oninput();
+  await get("confirm-flash").onclick();
+  assert.equal(commands[0].name, "firmware.install");
+  assert.equal(commands[0].parameters.confirmation, "FLASH");
+});
 
 for (const simulated of [true, false]) {
   for (const [selected, family] of [
     ["WBS06", "ble"],
     ["WBS13", "ble"],
     ["WBS04", "ble"],
+    ["WBS05", "ble"],
     ["WBS03", "classic"],
     ["WBS02", "classic"],
     ["UNKNOWN", "unknown"],

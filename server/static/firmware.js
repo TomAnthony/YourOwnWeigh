@@ -6,6 +6,7 @@
   if (!root) return;
   const $ = (id) => document.getElementById(id);
   const csrf = root.dataset.csrf;
+  const localRosterModels = new Set((root.dataset.localRosterModels || "").split(","));
   let socket,
     clientId,
     snapshot = {},
@@ -42,7 +43,7 @@
     "download-firmware",
     "check-firmware-offer",
   ];
-  const SCALE_LABELS = { WBS06: "Body (WBS06)", WBS03: "WS-30 (WBS03)", WBS02: "WS-50 (WBS02)", WBS13: "Body Smart (WBS13)", WBS04: "Body Cardio (WBS04)" };
+  const SCALE_LABELS = { WBS06: "Body (WBS06)", WBS03: "WS-30 (WBS03)", WBS02: "WS-50 (WBS02)", WBS13: "Body Smart (WBS13)", WBS04: "Body Cardio (WBS04)", WBS05: "Body+ (WBS05)" };
   const CLASSIC = new Set(["WBS03", "WBS02"]);
   const label = (model) => SCALE_LABELS[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
@@ -606,8 +607,8 @@
       prompted.add(d.mac);
       $("device-label").value = `${label(d.model)} ${d.mac.slice(-4)}`;
       $("enroll-description").textContent =
-        snapshot.device?.model === "WBS13"
-          ? "Save this Body Smart, then choose its local users in Scales → Edit Settings. Withings user import is unavailable for this model."
+        localRosterModels.has(snapshot.device?.model)
+          ? "Save this scale, then choose its local users in Scales → Edit Settings. Withings user import is unavailable for this model."
           : "Save this scale and check Withings for existing users and settings. You choose which new users to import.";
       $("enroll-dialog").showModal();
     }
@@ -641,7 +642,9 @@
       ? "Unknown Firmware"
       : artifact.classification === "known_stock"
         ? "Known Stock Firmware"
-        : "Known YOW Release";
+        : artifact.releaseStatus === "candidate"
+          ? "YOW Candidate · Awaiting Hardware Test"
+          : "Known YOW Release";
     $("firmware-info").hidden = false;
     $("firmware-info").textContent =
       `${artifact.filename} · v${artifact.version} · ${artifact.size.toLocaleString()} Bytes · ${classification}\nSHA-256: ${artifact.sha256}`;
@@ -865,15 +868,17 @@
     $("device-label").value =
       `${label(model())} ${snapshot.device.mac.slice(-4)}`;
     $("enroll-description").textContent =
-      snapshot.device?.model === "WBS13"
-        ? "Save this Body Smart, then choose its local users in Scales → Edit Settings. Withings user import is unavailable for this model."
+      localRosterModels.has(snapshot.device?.model)
+        ? "Save this scale, then choose its local users in Scales → Edit Settings. Withings user import is unavailable for this model."
         : "Save this scale and check Withings for existing users and settings. You choose which new users to import.";
     $("enroll-dialog").showModal();
   };
   $("confirm-enroll").onclick = () =>
     action(async () => {
       $("enroll-dialog").close();
-      message("Reading Device Settings And Importing From Withings…");
+      message(localRosterModels.has(model())
+        ? "Reading Device Settings And Importing Scale…"
+        : "Reading Device Settings And Importing From Withings…");
       const result = await command("device.enroll", {
         approved: true,
         label: $("device-label").value,
@@ -1109,7 +1114,7 @@
   });
   $("wifi-form").onsubmit = (e) => {
     e.preventDefault();
-    action(async () => {
+    return action(async () => {
       const password = $("wifi-password").value;
       if (!password)
         throw new Error("Enter the Wi-Fi password before saving this network.");
@@ -1119,17 +1124,22 @@
         ssid: $("wifi-ssid").value,
         password,
       });
-      $("wifi-password").placeholder =
-        r.joinStatus === "success" ? "••••••" : "";
+      const joined = r.joinStatus === "success";
+      const saved = r.storedSsidMatches === true;
+      $("wifi-password").placeholder = joined && saved ? "••••••" : "";
       $("wifi-status").textContent =
-        r.joinStatus === "success"
-          ? "Wi-Fi Connected · Device Reported Success"
+        joined
+          ? saved
+            ? "Wi-Fi Connected · Settings Saved"
+            : "Wi-Fi Connected · Settings Not Saved"
           : "Wi-Fi Connection Failed · Check Credentials And 2.4 GHz WPA2 Network";
       message(
-        r.storedSsidMatches
-          ? "SSID Readback Matches. Use Complete Setup To Start Normal Operation."
-          : "SSID Readback Did Not Match",
-        !r.storedSsidMatches,
+        !joined
+          ? "Wi-Fi Connection Failed. Check The Network Name And Password."
+          : saved
+            ? "Wi-Fi Settings Saved. Use Complete Setup To Start Normal Operation."
+            : "The Scale Joined Wi-Fi But Did Not Save These Settings. Check The Server Hostname And Connectivity Before Retrying.",
+        !joined || !saved,
       );
     });
   };

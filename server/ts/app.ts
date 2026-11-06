@@ -492,28 +492,12 @@ function parseDeviceRecord(raw: string): Row {
     throw new Error("Invalid device capture time");
   if (
     model.transport === "ble" &&
-    model.bootloader === 4 &&
     (record.hardware_version !== 0xffffff ||
       record.bootloader_version !== model.bootloader ||
       !model.enrolledFirmware.includes(record.firmware_version))
   ) {
-    throw new Error("BLE identity is outside the reviewed WBS06 profile");
+    throw new Error(`BLE identity is outside the reviewed ${record.model} profile`);
   }
-  if (
-    model.bootloader === 2 &&
-    (record.hardware_version !== 0xffffff ||
-      record.bootloader_version !== 2 ||
-      record.firmware_version !== 100)
-  )
-    throw new Error("BLE identity is outside the reviewed WBS13 profile");
-  if (
-    model.bootloader === 12 &&
-    model.transport === "ble" &&
-    (record.hardware_version !== 0xffffff ||
-      record.bootloader_version !== 12 ||
-      !model.enrolledFirmware.includes(record.firmware_version))
-  )
-    throw new Error("BLE identity is outside the reviewed WBS04 profile");
   if (
     model.transport === "classic" &&
     (record.bootloader_version !== model.bootloader ||
@@ -1143,9 +1127,9 @@ async function fetchAndApplyProfile(
   fetcher: (scale: Row) => Promise<string>,
   zone: string | null,
 ) {
-  if (scale.model === "WBS13")
+  if (scaleModel(scale.model)?.localRoster)
     throw new Error(
-      "WBS13 uses local users; choose them in Scales → Edit Settings",
+      `${scale.model} uses local users; choose them in Scales → Edit Settings`,
     );
   const raw = await fetcher(scale);
   const capture = parseCapture(raw),
@@ -1295,13 +1279,16 @@ async function enrollDevice(
   } else
     await run(
       db,
-      "INSERT INTO scales(label,model,mac,secret,ble_name,ble_probe_identifier,ble_hardware_version,ble_bootloader_version,ble_firmware_version,ble_rescue_version,ble_wifi_ssid,ble_owner_host,ble_owner_transport,ble_captured_at,time_zone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO scales(label,model,mac,secret,ble_name,ble_probe_identifier,ble_hardware_version,ble_bootloader_version,ble_firmware_version,ble_rescue_version,ble_wifi_ssid,ble_owner_host,ble_owner_transport,ble_captured_at,time_zone,feature_mask,temp_code,weight_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       label,
       record.model,
       record.mac,
       record.session_secret,
       ...meta,
       zone,
+      // Body+ defaults observed in its stock v1651 vendor session: ordinary
+      // features, Celsius and kilograms. No prior owner's roster is imported.
+      ...(record.model === "WBS05" ? [3, 11, 1] : [0, 0, 0]),
     );
   const saved = (await one(
     db,
@@ -1423,7 +1410,7 @@ async function integratedApi(request: Request, env: AppEnv): Promise<Response> {
       String(body.label ?? ""),
       zone,
     );
-    if (scale.model === "WBS13")
+    if (scaleModel(scale.model)?.localRoster)
       return json({
         scaleId: scale.id,
         localRoster: true,
@@ -2196,10 +2183,10 @@ async function browserPost(
         formText(form, "label"),
         formText(form, "time_zone") || null,
       );
-      if (scale.model === "WBS13")
+      if (scaleModel(scale.model)?.localRoster)
         return go(
           `/scales#scale-${scale.id}`,
-          "Body Smart saved. Choose its users in Edit Settings before its first sync.",
+          "Scale saved. Choose its users in Edit Settings before its first sync.",
         );
       try {
         if (!captureWithings) throw new Error("Withings import is unavailable");
@@ -2297,7 +2284,7 @@ async function browserPost(
         if (zone) zoneTriplet(zone);
         // Preserve imported readiness, roster state and response fixtures.
         // Advanced fields are editable only for the model that consumes them.
-        if (scale.model === "WBS13") {
+        if (scaleModel(scale.model)?.localRoster) {
           const ids = [
             ...new Set(form.getAll("user_ids").map((v) => Number(v))),
           ];

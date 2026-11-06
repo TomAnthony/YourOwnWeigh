@@ -1,0 +1,4 @@
+# Maintainer build and offline checks; no hardware dependencies.
+capstone==5.0.7
+pyelftools==0.32
+unicorn==2.1.4
