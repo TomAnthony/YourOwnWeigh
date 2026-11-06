@@ -819,7 +819,14 @@ test("enrollment accepts only registered models and firmware-safe owner hostname
     });
     const suffix = ".example.com";
     const host = (n: number) => `${"a".repeat(n - suffix.length)}${suffix}`;
-    // BLE models (WBS06/WBS04) stay at the documented 48-byte firmware cap;
+    const candidate = await enroll({
+      ...base("WBS06", "02:00:00:00:00:05", 100),
+      model: "WBS05", name: "Body+", bootloader_version: 6,
+      owner_host: host(48),
+    });
+    assert.equal(candidate.status, 303);
+    assert.match(new URL(candidate.headers.get("location")!, "https://local.test").searchParams.get("notice")!, /Choose its users/);
+    // BLE models stay at the documented 48-byte firmware cap;
     // classic models (WS-30/WBS02) keep their 59-byte patch buffer limit.
     const accepted = await enroll({
       ...base("WBS06", "24:E4:2F:12:34:57", 126),
@@ -873,6 +880,7 @@ test("enrollment accepts only registered models and firmware-safe owner hostname
       stored.results.map((row) => ({ ...row })),
       [
         { model: "WBS02", host: host(59) },
+        { model: "WBS05", host: host(48) },
         { model: "WBS06", host: host(48) },
       ],
     );

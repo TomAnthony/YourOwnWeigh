@@ -28,6 +28,8 @@ export interface ScaleModel {
   hostnameLimit: number;
   /** Classic models skip the settings-fixture and roster gates. */
   classicGates: boolean;
+  /** Build the roster from selected household users, without vendor import. */
+  localRoster: boolean;
 }
 
 export const SCALE_MODELS: Record<string, ScaleModel> = {
@@ -45,6 +47,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [123, 124, 125, 126, 127],
     hostnameLimit: 48,
     classicGates: false,
+    localRoster: false,
   },
   WBS13: {
     transport: "ble",
@@ -56,10 +59,11 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     namePattern: "^Body Smart$",
     exportFormat: "YOW-BLE-device-v1",
     bootloader: 2,
-    enrolledFirmware: [100],
+    enrolledFirmware: [100, 101, 102, 103],
     ownerFirmware: [100, 101, 102, 103],
     hostnameLimit: 48,
     classicGates: false,
+    localRoster: true,
   },
   WBS04: {
     transport: "ble",
@@ -75,6 +79,23 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [100, 101, 102],
     hostnameLimit: 48,
     classicGates: false,
+    localRoster: false,
+  },
+  WBS05: {
+    transport: "ble",
+    hash: "sha256",
+    hashParam: { name: "hashmethod", value: "sha256" },
+    hashLength: 64,
+    label: "Body+ (WBS05)",
+    fullLabel: "Body+ (WBS05)",
+    namePattern: "^Body\\+$",
+    exportFormat: "YOW-BLE-device-v1",
+    bootloader: 6,
+    enrolledFirmware: [1651, 100],
+    ownerFirmware: [100],
+    hostnameLimit: 48,
+    classicGates: false,
+    localRoster: true,
   },
   WBS03: {
     transport: "classic",
@@ -90,6 +111,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [100, 101, 102],
     hostnameLimit: 59,
     classicGates: true,
+    localRoster: false,
   },
   WBS02: {
     transport: "classic",
@@ -105,6 +127,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     ownerFirmware: [1023],
     hostnameLimit: 59,
     classicGates: true,
+    localRoster: false,
   },
 };
 

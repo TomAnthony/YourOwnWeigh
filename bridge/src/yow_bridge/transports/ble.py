@@ -18,10 +18,9 @@ CHARACTERISTIC = "00000024-5749-5448-0007-000000000000"
 # the WBS13 commands; this service must never enable WBS06 OTA.
 IDENTITY_SERVICE = "00000020-5749-5448-0010-000000000000"
 IDENTITY_CHARACTERISTIC = "00000024-5749-5448-0010-000000000000"
-# Body+/WBS05 (issue #7) and Body Cardio/WBS04 (issue #8) answer the same WPP
-# identity request on their own service/characteristic pairs. Listed as
-# identity-only: they never enable the WBS06/WBS13 OTA or command paths. The
-# 0005 pair is confirmed on WBS05 hardware, the 0006 pair on WBS04 hardware.
+# Body+/WBS05 and Body Cardio/WBS04 answer the same identity request on their
+# own UUID pairs. The session checks model, bootloader and hardware before
+# promoting these initially identity-only connections to their model's commands.
 WBS05_SERVICE = "00000020-5749-5448-0005-000000000000"
 WBS05_CHARACTERISTIC = "00000024-5749-5448-0005-000000000000"
 WBS04_SERVICE = "00000020-5749-5448-0006-000000000000"
@@ -32,7 +31,7 @@ WPP_SERVICES = (
     (WBS05_SERVICE, WBS05_CHARACTERISTIC),
     (WBS04_SERVICE, WBS04_CHARACTERISTIC),
 )
-# Each pair's profile; only SERVICE (WBS06) is a full-command transport.
+# Each pair's profile is checked again against the probed identity.
 WPP_PROFILES = {
     CHARACTERISTIC: "WBS06",
     IDENTITY_CHARACTERISTIC: "WBS13",

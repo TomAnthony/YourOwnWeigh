@@ -53,6 +53,18 @@ class Commands(unittest.IsolatedAsyncioTestCase):
     async def test_snapshot_advertises_wbs04(self):
         self.assertIn("WBS04", self.app.snapshot()["models"])
 
+    async def test_simulated_wbs05_candidate_survives_reconnect(self):
+        self.assertIn("WBS05", self.app.snapshot()["models"])
+        identity = await self.connect_demo("WBS05")
+        self.assertEqual(identity["firmwareVersion"], 1651)
+        self.assertTrue(identity["capabilities"]["ota"])
+        await self.app.session.install(bytes(10), lambda *args: None)
+        await self.run_command(command("device.disconnect", deviceId="demo-scale",
+                                       connectionGeneration=self.app.generation))
+        identity = await self.connect_demo("WBS05")
+        self.assertEqual(identity["firmwareVersion"], 100)
+        self.assertEqual(identity["capabilities"]["serverTransports"], ["http", "https"])
+
     async def connect_demo(self, model):
         await self.run_command(
             command("device.scan.start", dict(model=model, durationSeconds=1))
@@ -114,6 +126,39 @@ class Commands(unittest.IsolatedAsyncioTestCase):
                         connectionGeneration=self.app.generation,
                     )
                 )
+
+    async def test_all_models_can_enroll_on_every_supported_owner_release(self):
+        from yow_bridge.models.registry import MODELS
+        from yow_bridge import simulation
+
+        for model, spec in MODELS.items():
+            for version in spec.owner_firmware:
+                with self.subTest(model=model, version=version):
+                    simulation._INSTALLED[model] = version
+                    identity = await self.connect_demo(model)
+                    self.assertTrue(identity["capabilities"]["enrollment"])
+                    result = await self.run_command(command(
+                        "device.enroll", {"approved": True, "timeZone": "Europe/Berlin"},
+                        deviceId="demo-scale", connectionGeneration=self.app.generation,
+                    ))
+                    self.assertEqual(result["kind"], "result", result)
+                    record = result["result"]["device"]
+                    self.assertEqual(record["model"], model)
+                    self.assertEqual(record["firmware_version"], version)
+                    self.assertEqual(record["format"], spec.export_format)
+                    self.assertEqual(record["session_secret"], "0123456789abcdef")
+                    self.assertEqual(record["wifi_ssid"], "Demo Wi-Fi")
+                    self.app.session.identity["secret"] = ""
+                    self.assertFalse(self.app.session.capabilities()["enrollment"])
+                    failed = await self.run_command(command(
+                        "device.enroll", {"approved": True},
+                        deviceId="demo-scale", connectionGeneration=self.app.generation,
+                    ))
+                    self.assertEqual(failed["kind"], "error")
+                    await self.run_command(command(
+                        "device.disconnect", deviceId="demo-scale",
+                        connectionGeneration=self.app.generation,
+                    ))
 
     async def test_connect_stops_scan_and_waits_for_radio_cleanup(self):
         from yow_bridge import simulation

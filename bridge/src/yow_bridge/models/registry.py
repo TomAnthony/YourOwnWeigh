@@ -26,6 +26,19 @@ class ModelSpec:
 
 
 MODELS: dict[str, ModelSpec] = {
+    "WBS05": ModelSpec(
+        transport="ble",
+        name=re.compile(r"\ABody\+\Z"),
+        bootloader=6,
+        hardware=0xFFFFFF,
+        require_modern=False,
+        mtu=20,
+        export_format="YOW-BLE-device-v1",
+        owner_firmware=(100,),
+        known_firmware=(1651, 100),
+        hostname_limit=48,
+        display="Body+",
+    ),
     "WBS06": ModelSpec(
         transport="ble",
         name=re.compile(r"\ABody\Z"),

@@ -26,6 +26,7 @@ class Backend:
 
 
 _SIM_PROFILE = {
+    "WBS05": dict(firmware=1651),
     "WBS06": dict(firmware=127),
     "WBS13": dict(firmware=1311),
     "WBS03": dict(firmware=102),

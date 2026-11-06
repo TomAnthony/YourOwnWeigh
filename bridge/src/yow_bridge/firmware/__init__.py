@@ -18,6 +18,8 @@ from pathlib import Path
 from .. import USER_AGENT
 
 RELEASES = {
+    # Body+ v100: pinned OTA candidate, awaiting the first hardware test.
+    "WBS05": (100, "0fb9543739ca4c17eadcb2225ae3b1ee0d48b136bdf57507b1f9c2206ed1b483"),
     "WBS06": (127, "419aeafa0ab3a60197dfc6909b27381477498ac3688cd147ae0d675cf5a6b808"),
     "WBS03": (102, "97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a"),
     "WBS13": (103, "c04427e3ce4278334ae8ef34874c4e69b8936917add8f6f5dc0255df6edf45e4"),
@@ -134,6 +136,7 @@ def inspect(data: bytes, model: str) -> dict:
         bootloader=p["bootloader"],
         classification=classification,
         releaseId=f"{model}-{version}" if classification == "known_release" else None,
+        releaseStatus=p.get("releaseStatus", "released") if classification == "known_release" else None,
     )
 
 

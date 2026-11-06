@@ -37,6 +37,7 @@ The below models are currently supported. Pull Requests to add more models are v
 | --- | --- | --- | --- | --- | --- |
 | Body Smart | **WBS13** | v1311 | v103 | | |
 | Body | **WBS06** | v1181 | v127 | | |
+| Body+ | **WBS05** | v1651 | v100 | | |
 | Body Cardio | **WBS04** | v2231 | v100 | [KindOfNerdy](https://github.com/KindOfNerdy) | |
 | Wireless Scale | **WBS03**<br>**(WS‑30)** | v921 | v102 | | HTTP only scale sync. |
 | Smart Body Analyzer | **WBS02**<br>**(WS‑50)** | v1721 | v1023 | [ionothanus](https://github.com/ionothanus) & [pufnstuf](https://github.com/pufnstuf) | HTTP only scale sync. |

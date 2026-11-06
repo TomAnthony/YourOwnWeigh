@@ -48,6 +48,19 @@ WBS13 is a supported model and uses the shared Bleak transport on macOS and Linu
 
 WS-50/WBS02 uses Classic on macOS and Linux, with stock v1721 / bootloader 12 and YOW v1023. Its owner hostname, Wi-Fi settings, clock, Complete Setup and OTA share the WS-30 workflow; v1023 replaces the stock 37×26 Hello bitmap with the same approved smiley and forces HTTP. The owner server uses native `/once`, `/session` and `/measure` paths and MD5 authentication; the web app also accepts the `/cgi-bin/*` aliases on the scale-only listener. Vendor-profile imports remain on the shared SHA-256 compatibility exchange.
 
+Body+/WBS05 is available for testing its first YOW v100 OTA candidate, starting
+from stock v1651 / bootloader 6. The bridge verifies the Body+ identity and its
+own BLE service before enabling OTA. Generate Firmware downloads the pinned
+stock image and reproduces v100 without a compiler. The candidate uses the
+normal `FLASH` confirmation and remains labeled as awaiting a hardware test.
+On v100, hostname/HTTP/HTTPS, Wi-Fi, time and Complete Setup are available.
+Bridge 0.4.9 enables device import on stock v1651 and YOW v100. Accept the import
+prompt, then choose household users in **Scales → Edit Settings**. WBS05 uses
+local users rather than Withings account import; no UART certificate extraction
+is needed. Hardware OTA, hostname/protocol and Wi-Fi setup have been confirmed;
+the first complete roster/weigh-in sync remains to be checked. See the
+[WBS05 notes](../firmware/wbs05/v1651/README.md).
+
 ## Progress And Recovery
 
 Commands serialize per bridge and bind to a device ID and connection generation. Duplicate command IDs return their retained result; a changed request under the same ID fails. Firmware stays in local memory/cache. Manual upload relays bounded chunks through the server without saving firmware in its database.
