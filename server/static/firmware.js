@@ -88,7 +88,8 @@
   const progressMessage = (text, error = false) => {
     $("operation-status").hidden = false;
     $("operation-status").classList.toggle("error", error);
-    $("operation-message").textContent = text;
+    if ($("operation-message").textContent !== text)
+      $("operation-message").textContent = text;
     if (error) $("operation-progress").hidden = true;
   };
   function canConnect(candidate) {
@@ -487,13 +488,17 @@
       if (data.kind === "accepted" && data.name === "firmware.install")
         renderOperation(data.progress);
       if (data.kind === "progress") {
-        const p = data.progress;
-        progressMessage(
-          `${p.stage.replaceAll("_", " ")} ${p.bytesTotal ? `· ${Math.round((p.bytesDone / p.bytesTotal) * 100)}%` : ""}`,
-        );
-        $("operation-progress").hidden = !p.bytesTotal;
-        if (p.bytesTotal)
-          $("operation-progress").value = p.bytesDone / p.bytesTotal;
+        // firmware.install progress is also broadcast as an "operation" above.
+        // Rendering both alternates the status line between two prefixes.
+        if (data.name !== "firmware.install") {
+          const p = data.progress;
+          progressMessage(
+            `${p.stage.replaceAll("_", " ")} ${p.bytesTotal ? `· ${Math.round((p.bytesDone / p.bytesTotal) * 100)}%` : ""}`,
+          );
+          $("operation-progress").hidden = !p.bytesTotal;
+          if (p.bytesTotal)
+            $("operation-progress").value = p.bytesDone / p.bytesTotal;
+        }
       }
       const waiting = pending.get(data.id);
       if (waiting && ["result", "error"].includes(data.kind)) {
