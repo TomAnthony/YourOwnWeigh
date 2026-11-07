@@ -2729,8 +2729,18 @@ async function browserPost(
         candidateId,
       );
       const user = existing ? null : parsedUser(form);
+      // Keep every existing membership; naming a scale user from a second
+      // scale's backlog must not remove them from the first scale.
+      const currentMemberships = await rows<{ scale_id: number }>(
+        db,
+        "SELECT scale_id FROM scale_users WHERE user_id=?",
+        candidateId,
+      );
       const memberships = await updateMemberships(db, candidateId, [
-        reading.scale_id,
+        ...new Set([
+          ...currentMemberships.map((row) => row.scale_id),
+          reading.scale_id,
+        ]),
       ]);
       const assign = (readingId: number) =>
         db
@@ -2758,17 +2768,21 @@ async function browserPost(
             ),
         );
       statements.push(...memberships, assign(id));
-      // Older unassigned readings from the same scale user should follow.
+      // Older unassigned readings from the same scale user should follow, but
+      // only when the candidate is unambiguous. A reading with several
+      // candidates is deliberately left for explicit per-reading assignment.
       for (const other of await rows(
         db,
         "SELECT id,candidate_ids FROM readings WHERE user_id IS NULL AND id<>? AND scale_id=?",
         id,
         reading.scale_id,
-      ))
-        if (readingCandidateIds(other.candidate_ids).includes(candidateId))
+      )) {
+        const otherCandidates = readingCandidateIds(other.candidate_ids);
+        if (otherCandidates.length === 1 && otherCandidates[0] === candidateId)
           statements.push(assign(other.id));
+      }
+      statements.push(refreshRecognitionWeight(db, candidateId));
       await db.batch(statements);
-      await refreshRecognitionWeight(db, candidateId);
       await queueRosterEdits(db, candidateId);
       return go(
         "/readings",

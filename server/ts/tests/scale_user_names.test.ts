@@ -129,6 +129,17 @@ test("an unassigned reading exposes its scale user ID and can be named locally",
       .bind(26954592)
       .first<{ count: number }>();
     assert.equal(membership?.count, 1);
+    const recognition = await h.db
+      .prepare(
+        "SELECT reference_weight_kg,reference_weight_at FROM users WHERE id=?",
+      )
+      .bind(26954592)
+      .first<{ reference_weight_kg: number; reference_weight_at: number }>();
+    assert.equal(recognition?.reference_weight_at, 1793937548);
+    assert.equal(
+      Math.round(recognition!.reference_weight_kg * 1000) / 1000,
+      71.209,
+    );
   } finally {
     h.cleanup();
   }
@@ -140,6 +151,7 @@ test("naming a scale user assigns older readings with the same candidate", async
     await addReading(h.db, 1, [26954592], 1793937548);
     await addReading(h.db, 2, [26954592], 1793937600);
     await addReading(h.db, 3, [111], 1793937700);
+    await addReading(h.db, 4, [26954592, 111], 1793937800);
     assert.equal(
       (
         await h.post("/readings/2/name-scale-user", {
@@ -163,8 +175,77 @@ test("naming a scale user assigns older readings with the same candidate", async
         { id: 1, user_id: 26954592 },
         { id: 2, user_id: 26954592 },
         { id: 3, user_id: null },
+        { id: 4, user_id: null },
       ],
     );
+    const recognition = await h.db
+      .prepare(
+        "SELECT reference_weight_kg,reference_weight_at FROM users WHERE id=?",
+      )
+      .bind(26954592)
+      .first<{ reference_weight_kg: number; reference_weight_at: number }>();
+    assert.equal(recognition?.reference_weight_at, 1793937600);
+    assert.equal(
+      Math.round(recognition!.reference_weight_kg * 1000) / 1000,
+      71.209,
+    );
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("naming a scale user preserves memberships on other scales", async () => {
+  const h = await harness();
+  try {
+    await h.db
+      .prepare(
+        "INSERT INTO scales(id,label,model,mac,secret,settings_ready,time_zone) VALUES(2,'Other','WBS06','020000000002','0123456789abcdef',1,'UTC')",
+      )
+      .run();
+    await h.db
+      .prepare(
+        "INSERT INTO users(id,name,short_name,height_cm,age_years,sex,reference_weight_kg,created_at) VALUES(26954592,'Existing','EXT',170,40,0,70,1)",
+      )
+      .run();
+    await h.db
+      .prepare(
+        "INSERT INTO scale_users(scale_id,user_id,rank) VALUES(2,26954592,0)",
+      )
+      .run();
+    await addReading(h.db, 1, [26954592], 1793937548);
+    assert.equal(
+      (
+        await h.post("/readings/1/name-scale-user", {
+          candidate_id: "26954592",
+          name: "Ignored",
+          short_name: "IGN",
+          height_cm: "181",
+          age_years: "40",
+          sex: "0",
+          reference_weight_kg: "71.209",
+        })
+      ).status,
+      303,
+    );
+    const memberships = await h.db
+      .prepare(
+        "SELECT scale_id FROM scale_users WHERE user_id=? ORDER BY scale_id",
+      )
+      .bind(26954592)
+      .all<{ scale_id: number }>();
+    assert.deepEqual(
+      memberships.results.map((row) => row.scale_id),
+      [1, 2],
+    );
+    const user = await h.db
+      .prepare("SELECT name FROM users WHERE id=?")
+      .bind(26954592)
+      .first<{ name: string }>();
+    assert.equal(user?.name, "Existing");
+    const reading = await h.db
+      .prepare("SELECT user_id FROM readings WHERE id=1")
+      .first<{ user_id: number }>();
+    assert.equal(reading?.user_id, 26954592);
   } finally {
     h.cleanup();
   }
