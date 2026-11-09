@@ -7,9 +7,12 @@ hardware/bootloader identity before model commands are enabled.
 """
 
 import asyncio
+import logging
 import sys
 
 from bleak import BleakClient, BleakScanner
+
+LOG = logging.getLogger(__name__)
 
 SERVICE = "00000020-5749-5448-0007-000000000000"
 CHARACTERISTIC = "00000024-5749-5448-0007-000000000000"
@@ -46,6 +49,16 @@ def scale_candidate(name, service_uuids):
     return any(service in advertised for service, _ in WPP_SERVICES) or bool(
         name and name.lower().startswith("body")
     )
+
+
+def find_wpp(client):
+    """First known WPP (characteristic, uuid) the connected client exposes."""
+    for service_uuid, characteristic_uuid in WPP_SERVICES:
+        service = client.services.get_service(service_uuid)
+        characteristic = service.get_characteristic(characteristic_uuid) if service else None
+        if characteristic is not None:
+            return characteristic, characteristic_uuid
+    return None, None
 
 
 class Backend:
@@ -91,11 +104,22 @@ class Backend:
             if not isinstance(device_path, str) or not device_path:
                 raise ValueError("Scan again before connecting to this scale")
         transport = Transport()
-        transport.client = BleakClient(
-            device,
-            disconnected_callback=lambda _: disconnected(),
-            timeout=30,
-        )
+
+        def make_client(**extra):
+            return BleakClient(
+                device,
+                disconnected_callback=lambda _: disconnected(),
+                timeout=30,
+                **extra,
+            )
+
+        if sys.platform == "win32":
+            # WinRT fails the whole connect (E_UNEXPECTED / ERROR_BAD_COMMAND)
+            # while enumerating characteristics of one of the WBS13's other
+            # services, so discover only the WPP services.
+            transport.client = make_client(services=[s for s, _ in WPP_SERVICES])
+        else:
+            transport.client = make_client()
         bluez = None
         opened_le = False
         try:
@@ -105,14 +129,26 @@ class Backend:
                 bluez = await BlueZ().__aenter__()
                 opened_le = await bluez.prepare_ble(device_path)
             await transport.client.connect()
-            characteristic = None
-            for service_uuid, characteristic_uuid in WPP_SERVICES:
-                service = transport.client.services.get_service(service_uuid)
-                characteristic = (
-                    service.get_characteristic(characteristic_uuid) if service else None
+            characteristic, characteristic_uuid = find_wpp(transport.client)
+            if characteristic is None and sys.platform == "win32":
+                # Windows caches a bonded device's GATT table; after an OTA the
+                # scale may expose a different WPP pair. Rediscover once.
+                LOG.info("No WPP service in Windows' cache; rediscovering")
+                await transport.client.disconnect()
+                transport.client = make_client(
+                    services=[s for s, _ in WPP_SERVICES],
+                    winrt=dict(use_cached_services=False),
                 )
-                if characteristic is not None:
-                    break
+                try:
+                    await transport.client.connect()
+                except OSError as error:
+                    # Seen when the scale left setup mode between scan and
+                    # connect: WinRT reports ERROR_BAD_COMMAND, not a timeout.
+                    raise ValueError(
+                        "The scale did not answer; put it back in setup mode, "
+                        "scan and connect again"
+                    ) from error
+                characteristic, characteristic_uuid = find_wpp(transport.client)
             if characteristic is None:
                 raise ValueError(
                     "A recognised Withings WPP service and characteristic were not found"
@@ -134,10 +170,37 @@ class Backend:
                 await asyncio.sleep(0.05)
             else:
                 mtu = transport.client.mtu_size
+                if sys.platform == "win32":
+                    # WinRT reports the default 23 until the MTU exchange ends,
+                    # ~1.5 s after connect (seen: 185). Reading it early capped
+                    # OTA at 20-byte writes, ~9x slower than macOS.
+                    for _ in range(50):
+                        if mtu > 23:
+                            break
+                        await asyncio.sleep(0.1)
+                        mtu = transport.client.mtu_size
+                    LOG.info("Windows negotiated ATT MTU %d", mtu)
             transport.max_write = min(512, max(20, mtu - 3))
-            await transport.client.start_notify(
-                characteristic, lambda _, data: receive(bytes(data))
-            )
+            on_data = lambda _, data: receive(bytes(data))  # noqa: E731
+            if sys.platform == "win32":
+                # The WPP characteristic is protected. macOS pairs implicitly;
+                # WinRT may not, so pair explicitly on an auth failure and retry.
+                try:
+                    await transport.client.start_notify(characteristic, on_data)
+                except Exception as error:
+                    LOG.info("Notify refused (%s); pairing with Windows", type(error).__name__)
+                    # Bleak >= 1.0 returns None on success and raises on failure.
+                    try:
+                        await transport.client.pair()
+                    except Exception as pair_error:
+                        raise ValueError(
+                            "Windows could not pair with the scale; remove it in "
+                            "Settings > Bluetooth & devices and retry in setup mode"
+                        ) from pair_error
+                    LOG.info("Paired with Windows; enabling notifications")
+                    await transport.client.start_notify(characteristic, on_data)
+            else:
+                await transport.client.start_notify(characteristic, on_data)
             return transport
         except BaseException:
             await transport.disconnect()

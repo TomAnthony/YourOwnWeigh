@@ -51,10 +51,10 @@ You can check your model under the batteries. Not all models with the same name 
 | macOS 27 | Confirmed |
 | macOS 26 | Should work |
 | macOS 15 | Should work |
-| Windows | Pending |
+| Windows 11 | Confirmed (BLE scales; WS-30/WS-50 unsupported) |
 | Linux | Confirmed |
 
-The web app component should support all operating systems, but the Python bridge currently only supports macOS & Linux. Windows support still needs adding.
+The web app component should support all operating systems. The Python bridge supports macOS, Linux and Windows; on Windows only Bluetooth LE scales are supported, as the Classic transport (WS-30/WS-50) has no Windows port.
 
 
 ## Quick Start Using Cloudflare
