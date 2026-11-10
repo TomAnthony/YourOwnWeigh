@@ -20,7 +20,7 @@ from yow_bridge.firmware import RELEASES, inspect
 from yow_bridge.models.session import ScaleSession
 
 VERSION = 1103
-SHA256 = "e2d68ba42905323c484da2666423e4c12c9b5bffc623b37a805475e588f69fcd"
+SHA256 = "d4ed7f1b8d91e7f6c31458e021335d2e66831a68c2b8558c4a2d6f782de10d9f"
 
 
 def save(path, value, *, replace=False):

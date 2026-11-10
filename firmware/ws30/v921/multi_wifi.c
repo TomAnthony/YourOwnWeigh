@@ -36,8 +36,11 @@ INLINE int read_profile(uint8_t *p) {
     int result = DB_QUERY_READ(&query, p);
     unsigned size = query.value_length;
     int closed = DB_QUERY_CLOSE(&query);
-    if (result) return result; /* 3 = absent; other errors are not absence. */
-    if (closed || size != PROFILE_SIZE || *(uint32_t *)p != MAGIC) return 1;
+    if (closed) return 1;
+    /* Keep DBLIB errors distinct from our internal damaged-owned status 4.
+     * A capacity/read failure must never authorize clearing another record. */
+    if (result) return result == 3 ? 3 : 1;
+    if (size != PROFILE_SIZE || *(uint32_t *)p != MAGIC) return 1;
     return valid_profile(p) ? 0 : 4; /* damaged but recognizably ours */
 }
 

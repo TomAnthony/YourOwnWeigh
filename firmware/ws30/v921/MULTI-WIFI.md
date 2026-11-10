@@ -91,14 +91,14 @@ Use Clang **21.1.7**, Python 3.12, and the optional dependencies in
 $env:PYTHONPATH='bridge/src'
 $env:YOW_WBS03_STOCK='local/firmware/stock/4eb3f9a5390faae2c11421ac388e5450bddc31449f3153f59daca1b10b0eaf48.bin'
 .venv/Scripts/python.exe -m unittest discover -s tools -p 'test_ws30*wifi.py' -v
-.venv/Scripts/python.exe firmware/ws30/v921/multi_wifi.py --offline-source $env:YOW_WBS03_STOCK --output local/firmware/generated/wbs03_yow_1103_rc1.bin
-.venv/Scripts/python.exe tools/ws30_multi_wifi_trial.py preflight --firmware local/firmware/generated/wbs03_yow_1103_rc1.bin
+.venv/Scripts/python.exe firmware/ws30/v921/multi_wifi.py --offline-source $env:YOW_WBS03_STOCK --output local/firmware/generated/wbs03_yow_1103_rc3.bin
+.venv/Scripts/python.exe tools/ws30_multi_wifi_trial.py preflight --firmware local/firmware/generated/wbs03_yow_1103_rc3.bin
 ```
 
 Candidate SHA-256:
-`e2d68ba42905323c484da2666423e4c12c9b5bffc623b37a805475e588f69fcd`
+`d4ed7f1b8d91e7f6c31458e021335d2e66831a68c2b8558c4a2d6f782de10d9f`
 
-The injected code is 5,812 bytes within an 8 KiB application extension.
+The injected code is 5,800 bytes within an 8 KiB application extension.
 The independent bridge inspector validates container/section CRCs, internal
 flash bounds, version words, radio offsets, and byte-identical radio/bootloader
 resources. It deliberately classifies this image as **custom**, not a release.
@@ -121,6 +121,13 @@ published IEEE/password WPA2 vector, save/read/clear and primary preservation.
 Every truncation of representative commands is rejected; 1-byte and 32-byte
 SSIDs also run through the stock radio connection path.
 The real browser was exercised at desktop and 390-pixel mobile widths.
+
+RC3 additionally isolates DBLIB read/close errors from the internal damaged-profile
+status. An oversized or unreadable record cannot be overwritten, even by an
+explicit clear. A failed query close is never treated as absence. Regression
+tests cover short/long records, query-close failures and non-network
+connection errors that must not trigger fallback. Earlier candidate hashes are
+rejected by the controlled installer.
 
 ## Hardware trial and recovery
 

@@ -19,7 +19,7 @@ START, END, POOL_END = 0x3a2ac, 0x3a4cc, 0x3a4d4
 HOOKS = ((0x16688, START, "wifi_connect_fallback"),)
 # Leave the startup path and WPP connection-test path unmodified. A fallback
 # there could report success while testing a newly entered primary password.
-EXPECTED_HASH = "e2d68ba42905323c484da2666423e4c12c9b5bffc623b37a805475e588f69fcd"
+EXPECTED_HASH = "d4ed7f1b8d91e7f6c31458e021335d2e66831a68c2b8558c4a2d6f782de10d9f"
 
 
 def compile_candidate(stock):

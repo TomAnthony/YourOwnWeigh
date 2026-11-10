@@ -55,7 +55,8 @@ class MultiWifiTests(unittest.TestCase):
         self.uc.mem_write(0x4000, self.image[0x84:patch.APP_END+0x2000])
         self.uc.mem_map(0x1fff0000, 0x20000)
         self.db, self.queries, self.writes, self.replies = {}, {}, [], []
-        self.fail_write = self.corrupt_write = self.fail_read = False
+        self.fail_write = self.corrupt_write = self.fail_read = self.fail_close = False
+        self.forced_primary_error = None
         self.joins, self.cleaned, self.disconnected = [], 0, 0
         self.radio_mode = "first-fails"
         self.contexts = 0
@@ -74,6 +75,9 @@ class MultiWifiTests(unittest.TestCase):
                           (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3)]
         if address == STOP:
             uc.emu_stop()
+        elif address == 0x3a2ac and self.forced_primary_error is not None:
+            uc.mem_write(r2, struct.pack("<I", self.forced_primary_error))
+            self.result(-1)
         elif address == 0x25d84:
             self.queries[r0] = (r1, r2)
             uc.mem_write(r0, bytes(12))
@@ -91,7 +95,7 @@ class MultiWifiTests(unittest.TestCase):
                 self.result(0 if len(value) <= capacity else 4)
         elif address == 0x25df0:
             self.queries.pop(r0)
-            self.result()
+            self.result(int(self.fail_close))
         elif address == 0x260a4:
             value = bytes(uc.mem_read(r1, r2))
             self.writes.append((r0, value))
@@ -265,6 +269,28 @@ class MultiWifiTests(unittest.TestCase):
         self.assertEqual(self.dispatch(command()), b"\x01\x11\x03\x00")
         self.assertFalse(self.writes)
 
+    def test_wrong_sized_records_cannot_be_overwritten_or_cleared(self):
+        self.store()
+        valid = self.db[ITEM]
+        for record in (valid[:-1], valid+b"X"):
+            with self.subTest(size=len(record)):
+                self.db[ITEM] = record
+                self.writes.clear()
+                self.assertEqual(self.dispatch(command()), b"\x01\x11\x03\x00")
+                self.assertEqual(self.dispatch(command(ssid=b"")), b"\x01\x11\x03\x00")
+                self.assertFalse(self.writes)
+
+    def test_non_network_failures_do_not_attempt_fallback(self):
+        self.primary()
+        self.store()
+        for error in (0, 1, 0x3e1, 0xffffffff):
+            with self.subTest(error=error):
+                self.forced_primary_error = error
+                self.assertEqual(self.call("wifi_connect_fallback", RADIO, NETWORK, ERROR), 0xffffffff)
+                self.assertEqual(struct.unpack("<I", self.uc.mem_read(ERROR, 4))[0], error)
+                self.assertFalse(self.joins)
+                self.assertFalse(self.radio_commands)
+
     def test_write_failure_and_failed_readback(self):
         self.fail_write = True
         self.assertEqual(self.dispatch(command()), b"\x01\x11\x03\x00")
@@ -273,6 +299,12 @@ class MultiWifiTests(unittest.TestCase):
 
     def test_db_read_error_is_not_absence(self):
         self.fail_read = True
+        self.assertEqual(self.dispatch(command()), b"\x01\x11\x03\x00")
+        self.assertFalse(self.writes)
+
+    def test_db_close_error_is_not_absence(self):
+        self.fail_close = True
+        self.assertEqual(self.dispatch(command(0x10, b"")), b"\x01\x10\x03\x00")
         self.assertEqual(self.dispatch(command()), b"\x01\x11\x03\x00")
         self.assertFalse(self.writes)
 
