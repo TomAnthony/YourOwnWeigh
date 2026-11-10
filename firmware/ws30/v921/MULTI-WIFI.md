@@ -115,6 +115,11 @@ both-fail, event timeout, DHCP failure, absent/corrupt profiles, storage failure
 ownership collisions, explicit clear recovery, no repeated flash writes, primary
 cache isolation, radio cleanup, WPA2 driver encoding and independent image checks.
 Host protocol, UI and trial-journal tests cover errors and interrupted transfers.
+An integration test runs the actual Python session methods against the ARM
+dispatcher and feeds its replies through the real WPP decoder. It checks the
+published IEEE/password WPA2 vector, save/read/clear and primary preservation.
+Every truncation of representative commands is rejected; 1-byte and 32-byte
+SSIDs also run through the stock radio connection path.
 The real browser was exercised at desktop and 390-pixel mobile widths.
 
 ## Hardware trial and recovery

@@ -3,6 +3,7 @@
 The DB and radio boundaries are simulated. This does not qualify real radio
 timing, power-loss durability or battery life. All credentials are synthetic.
 """
+import asyncio
 import hashlib
 import os
 import struct
@@ -211,6 +212,53 @@ class MultiWifiTests(unittest.TestCase):
 
     def test_missing_profile(self):
         self.assertEqual(self.dispatch(command(0x10, b"")), b"\x01\x10\x02\x00")
+
+    def test_real_host_session_round_trips_through_arm_firmware(self):
+        from yow_bridge.models.protocol import Decoder, Frame, tlv
+        from yow_bridge.models.session import ScaleSession
+
+        self.primary()
+        session = ScaleSession("WBS03", None)
+        session.identity = {"firmwareVersion": 1103, "secret": "0123456789abcdef"}
+
+        async def request(code, payload=b""):
+            if code == 0x104:
+                return Frame(code, tlv(code, b"\x07PRIMARY\x08password"))
+            self.assertEqual(code, 0x170)
+            self.assertIsInstance(self.dispatch(payload), bytes)
+            frames = Decoder().feed(self.replies[-1])
+            self.assertEqual(len(frames), 1)
+            return frames[0]
+
+        session.request = request
+
+        async def exercise():
+            self.assertTrue((await session.read_secondary_wifi())["unset"])
+            result = await session.set_secondary_wifi("IEEE", "password")
+            self.assertTrue(result["primaryPreserved"])
+            # Published WPA2 reference vector must survive the full host/ARM path.
+            self.assertEqual(self.db[ITEM][40:104],
+                             b"f42c6fc52df0ebef9ebb4b90b38a5f902e83fe1b135a70e23aed762e9710a12e")
+            self.assertTrue((await session.clear_secondary_wifi())["unset"])
+
+        asyncio.run(exercise())
+        self.assertEqual({item for item, _ in self.writes}, {ITEM})
+
+    def test_every_truncation_is_rejected_without_writing(self):
+        for payload in (command(), command(ssid=b"X"*32), command(0x10, b""), command(ssid=b"")):
+            for end in range(len(payload)):
+                with self.subTest(length=len(payload), truncated=end):
+                    self.assertEqual(self.dispatch(payload[:end]), 0xffffffff)
+        self.assertFalse(self.writes)
+
+    def test_maximum_ssid_and_one_byte_ssid_survive_radio_connection(self):
+        for name in (b"X", b"X"*32):
+            with self.subTest(length=len(name)):
+                self.setUp()
+                self.primary()
+                self.assertEqual(self.dispatch(command(ssid=name)), bytes([1, 0x11, 0, len(name)])+name)
+                self.assertEqual(self.call("wifi_connect_fallback", RADIO, NETWORK, ERROR), 0)
+                self.assertEqual(self.joins[-1], (name, PSK, 7, 0))
 
     def test_collision_never_overwritten(self):
         self.db[ITEM] = b"belongs to something else"
