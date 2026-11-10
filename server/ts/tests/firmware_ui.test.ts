@@ -13,6 +13,7 @@ function browser(
   releaseStatus?: string,
   wifiResult?: { joinStatus: string; storedSsidMatches: boolean },
   knownDevices: Record<string, unknown>[] = [],
+  extraResults: Record<string, unknown> = {},
 ) {
   const element = (): any => ({
     hidden: false,
@@ -54,7 +55,7 @@ function browser(
   const commands: any[] = [];
   const device = {
     model, mac: "020000000013", firmwareVersion: 100,
-    capabilities: { ota: true, enrollment: true },
+    capabilities: { ota: true, enrollment: true, secondaryWifi: false },
   };
   const artifact = {
     artifactId: "fixture",
@@ -114,6 +115,8 @@ function browser(
           queueMicrotask(() =>
             emit({ kind: "result", id: command.id, result: wifiResult }),
           );
+        else if (command.name in extraResults)
+          queueMicrotask(() => emit({ kind: "result", id: command.id, result: extraResults[command.name] }));
         else {
           assert.equal(command.name, "firmware.install");
           queueMicrotask(() =>
@@ -340,4 +343,37 @@ test("a rejected manual upload clears the previous flashable selection", async (
     commands.some((command) => command.name === "firmware.install"),
     false,
   );
+});
+
+test("backup Wi-Fi is capability-gated and save does not claim a live connection", async () => {
+  const { get, device, commands } = browser("custom", "WBS03", undefined, undefined, [], {
+    "device.set_secondary_wifi": { ssid: "SECONDARY", primarySsid: "PRIMARY", readbackMatches: true, primaryPreserved: true },
+    "device.clear_secondary_wifi": { unset: true, readbackMatches: true },
+  });
+  assert.equal(get("secondary-wifi-form").hidden, true);
+  device.capabilities.secondaryWifi = true;
+  await get("probe").onclick();
+  assert.equal(get("secondary-wifi-form").hidden, false);
+  get("secondary-wifi-ssid").value = "SECONDARY";
+  get("secondary-wifi-password").value = "synthetic-password";
+  await get("secondary-wifi-form").onsubmit({ preventDefault() {} });
+  assert.equal(commands.at(-1).name, "device.set_secondary_wifi");
+  assert.equal(get("secondary-wifi-password").value, "");
+  assert.match(get("secondary-wifi-status").textContent, /Connection not tested/);
+  assert.doesNotMatch(get("secondary-wifi-status").textContent, /synthetic-password/);
+  await get("clear-secondary-wifi").onclick();
+  assert.equal(commands.at(-1).name, "device.clear_secondary_wifi");
+  assert.equal(get("secondary-wifi-ssid").value, "");
+});
+
+test("backup save failure clears the password and does not report success", async () => {
+  const { get } = browser("custom", "WBS03", undefined, undefined, [], {
+    "device.set_secondary_wifi": { readbackMatches: false },
+  });
+  get("secondary-wifi-ssid").value = "SECONDARY";
+  get("secondary-wifi-password").value = "synthetic-password";
+  await get("secondary-wifi-form").onsubmit({ preventDefault() {} });
+  assert.equal(get("secondary-wifi-password").value, "");
+  assert.equal(get("toast-region").children.at(-1).className, "toast toast-error");
+  assert.doesNotMatch(get("secondary-wifi-status").textContent, /saved:/);
 });

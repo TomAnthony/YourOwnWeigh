@@ -125,6 +125,13 @@ void owner_reply_write_failed(void *context) { owner_send_reply(context, 1, 3); 
 __attribute__((section(".text.owner"), used, noinline))
 int owner_wpp_dispatch(void *context, uint16_t command,
                        const uint8_t *arg, uint32_t length) {
+#ifdef YOW_MULTI_WIFI
+    if (command == 0x170 && arg && length >= 6 && arg[5] >= 0x10) {
+        uint32_t entry;
+        __asm__ volatile ("ldr %0, =0xA1B2C310" : "=r"(entry));
+        return ((fallback_t)entry)(context, command, arg, length);
+    }
+#endif
     if (command != 0x170) return STOCK_FALLBACK(context, command, arg, length);
     if (!arg || length < 7 || arg[0] != 1 || arg[1] != 0x70 ||
         arg[2] != 0 || (uint32_t)arg[3] + 4 != length || arg[4] != 1)

@@ -191,7 +191,10 @@
         "pattern": "^[a-f0-9]{64}$"
       },
       "confirmation": {
-        "enum": ["FLASH", "FLASH UNKNOWN"]
+        "enum": [
+          "FLASH",
+          "FLASH UNKNOWN"
+        ]
       }
     },
     "required": [
@@ -316,5 +319,26 @@
     "required": [
       "operationId"
     ]
+  },
+  "device.set_secondary_wifi": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "ssid": {
+        "type": "string"
+      },
+      "password": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ssid",
+      "password"
+    ]
+  },
+  "device.clear_secondary_wifi": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
   }
 }

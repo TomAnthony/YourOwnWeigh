@@ -136,13 +136,13 @@ def elf_text_and_symbols(path: Path) -> tuple[bytes, dict[str, int]]:
     return code, symbols
 
 
-def compile_code() -> tuple[bytes, dict[str, int]]:
+def compile_code(source: Path = SOURCE_C) -> tuple[bytes, dict[str, int]]:
     with tempfile.TemporaryDirectory(prefix="ws30-owner-") as temp:
         obj = Path(temp)/"owner.o"
         cmd = ["clang", "-target", "armv7m-none-eabi", "-mcpu=cortex-m4", "-mthumb",
                "-mfloat-abi=soft", "-Os", "-ffreestanding", "-fno-builtin",
                "-fno-unwind-tables", "-fno-stack-protector", "-fno-pic",
-               "-fno-jump-tables", "-c", str(SOURCE_C), "-o", str(obj)]
+               "-fno-jump-tables", "-c", str(source), "-o", str(obj)]
         subprocess.run(cmd, check=True, capture_output=True)
         return elf_text_and_symbols(obj)
 
@@ -158,7 +158,8 @@ def thumb_bl(source: int, target: int) -> bytes:
                        0xd000 | j1<<13 | j2<<11 | ((n>>1)&0x7ff))
 
 
-def build(stock: bytes) -> tuple[bytes, dict]:
+def build(stock: bytes, *, version=VERSION, extra=EXTRA, expected_hash=OUTPUT_HASH,
+          code_builder=compile_code, application_hooks=()) -> tuple[bytes, dict]:
     face = FACE.read_bytes()
     if len(face) != BITMAP_SIZE or sha(face) != FACE_HASH:
         raise ValueError("owner startup face differs from the pinned 37x26 asset")
@@ -168,7 +169,7 @@ def build(stock: bytes) -> tuple[bytes, dict]:
         raise ValueError("stock WS-30 Hello artwork or renderer pointer differs")
     if any(face[x*4+3] & 0xfc for x in range(37)):
         raise ValueError("unused face bitmap bits must be zero")
-    code, symbols = compile_code()
+    code, symbols = code_builder()
     if "owner_reply_read" in symbols:
         # Install one deferred WPP reply callback per request.
         # Absolute Thumb addresses are injected into three unique literal-pool
@@ -184,10 +185,15 @@ def build(stock: bytes) -> tuple[bytes, dict]:
                 raise ValueError(f"owner callback placeholder {name} is not unique")
             put32(code, code.index(needle), CODE_VA + symbols[name] | 1)
         code = bytes(code)
-    if len(code) > EXTRA - 4:
+    if extra % 0x1000 or len(code) > extra - 4:
         raise ValueError("owner code exceeds app expansion")
-    result = bytearray(stock[:APP_END-4] + struct.pack("<I", VERSION) +
-                       code + bytes(EXTRA-4-len(code)) + stock[APP_END-4:])
+    result = bytearray(stock[:APP_END-4] + struct.pack("<I", version) +
+                       code + bytes(extra-4-len(code)) + stock[APP_END-4:])
+    for address, original_target, symbol in application_hooks:
+        offset = address - APP_BASE + APP_FILE
+        if stock[offset:offset+4] != thumb_bl(address, original_target):
+            raise ValueError(f"application hook preimage differs at {address:#x}")
+        result[offset:offset+4] = thumb_bl(address, CODE_VA + symbols[symbol])
     read_va = CODE_VA + symbols["owner_target_read"]
     dispatch_va = CODE_VA + symbols["owner_wpp_dispatch"]
     result[0x1edf4:0x1edf8] = bytes.fromhex("b9f1020f")
@@ -207,40 +213,40 @@ def build(stock: bytes) -> tuple[bytes, dict]:
     put32(result, 0x16bfc, dispatch_va | 1)
     result[HELLO_OFFSET:HELLO_OFFSET+BITMAP_SIZE] = face
     put32(result, 0, len(result))
-    put32(result, 8, VERSION)
-    put32(result, 0x40, VERSION)
-    put32(result, APP_END+EXTRA-4, VERSION)
-    put32(result, 0x10, u32(stock, 0x10)+EXTRA)
-    put32(result, 0x38, u32(stock, 0x38)+EXTRA)
+    put32(result, 8, version)
+    put32(result, 0x40, version)
+    put32(result, APP_END+extra-4, version)
+    put32(result, 0x10, u32(stock, 0x10)+extra)
+    put32(result, 0x38, u32(stock, 0x38)+extra)
     # Both legacy radio header addresses are consumed by the runtime loader;
     # descriptor-only updates pass CRC validation but break HCI bring-up.
     for off in (0x18, 0x20, 0x48, 0x5c, 0x70):
-        put32(result, off, u32(stock, off)+EXTRA)
-    app_crc = zlib.crc32(result[APP_FILE:APP_END+EXTRA])
+        put32(result, off, u32(stock, off)+extra)
+    app_crc = zlib.crc32(result[APP_FILE:APP_END+extra])
     put32(result, 0x14, app_crc)
     put32(result, 0x3c, app_crc)
     put32(result, 0x28, zlib.crc32(result[:0x28]))
     put32(result, 0x80, zlib.crc32(result[0x2c:0x80]))
     put32(result, len(result)-4, zlib.crc32(result[:-4]))
     output = bytes(result)
-    validate_container(output, version=VERSION)
+    validate_container(output, version=version)
     # The running application reads the version at original internal 0x76fb0,
     # regardless of the relocated app-tail version used by the bootloader.
-    if u32(output, APP_END - 4) != VERSION:
+    if u32(output, APP_END - 4) != version:
         raise ValueError("WS-30 fixed runtime version word differs")
     if output[HELLO_OFFSET:HELLO_OFFSET+BITMAP_SIZE] != face or \
        u32(output, HELLO_POINTER_LITERAL) != HELLO_POINTER:
         raise ValueError("startup face or its renderer pointer changed")
-    if sha(output) != OUTPUT_HASH:
-        raise ValueError(f"v{VERSION} output differs from the pinned build: {sha(output)}")
+    if expected_hash is not None and sha(output) != expected_hash:
+        raise ValueError(f"v{version} output differs from the pinned build: {sha(output)}")
     for i in range(1, 4):
         s = u32(stock, 0x30+20*i+4)
         size = u32(stock, 0x30+20*i+8)
-        if output[s+EXTRA:s+EXTRA+size] != stock[s:s+size]:
+        if output[s+extra:s+extra+size] != stock[s:s+size]:
             raise ValueError(f"non-application section {i+1} changed")
     metadata = {"format":"YOW-image-v1", "model":"WBS03",
-                "imageFile":"wbs03_yow_102.bin", "sha256":sha(output),
-                "firmwareVersion":VERSION, "sourceFirmwareVersions":SOURCE_VERSIONS,
+                "imageFile":f"wbs03_yow_{version}.bin", "sha256":sha(output),
+                "firmwareVersion":version, "sourceFirmwareVersions":SOURCE_VERSIONS,
                 "bootloaderVersion":15, "ownerConfigProtocolVersion":2,
                 "sourceSha256":SOURCE_HASH, "displayAssetSha256":FACE_HASH,
                 "codeSize":len(code),

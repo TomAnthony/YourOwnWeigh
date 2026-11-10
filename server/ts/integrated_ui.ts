@@ -11,7 +11,11 @@ export function timeZoneSelect(name: string, value = "", id = ""): string {
 export function firmwareWorkspace(csrf: string): string {
   return `<div id="firmware-workspace" data-csrf="${e(csrf)}" data-local-roster-models="${Object.keys(SCALE_MODELS).filter((model) => SCALE_MODELS[model].localRoster).join(",")}"><section class="bridge-heading"><h1>Firmware Bridge</h1><div id="bridge-connection" class="bridge-status is-offline"><span class="status-dot" aria-hidden="true"></span><span id="bridge-status-text" role="status">Python Bridge Not Connected</span><button type="button" id="revoke-bridge" class="text-button" title="Disconnect from this server. An active firmware transfer continues locally." hidden>Disconnect Bridge</button></div></section>
     <section id="bridge-offline"><h2>Connect The Python Bridge</h2>
-      <p>Run the bridge on your Mac or Linux computer and leave it running while setting up a scale.</p>
+      <p>Run the bridge on your computer and leave it running while setting up a scale.</p>
+      <details><summary>Windows · WS-30</summary><p>In PowerShell, from the project folder:</p><pre><code>py -3.12 -m venv .venv
+.venv/Scripts/python.exe -m pip install ./bridge
+.venv/Scripts/yow-bridge.exe</code></pre><p>Pair the WS-30 in Windows Bluetooth settings, then generate an invitation below.</p></details>
+      <p>On macOS or Linux:</p>
       <ol><li>Install: <code>python3.11 -m venv .venv &amp;&amp; .venv/bin/pip install ./bridge</code></li>
       <li>Run <code>.venv/bin/yow-bridge</code> in Terminal.</li><li>Generate an invitation and paste it into Terminal.</li></ol>
       <div class="action-row"><button id="new-invitation" type="button">Generate Connection Invitation</button><button id="copy-invitation" class="secondary" type="button" hidden>Copy Invitation</button></div>
@@ -47,6 +51,7 @@ export function firmwareWorkspace(csrf: string): string {
           <form id="server-form" class="form-block"><h3>Server</h3><label>Server Hostname<input id="server-host" autocomplete="off" placeholder="scales.example.com" required></label><button id="use-this-host" type="button" class="text-button">Use This Server’s Hostname</button>
           <label>Transport<select id="server-transport"><option value="https">HTTPS</option><option value="http">HTTP</option></select></label><p id="host-limits" class="hint"></p><button id="set-server" disabled>Save Server On Scale</button></form>
           <form id="wifi-form" class="form-block"><h3>Wi-Fi</h3><label>Wi-Fi Name (SSID)<input id="wifi-ssid" maxlength="32" autocomplete="off" required></label><label>Wi-Fi Password<input id="wifi-password" type="password" autocomplete="new-password" minlength="8" required></label><p id="wifi-password-hint" class="hint">Enter the password to save or reconnect this network.</p><button id="connect-wifi" disabled>Save And Connect Wi-Fi</button><p id="wifi-status" class="hint" role="status"></p></form>
+          <form id="secondary-wifi-form" class="form-block" hidden><h3>Backup Wi-Fi</h3><p class="hint">The scale tries its primary network first, then this network if the connection fails. Use a 2.4 GHz WPA2-AES network.</p><label>Backup Network Name<input id="secondary-wifi-ssid" maxlength="32" autocomplete="off" required></label><label>Backup Wi-Fi Password<input id="secondary-wifi-password" type="password" autocomplete="new-password" minlength="8" maxlength="63" required></label><button id="save-secondary-wifi" disabled>Save Backup Network</button><button id="clear-secondary-wifi" type="button" class="text-button" disabled>Remove Backup Network</button><p id="secondary-wifi-status" class="hint" role="status">Saving a network does not test its connection.</p></form>
           <div class="form-block"><h3>Time Zone</h3><label>Scale Time Zone${timeZoneSelect("time_zone", "", "scale-timezone")}</label><button id="set-time" class="secondary" type="button" disabled>Save Time Zone</button><p class="hint">Time-zone changes are also sent on future Wi-Fi syncs for an imported scale.</p></div>
         </section>
       </div>

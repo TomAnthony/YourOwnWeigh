@@ -47,6 +47,7 @@ class Session(ScaleSession):
         super().__init__(model, self)
         self.server = dict(supported=True, unset=True)
         self.ssid = "Demo Wi-Fi"
+        self.secondary_ssid = b""
         self.firmware = _INSTALLED.get(model, _SIM_PROFILE[model]["firmware"])
 
     async def probe(self):
@@ -76,6 +77,14 @@ class Session(ScaleSession):
 
     async def read_wifi(self):
         return dict(ssid=self.ssid, supported=True, observedAt=timestamp())
+
+    async def owner(self, value):
+        if self.capabilities().get("secondaryWifi") and value[:2] in (b"\x01\x10", b"\x01\x11"):
+            if value[1] == 0x11:
+                self.secondary_ssid = value[3:3+value[2]]
+            status = 2 if value[1] == 0x10 and not self.secondary_ssid else 0
+            return bytes([1, value[1], status, len(self.secondary_ssid)]) + self.secondary_ssid
+        raise ValueError("Unsupported demonstration owner command")
 
     async def set_server(self, host, transport):
         from .models.session import hostname

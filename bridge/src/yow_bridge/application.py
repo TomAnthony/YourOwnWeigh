@@ -40,6 +40,8 @@ COMMANDS = {
     "device.read_configuration",
     "device.set_server",
     "device.connect_wifi",
+    "device.set_secondary_wifi",
+    "device.clear_secondary_wifi",
     "device.set_time",
     "firmware.generate",
     "firmware.inspect",
@@ -473,6 +475,10 @@ class Application:
             return await self.session.set_server(p["host"], p["transport"])
         if name == "device.connect_wifi":
             return await self.session.connect_wifi(p["ssid"], p["password"])
+        if name == "device.set_secondary_wifi":
+            return await self.session.set_secondary_wifi(p["ssid"], p["password"])
+        if name == "device.clear_secondary_wifi":
+            return await self.session.clear_secondary_wifi()
         if name == "device.set_time":
             return await self.session.set_time(**p)
         if name == "firmware.generate":
@@ -585,10 +591,13 @@ class Application:
         # An unconfigured target can reject GET_CHUNK. Identity/enrollment must
         # still work; record each optional observation independently.
         result = {"observedAt": timestamp()}
-        for key, method in (
+        methods = [
             ("server", self.session.read_server),
             ("wifi", self.session.read_wifi),
-        ):
+        ]
+        if self.session.capabilities().get("secondaryWifi"):
+            methods.append(("secondaryWifi", self.session.read_secondary_wifi))
+        for key, method in methods:
             try:
                 result[key] = await method()
             except (ProtocolError, TimeoutError) as error:

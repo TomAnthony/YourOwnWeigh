@@ -6,6 +6,7 @@ OTA bytes are never retried: after START an uncertain result needs a new probe.
 """
 
 import asyncio
+import hashlib
 import ipaddress
 import logging
 import re
@@ -284,6 +285,7 @@ class ScaleSession:
             wifiWrite=True,
             wifiRead="ssid-only",
             wifiConnectionResult="device-reported",
+            secondaryWifi=self.model == "WBS03" and version == 1103,
             completeSetup=True,
             enrollment=known and bool(self.identity["secret"]),
             firmwareRead=False,
@@ -428,6 +430,53 @@ class ScaleSession:
         return dict(
             ssid=data[1:end].decode("utf-8"), supported=True, observedAt=timestamp()
         )
+
+    async def read_secondary_wifi(self):
+        self.require_probe()
+        if not self.capabilities().get("secondaryWifi"):
+            return dict(supported=False)
+        data = await self.owner(bytes([1, 0x10, 0]))
+        if data == b"\x01\x10\x02\x00":
+            return dict(supported=True, unset=True, ssid="", observedAt=timestamp())
+        if (len(data) < 5 or data[:3] != b"\x01\x10\x00"
+                or not 1 <= data[3] <= 32 or len(data) != data[3]+4
+                or any(c < 32 or c > 126 for c in data[4:])):
+            raise ProtocolError("Invalid secondary Wi-Fi response")
+        return dict(supported=True, unset=False, ssid=data[4:].decode("ascii"),
+                    security="WPA2-AES", observedAt=timestamp())
+
+    async def set_secondary_wifi(self, ssid, password):
+        self.require_probe()
+        if not self.capabilities().get("secondaryWifi"):
+            raise ProtocolError("Secondary Wi-Fi requires WS-30 experimental firmware 1103")
+        if (not isinstance(ssid, str) or not isinstance(password, str)
+                or not 1 <= len(ssid) <= 32 or not 8 <= len(password) <= 63
+                or any(ord(c) < 32 or ord(c) > 126 for c in ssid+password)):
+            raise ValueError("Use a 1–32 byte printable ASCII SSID and 8–63 byte WPA2-AES password")
+        primary = await self.read_wifi()
+        if primary.get("ssid") == ssid:
+            raise ValueError("Choose a secondary network different from the primary")
+        raw = ssid.encode("ascii")
+        # Store the network-specific derived key, not a second copy of the
+        # passphrase. It is still a credential; never put it in logs/results.
+        key = hashlib.pbkdf2_hmac("sha1", password.encode("ascii"), raw, 4096, 32).hex().encode("ascii")
+        data = await self.owner(bytes([1, 0x11, len(raw)]) + raw + key)
+        if data != bytes([1, 0x11, 0, len(raw)]) + raw:
+            raise ProtocolError("Secondary Wi-Fi write rejected or not verified")
+        readback = await self.read_secondary_wifi()
+        if readback.get("ssid") != ssid or (await self.read_wifi()).get("ssid") != primary.get("ssid"):
+            raise ProtocolError("Wi-Fi profile readback does not match")
+        return dict(ssid=ssid, primarySsid=primary.get("ssid"), readbackMatches=True,
+                    primaryPreserved=True, joinStatus="not-tested", observedAt=timestamp())
+
+    async def clear_secondary_wifi(self):
+        self.require_probe()
+        if not self.capabilities().get("secondaryWifi"):
+            raise ProtocolError("Secondary Wi-Fi requires WS-30 experimental firmware 1103")
+        data = await self.owner(bytes([1, 0x11, 0]))
+        if data != b"\x01\x11\x00\x00" or not (await self.read_secondary_wifi()).get("unset"):
+            raise ProtocolError("Secondary Wi-Fi removal not verified")
+        return dict(unset=True, readbackMatches=True, observedAt=timestamp())
 
     async def connect_wifi(self, ssid, password):
         self.require_probe()
