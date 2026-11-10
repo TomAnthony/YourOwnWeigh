@@ -5,15 +5,19 @@ This is characterization for a possible multi-network patch, not that patch.
 """
 import hashlib
 import os
-from pathlib import Path
 import struct
 import unittest
+from pathlib import Path
 
 try:
-    from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_CODE
+    from unicorn import UC_ARCH_ARM, UC_HOOK_CODE, UC_MODE_MCLASS, UC_MODE_THUMB, Uc
     from unicorn.arm_const import (
-        UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_SP,
-        UC_ARM_REG_LR, UC_ARM_REG_PC,
+        UC_ARM_REG_LR,
+        UC_ARM_REG_PC,
+        UC_ARM_REG_R0,
+        UC_ARM_REG_R1,
+        UC_ARM_REG_R2,
+        UC_ARM_REG_SP,
     )
 except ImportError:
     Uc = None
