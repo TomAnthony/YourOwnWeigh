@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { LocalSqlite } from "../sqlite.ts";
 import { handleApp, type AppEnv } from "../app.ts";
 import { exportBackup, stageBackup, commitBackup } from "../backup.ts";
+import { METRICS, namedMetrics } from "../metrics.ts";
 
 // Synthetic identities and sensor values, retaining the observed WBS13 wire shape.
 const MAC = "02:00:00:00:00:13",
@@ -156,6 +157,181 @@ async function harness(model = "WBS13") {
   };
 }
 
+test("Health sync and general readings return numeric kilograms with unchanged raw values", async () => {
+  const h = await harness();
+  try {
+    const session = (await (await h.open()).json()) as any;
+    const timestamp = Math.floor(Date.now() / 1000) - 60;
+    // A German-locale Shortcut can misread the string "123.456" as 123456 kg.
+    // Include fractional, trailing-zero and whole-kilogram readings.
+    const cases = [
+      { value: 123456, unit: -3, kilograms: 123.456 },
+      { value: 73250, unit: -3, kilograms: 73.25 },
+      { value: 80000, unit: -3, kilograms: 80 },
+    ];
+    for (const [index, sample] of cases.entries()) {
+      assert.equal(
+        (
+          await h.post("/measure", {
+            sessionid: session.body.sessionid,
+            action: "batchstore",
+            macaddress: MAC,
+            userid: "17",
+            devtype: "1",
+            category: "1",
+            attribstatus: "0",
+            measuregrps: JSON.stringify({
+              measuregrps: [
+                {
+                  meastime: timestamp + index,
+                  measures: [
+                    { type: 1, value: sample.value, unit: sample.unit },
+                  ],
+                },
+              ],
+            }),
+          })
+        ).status,
+        200,
+      );
+      const response = await h.api("/api/users/ALX/health-sync/next");
+      assert.equal(response.status, 200);
+      const health = (await response.json()) as any;
+      assert.equal(typeof health.reading.weight_kg, "number");
+      assert.equal(health.reading.weight_kg, sample.kilograms);
+      for (const endpoint of ["readings", "weights"]) {
+        const data = (await (
+          await h.api(`/api/users/17/${endpoint}`)
+        ).json()) as any;
+        assert.equal(typeof data.readings[0].weight_kg, "number");
+        assert.equal(data.readings[0].weight_kg, sample.kilograms);
+        if (endpoint === "readings")
+          assert.equal(data.readings[0].metrics.weight_kg, sample.kilograms);
+        assert.equal(data.readings[0].value, sample.value);
+        assert.equal(data.readings[0].unit, sample.unit);
+      }
+      assert.equal(
+        (
+          await h.api(
+            `/api/users/17/health-sync/ack?reading_id=${health.reading.id}`,
+            "POST",
+          )
+        ).status,
+        200,
+      );
+    }
+    const empty = (await (
+      await h.api("/api/users/ALX/health-sync/next")
+    ).json()) as any;
+    assert.equal(empty.reading, null);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("readings API serializes every named metric as a number and preserves raw groups", async () => {
+  const h = await harness();
+  try {
+    const session = (await (await h.open()).json()) as any;
+    const group = {
+      meastime: Math.floor(Date.now() / 1000) - 60,
+      measures: [
+        { type: 1, value: 75250, unit: -3 },
+        { type: 8, value: 1850, unit: -2 },
+        { type: 6, value: 2458, unit: -2 },
+        { type: 5, value: 56750, unit: -3 },
+        { type: 76, value: 5375, unit: -2 },
+        { type: 77, value: 4210, unit: -2 },
+        { type: 88, value: 300, unit: -2 },
+        { type: 11, value: 72, unit: 0 },
+        { type: 170, value: 0, unit: -1 },
+        { type: 226, value: 180, unit: 1 },
+        { type: 227, value: 42, unit: 0 },
+        { type: 91, value: 682, unit: -2 },
+        { type: 155, value: 39, unit: 0 },
+        { type: 189, value: 500, unit: 0, position: 6 },
+      ],
+    };
+    assert.equal(
+      (
+        await h.post("/measure", {
+          sessionid: session.body.sessionid,
+          action: "batchstore",
+          macaddress: MAC,
+          userid: "17",
+          devtype: "1",
+          category: "1",
+          attribstatus: "0",
+          measuregrps: JSON.stringify({ measuregrps: [group] }),
+        })
+      ).status,
+      200,
+    );
+    const response = await h.api("/api/users/ALX/readings");
+    assert.equal(response.status, 200);
+    const data = (await response.json()) as any;
+    const reading = data.readings[0];
+    assert.deepEqual(reading.metrics, {
+      weight_kg: 75.25,
+      fat_mass_kg: 18.5,
+      fat_ratio_pct: 24.58,
+      fat_free_mass_kg: 56.75,
+      muscle_mass_kg: 53.75,
+      water_mass_kg: 42.1,
+      bone_mass_kg: 3,
+      heart_rate_bpm: 72,
+      visceral_fat_index: 0,
+      basal_metabolic_rate_kcal: 1800,
+      metabolic_age_years: 42,
+      pulse_wave_velocity_mps: 6.82,
+      vascular_age_years: 39,
+    });
+    assert.deepEqual(
+      Object.keys(reading.metrics).sort(),
+      METRICS.map((m) => m.key).sort(),
+    );
+    for (const value of Object.values(reading.metrics)) {
+      assert.equal(typeof value, "number");
+      assert.ok(Number.isFinite(value));
+    }
+    assert.equal(reading.weight_kg, reading.metrics.weight_kg);
+    assert.equal(reading.value, 75250);
+    assert.equal(reading.unit, -3);
+    assert.deepEqual(reading.measures, group.measures);
+    assert.deepEqual(reading.group, group);
+    const stored = await h.db
+      .prepare("SELECT measures_json,group_json FROM readings")
+      .first<any>();
+    assert.deepEqual(JSON.parse(stored.measures_json), group.measures);
+    assert.deepEqual(JSON.parse(stored.group_json), group);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("numeric named metrics preserve legacy weights and omit missing or segmented values", () => {
+  assert.deepEqual(
+    namedMetrics({
+      weight_value: 73250,
+      weight_unit: -3,
+      measures_json: "[]",
+    }),
+    { weight_kg: 73.25 },
+  );
+  assert.deepEqual(
+    namedMetrics({
+      weight_value: null,
+      weight_unit: null,
+      measures_json: JSON.stringify([
+        { type: 11, value: 72, unit: 0 },
+        { type: 8, value: 123, unit: -2, position: 1 },
+        { type: 8, value: 234, unit: -2, position: 2 },
+      ]),
+    }),
+    { heart_rate_bpm: 72 },
+  );
+});
+
 test("WBS05 imports local users, serves its display profile and accepts grouped weight/composition readings", async () => {
   const h = await harness("WBS05");
   try {
@@ -210,11 +386,11 @@ test("WBS05 imports local users, serves its display profile and accepts grouped 
     const api = await h.api("/api/users/ALX/readings");
     assert.equal(api.status, 200);
     const reading = (await api.json() as any).readings[0];
-    assert.equal(reading.weight_kg, "75.250");
-    assert.equal(reading.metrics.fat_mass_kg, "18.50");
-    assert.equal(reading.metrics.water_mass_kg, "42.00");
-    assert.equal(reading.metrics.bone_mass_kg, "3.00");
-    assert.equal(reading.metrics.muscle_mass_kg, "53.00");
+    assert.equal(reading.weight_kg, 75.25);
+    assert.equal(reading.metrics.fat_mass_kg, 18.5);
+    assert.equal(reading.metrics.water_mass_kg, 42);
+    assert.equal(reading.metrics.bone_mass_kg, 3);
+    assert.equal(reading.metrics.muscle_mass_kg, 53);
     // The next sync uses the latest recognition weight and current user edits.
     await h.db.prepare("UPDATE users SET short_name='NEW',height_cm=182 WHERE id=17").run();
     const updated = (await (await h.open()).json() as any).body.sp.users[0];
@@ -498,9 +674,9 @@ test("WBS13 authenticates, receives its local roster every session and stores mi
     assert.equal(JSON.parse(saved[0].measures_json).at(-1).quality, "test");
     const all = (await (await h.api("/api/users/ALX/readings")).json()) as any;
     assert.equal(all.readings.length, 2);
-    assert.equal(all.readings[0].metrics.heart_rate_bpm, "72");
+    assert.equal(all.readings[0].metrics.heart_rate_bpm, 72);
     assert.equal(all.readings[0].weight_kg, null);
-    assert.equal(all.readings[1].metrics.fat_mass_kg, "20.00");
+    assert.equal(all.readings[1].metrics.fat_mass_kg, 20);
     assert.equal(all.readings[1].group.algo, 218300672);
     assert.equal(all.readings[1].measures.at(-1).type, 189);
     assert.equal(
@@ -520,7 +696,7 @@ test("WBS13 authenticates, receives its local roster every session and stores mi
       await h.api("/api/users/17/weights")
     ).json()) as any;
     assert.equal(weights.readings.length, 1);
-    assert.equal(weights.readings[0].weight_kg, "80.000");
+    assert.equal(weights.readings[0].weight_kg, 80);
     let health = (await (
       await h.api("/api/users/17/health-sync/next")
     ).json()) as any;

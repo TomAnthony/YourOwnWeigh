@@ -1,6 +1,6 @@
 /** Known public Withings metric IDs. Unknown IDs remain available as raw measures.
- * Values retain the wire integer/exponent representation; named API values are
- * decimal strings so clients do not have to round binary floating-point values.
+ * Raw measures retain the exact wire integer/exponent representation; named API
+ * values are JSON numbers so clients need no locale-dependent text parsing.
  */
 export const METRICS = [
   { type: 1, key: "weight_kg", label: "Weight", unit: "kg" },
@@ -51,12 +51,18 @@ export type Measure = {
   [key: string]: unknown;
 };
 
-export function decimalValue(value: number, exponent: number): string {
-  const sign = value < 0 ? "-" : "";
-  let digits = String(Math.abs(value));
-  if (exponent >= 0) return sign + digits + "0".repeat(exponent);
-  digits = digits.padStart(-exponent + 1, "0");
-  return sign + digits.slice(0, exponent) + "." + digits.slice(exponent);
+export function metricValue(value: number, exponent: number): number {
+  if (
+    !Number.isSafeInteger(value) ||
+    !Number.isInteger(exponent) ||
+    exponent < -12 ||
+    exponent > 12
+  )
+    throw new Error("Invalid stored measurement");
+  // Parse the decimal value once, avoiding rounding from multiplying by an
+  // already-rounded binary fraction such as 10 ** -3. Number parsing does not
+  // depend on the locale.
+  return Number(`${value}e${exponent}`);
 }
 export function storedMeasures(row: Record<string, any>): Measure[] {
   const parsed = JSON.parse(row.measures_json);
@@ -130,7 +136,7 @@ export function validateStoredMetrics(row: Record<string, any>): void {
       throw new Error("Invalid stored measurement group");
   }
 }
-export function namedMetrics(row: Record<string, any>): Record<string, string> {
+export function namedMetrics(row: Record<string, any>): Record<string, number> {
   const measures = storedMeasures(row);
   return Object.fromEntries(
     METRICS.flatMap((metric) => {
@@ -139,13 +145,13 @@ export function namedMetrics(row: Record<string, any>): Record<string, string> {
         return [
           [
             metric.key,
-            decimalValue(Number(row.weight_value), Number(row.weight_unit)),
+            metricValue(Number(row.weight_value), Number(row.weight_unit)),
           ],
         ];
       // Segmented readings must remain individually identifiable in measures;
       // don't arbitrarily choose a body segment as a whole-body metric.
       return found.length === 1
-        ? [[metric.key, decimalValue(found[0].value, found[0].unit)]]
+        ? [[metric.key, metricValue(found[0].value, found[0].unit)]]
         : [];
     }),
   );

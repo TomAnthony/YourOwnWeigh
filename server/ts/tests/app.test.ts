@@ -249,11 +249,12 @@ test("one TypeScript app serves dashboard, readings API and scale sync with SQLi
     const namedData = (await namedWeights.json()) as {
       user: { id: number };
       readings: {
-        weight_kg: string;
+        weight_kg: number;
         health_sync_acknowledged_at: string | null;
       }[];
     };
     assert.equal(namedData.user.id, 1);
+    assert.equal(namedData.readings[0].weight_kg, 73.25);
     assert.equal(namedData.readings[0].health_sync_acknowledged_at, null);
     assert.equal(
       (
@@ -295,9 +296,9 @@ test("one TypeScript app serves dashboard, readings API and scale sync with SQLi
     );
     assert.equal(pending.status, 200);
     const entry = (await pending.json()) as {
-      reading: { id: number; weight_kg: string; date: string };
+      reading: { id: number; weight_kg: number; date: string };
     };
-    assert.equal(entry.reading.weight_kg, "73.250");
+    assert.equal(entry.reading.weight_kg, 73.25);
     assert.ok(entry.reading.date);
     assert.equal(
       (

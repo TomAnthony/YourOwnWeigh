@@ -1,5 +1,10 @@
 /** One HTTP application for Cloudflare Workers and the local Node listener. */
-import { namedMetrics, observedMetrics, storedMeasures } from "./metrics.ts";
+import {
+  metricValue,
+  namedMetrics,
+  observedMetrics,
+  storedMeasures,
+} from "./metrics.ts";
 import { refreshRecognitionWeight } from "./recognition.ts";
 import { exportBackup, stageBackup, commitBackup } from "./backup.ts";
 import {
@@ -340,25 +345,6 @@ function dateAge(value: string): number {
 }
 const readingOrder =
   "CASE WHEN r.time_quality='trusted' THEN r.meastime ELSE r.first_received_at END DESC,r.id DESC";
-function exactWeight(value: number, unit: number): string {
-  if (
-    !Number.isSafeInteger(value) ||
-    !Number.isInteger(unit) ||
-    unit < -12 ||
-    unit > 12
-  )
-    throw new Error("Invalid stored weight");
-  const sign = value < 0 ? "-" : "";
-  const digits = String(Math.abs(value));
-  if (unit >= 0) return sign + digits + "0".repeat(unit);
-  const place = digits.length + unit;
-  return (
-    sign +
-    (place > 0
-      ? `${digits.slice(0, place)}.${digits.slice(place)}`
-      : `0.${"0".repeat(-place)}${digits}`)
-  );
-}
 function safeError(error: unknown): string {
   return error instanceof Error
     ? error.message.slice(0, 180)
@@ -1030,7 +1016,7 @@ async function readingsApi(
       weight_kg:
         r.weight_value === null
           ? null
-          : exactWeight(Number(r.weight_value), Number(r.weight_unit)),
+          : metricValue(Number(r.weight_value), Number(r.weight_unit)),
       ...(includeMetrics
         ? {
             metrics: namedMetrics(r),
@@ -1105,7 +1091,9 @@ async function healthSyncApi(
       ? {
           id: row.id,
           scale: row.scale_label,
-          weight_kg: exactWeight(
+          // Shortcuts must receive a JSON number: parsing decimal text as a
+          // Health quantity depends on the phone's decimal/thousands separators.
+          weight_kg: metricValue(
             Number(row.weight_value),
             Number(row.weight_unit),
           ),
