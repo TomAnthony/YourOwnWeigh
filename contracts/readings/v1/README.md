@@ -17,13 +17,14 @@ Each reading includes:
 
 - `id`, `scale`, `meastime`, `timestamp`, `time_quality`, `received_at`,
   `ordering_time`, `attribution`, `candidate_ids` and `health_sync_acknowledged_at`.
-- `weight_kg` (decimal string), `value` (integer) and `unit` (decimal exponent),
+- `weight_kg` (JSON number), `value` (integer) and `unit` (decimal exponent),
   all `null` for a group without weight.
-- `metrics`: named decimal strings for documented whole-body metrics. Keys are
+- `metrics`: named JSON numbers for documented whole-body metrics. Keys are
   `weight_kg`, `fat_mass_kg`, `fat_ratio_pct`, `fat_free_mass_kg`, `muscle_mass_kg`,
   `water_mass_kg`, `bone_mass_kg`, `heart_rate_bpm`, `visceral_fat_index`,
-  `basal_metabolic_rate_kcal` (kcal/day) and `metabolic_age_years`. Only values
-  actually received are included. No body-fat percentage is inferred from mass.
+  `basal_metabolic_rate_kcal` (kcal/day), `metabolic_age_years`,
+  `pulse_wave_velocity_mps` and `vascular_age_years`. Only values actually
+  received are included. No body-fat percentage is inferred from mass.
 - `measures`: the original integer `type`, `value`, `unit`, and any additional
   fields such as `position`. Physical value is `value × 10^unit`. Unknown type IDs
   are retained here without guessed labels. If several positions share a type,
@@ -43,11 +44,24 @@ The cursor includes ordering time and row ID, so equal-time groups are not skipp
 Untrusted device dates use receive time for ordering and have `timestamp:null`.
 The older exclusive `before` epoch filter is also accepted; prefer the cursor.
 
-`GET /api/users/USER/weights` retains the existing weight-only response and excludes
-groups without weight. The Apple Health `health-sync/next` and `health-sync/ack`
-endpoints also remain weight-only. Their receipt confirms a weight import, not
-that body composition or heart rate was imported. Reading the general API does
-not acknowledge or remove anything.
+`GET /api/users/USER/weights` returns the weight-only response with numeric
+`weight_kg` and excludes groups without weight. The Apple Health `health-sync/next`
+and `health-sync/ack` endpoints also remain weight-only. Their receipt confirms a
+weight import, not that body composition or heart rate was imported. Reading the
+general API does not acknowledge or remove anything.
+
+`GET /api/users/USER/health-sync/next` returns `reading.weight_kg` as a JSON number
+(for example, `123.456`, without quotes), so Apple Shortcuts can write kilograms
+without interpreting decimal text using the phone's locale. It returns
+`reading: null` when no readings are pending.
+
+Compatibility: earlier releases returned `weight_kg` and named `metrics` values
+as decimal strings. They are now JSON numbers across `/readings`, `/weights`
+and `health-sync/next`; clients should format numbers for display rather than
+parse them as locale-specific text. For example, `"73.250"` becomes `73.25` and
+`"72"` becomes `72`. Clients requiring exact decimal reconstruction can continue
+using the unchanged raw integer `value` and exponent `unit`. Missing weight
+remains `null`, and missing named metrics are omitted rather than returned as zero.
 
 All endpoints use the same household credential. They do not provide separate
 per-user authorization. No device secrets or session credentials appear in these
