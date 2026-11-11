@@ -131,6 +131,37 @@ class WindowsBLETests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(factory.call_args.kwargs["winrt"], {"use_cached_services": False})
         self.assertIs(transport.characteristic, characteristic)
 
+    async def test_rediscovery_does_not_report_retired_client_disconnect(self):
+        # Disconnecting the cached client fires its callback, as Bleak does;
+        # that must not reach the session, now or late, while the replacement
+        # client's own disconnects still must.
+        stale = SimpleNamespace(
+            services=SimpleNamespace(get_service=lambda _: None),
+            is_connected=True, connect=AsyncMock(),
+        )
+        stale.disconnect = AsyncMock(side_effect=lambda: stale.callback(stale))
+        fresh, _ = wbs13_client()
+        clients = iter([stale, fresh])
+
+        def factory(device, disconnected_callback, **_):
+            client = next(clients)
+            client.callback = disconnected_callback
+            return client
+
+        reported = []
+        backend = ble.Backend()
+        backend.devices["scale"] = object()
+        with patch.object(ble.sys, "platform", "win32"), patch.object(
+            ble, "BleakClient", side_effect=factory
+        ):
+            await backend.connect("scale", lambda _: None, lambda: reported.append(1))
+        stale.disconnect.assert_awaited_once()
+        self.assertEqual(reported, [])
+        stale.callback(stale)  # a late callback from the retired client
+        self.assertEqual(reported, [])
+        fresh.callback(fresh)
+        self.assertEqual(reported, [1])
+
     async def test_unanswered_rediscovery_explains_setup_mode(self):
         stale = SimpleNamespace(
             services=SimpleNamespace(get_service=lambda _: None),

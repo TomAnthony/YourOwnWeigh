@@ -105,10 +105,16 @@ class Backend:
                 raise ValueError("Scan again before connecting to this scale")
         transport = Transport()
 
+        def client_disconnected(client):
+            # A client retired for rediscovery still fires its callback, even
+            # late; only the transport's current client speaks for the scale.
+            if client is transport.client:
+                disconnected()
+
         def make_client(**extra):
             return BleakClient(
                 device,
-                disconnected_callback=lambda _: disconnected(),
+                disconnected_callback=client_disconnected,
                 timeout=30,
                 **extra,
             )
@@ -134,7 +140,8 @@ class Backend:
                 # Windows caches a bonded device's GATT table; after an OTA the
                 # scale may expose a different WPP pair. Rediscover once.
                 LOG.info("No WPP service in Windows' cache; rediscovering")
-                await transport.client.disconnect()
+                retired, transport.client = transport.client, None
+                await retired.disconnect()
                 transport.client = make_client(
                     services=[s for s, _ in WPP_SERVICES],
                     winrt=dict(use_cached_services=False),
