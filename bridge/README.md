@@ -4,7 +4,7 @@ The web app supplies the interface; this local component handles Bluetooth, firm
 
 ## Install And Run
 
-Use Python 3.11+ on macOS or Linux. On macOS, Bleak uses CoreBluetooth for WBS06 and WBS13; PyObjC uses IOBluetooth for WS-30. Bleak's minimum is macOS 10.15, subject to the installed Python and PyObjC wheels. On Monterey, use 12.3 or later because 12.0–12.2 has a discovery issue. Older systems are not tested here. See [Bleak platform support](https://bleak.readthedocs.io/en/latest/) and [macOS scanner notes](https://bleak.readthedocs.io/en/stable/backends/macos.html).
+Use Python 3.11+ on macOS, Linux or Windows (see [Windows Setup](#windows-setup)). On macOS, Bleak uses CoreBluetooth for WBS06 and WBS13; PyObjC uses IOBluetooth for WS-30. Bleak's minimum is macOS 10.15, subject to the installed Python and PyObjC wheels. On Monterey, use 12.3 or later because 12.0–12.2 has a discovery issue. Older systems are not tested here. See [Bleak platform support](https://bleak.readthedocs.io/en/latest/) and [macOS scanner notes](https://bleak.readthedocs.io/en/stable/backends/macos.html).
 
 ```sh
 python3.11 -m venv .venv
@@ -25,6 +25,26 @@ WBS06 has a dual-mode radio. BlueZ can otherwise choose Classic even after a BLE
 An isolated Python installed using [uv](https://docs.astral.sh/uv/guides/install-python/) can be used if the system Python is older than 3.11; do not replace the distribution's system Python. With the bridge installed, use the same web invitation and command as on macOS. A hosted server needs no Node installation on this computer.
 
 Linux discovery, connection, reconnect, identity probing and server/SSID readback have passed on both WBS06 v126 and WS-30 v102, using BlueZ 5.64, kernel 5.15, an Intel USB adapter and Python 3.12. Firmware generation also reproduced both pinned releases on Linux. Subsequent maintainer hardware tests confirmed successful Linux OTA updates and configuration reads and writes on both WBS06 and WS-30. Complete Setup and post-update Wi-Fi sync still need separate confirmation; see the [hardware checklist](../docs/hardware-acceptance.md) for coverage. Offline tests cover discovery races, cancellation, real D-Bus file-descriptor transfer, stream I/O, and disconnect cleanup.
+
+### Windows Setup
+
+Use Python 3.11+ on Windows 10/11 with a working Bluetooth adapter. Bleak uses the WinRT backend, so no extra Bluetooth packages are needed. Only Bluetooth LE scales are supported; WS-30 and WS-50 need the Classic RFCOMM transport, which has no Windows port.
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\pip install .\bridge
+.\.venv\Scripts\yow-bridge --log-file local\captures\bridge.log
+```
+
+Paste the invitation into the terminal as on macOS. Windows-specific behaviour:
+
+- Discovery is limited to the WPP services. On WBS13, a full GATT enumeration fails inside WinRT (`E_UNEXPECTED`, or `ERROR_BAD_COMMAND` once bonded) on one of the scale's other services.
+- The WPP characteristic needs encryption. The bridge pairs ("Just Works") the first time notifications are refused. After a factory reset the scale advertises a new address and the old bond is stale; remove it in **Settings → Bluetooth & devices** if pairing fails.
+- WinRT reports the default ATT MTU for about 1.5 s after connecting; the bridge waits for the negotiated value (185 was observed) so OTA uses full-size writes.
+- If the WPP service is missing from Windows' GATT cache (for example after an OTA), the bridge rediscovers once without the cache. A scale that has left setup mode answers that with `ERROR_BAD_COMMAND`, reported as "The scale did not answer".
+- Ctrl-C is handled through the event loop, and is still refused while an OTA transfer is in progress.
+
+Windows 11 with Python 3.11 and Bleak 2.1 has passed the full WBS13 workflow on hardware: discovery, probe, OTA from stock v1311 to YOW v103 (about six minutes), import, owner server and Wi-Fi configuration, Complete Setup, and HTTPS sync of recognised weight, body composition and heart rate.
 
 Keep the computer's clock synchronised: connection invitations expire, and the bridge timestamps firmware observations. On systemd-based distributions, `timedatectl status` reports clock synchronisation.
 

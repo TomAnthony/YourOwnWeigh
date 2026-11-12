@@ -274,6 +274,12 @@ class Application:
         except Exception as error:
             detail = self.error(error)
             if name == "firmware.install" and self.session and self.session.ota_started:
+                # Keep the real cause; the generic message below replaces it.
+                LOG.warning(
+                    "firmware.install failed: %s: %s",
+                    type(error).__name__,
+                    str(error)[:200],
+                )
                 detail = dict(
                     code="OTA_OUTCOME_UNKNOWN",
                     message="OTA outcome is unknown. Reconnect and probe; do not assume the old or new image is running.",

@@ -251,7 +251,12 @@ async def run(args, pairing):
         stopped.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop)
+        try:
+            loop.add_signal_handler(sig, stop)
+        except NotImplementedError:
+            # Windows' Proactor loop has no add_signal_handler; route Ctrl-C
+            # through the event loop so stop() keeps its OTA guard.
+            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop))
     tasks = [asyncio.create_task(network(application, pairing, stopped))]
     if sys.platform == "darwin" and not args.simulate:
         from .transports.classic_macos import cocoa_run_loop
@@ -311,10 +316,10 @@ def main():
     # Avoid library debug output exposing transport parameters.
     logging.getLogger("websockets").setLevel(logging.WARNING)
     LOG.info("YourOwnWeigh bridge %s", __version__)
-    if sys.platform not in ("darwin", "linux") and not args.simulate:
-        parser.error(
-            "Bluetooth is supported on macOS and Linux; Windows is not yet supported."
-        )
+    if sys.platform not in ("darwin", "linux", "win32") and not args.simulate:
+        parser.error("Bluetooth is supported on macOS, Linux and Windows (BLE).")
+    if sys.platform == "win32" and not args.simulate:
+        LOG.warning("Windows support is experimental (BLE scales only).")
     try:
         path = args.state_dir / "pairing.json"
         if args.resume:
