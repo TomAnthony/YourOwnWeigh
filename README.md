@@ -9,7 +9,7 @@ It is designed to allow you to ensure your hardware is able to work how you want
 
 If you want to know more about why, see this [blog post](https://www.tomanthony.co.uk/blog/withings-yow-free-wifi-sync/), otherwise there are quick start guides below - including how to host this all on a free CloudFlare account.
 
-_This was just released 29th October, and whilst I'm using it fine on my own scales, I cannot make any guarantees._ Also this repo may be a bit rough around the edges, but I wanted to get _something_ out.
+_This was released in October 2026, and whilst it has been used across various models of scales by various users, I cannot make any guarantees._
 
 **If you are interested in helping as a maintainer, please email me at yow@&lt;domain-of-blog-post&gt;.** 
 
@@ -46,16 +46,11 @@ You can check your model under the batteries. Not all models with the same name 
 
 ## Supported Platforms
 
-| OS | Status |
-| --- | --- |
-| macOS 27 | Confirmed |
-| macOS 26 | Should work |
-| macOS 15 | Should work |
-| Windows 11 | Confirmed (BLE scales; WS-30/WS-50 unsupported) |
-| Linux | Confirmed |
+The web app and Python bridge are supported on macOS, Windows, and Linux.
 
-The web app component should support all operating systems. The Python bridge supports macOS, Linux and Windows; on Windows only Bluetooth LE scales are supported, as the Classic transport (WS-30/WS-50) has no Windows port.
+On Windows the Python bridge currently only suports Bluetooth LE scales, as the Classic transport (for WS-30/WS-50) has no Windows port yet.
 
+Thanks to [mbragagnolo](https://github.com/mbragagnolo/) for the Windows port!
 
 ## Quick Start Using Cloudflare
 
