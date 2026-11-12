@@ -141,7 +141,13 @@ class Backend:
                 # scale may expose a different WPP pair. Rediscover once.
                 LOG.info("No WPP service in Windows' cache; rediscovering")
                 retired, transport.client = transport.client, None
-                await retired.disconnect()
+                try:
+                    await retired.disconnect()
+                except BaseException:
+                    # Interrupted while still connected: hand it back so the
+                    # cleanup below retries the disconnect.
+                    transport.client = retired
+                    raise
                 transport.client = make_client(
                     services=[s for s, _ in WPP_SERVICES],
                     winrt=dict(use_cached_services=False),

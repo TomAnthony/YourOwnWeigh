@@ -1,5 +1,6 @@
 """WPP service selection and notification setup without Bluetooth hardware."""
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -161,6 +162,18 @@ class WindowsBLETests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reported, [])
         fresh.callback(fresh)
         self.assertEqual(reported, [1])
+
+    async def test_interrupted_retirement_still_disconnects_the_cached_client(self):
+        # Cancelled (or failed) mid-disconnect, the cached client may still be
+        # connected; the connect cleanup must retry rather than leak it.
+        stale = SimpleNamespace(
+            services=SimpleNamespace(get_service=lambda _: None),
+            is_connected=True, connect=AsyncMock(),
+            disconnect=AsyncMock(side_effect=[asyncio.CancelledError(), None]),
+        )
+        with self.assertRaises(asyncio.CancelledError):
+            await self.connect(stale)
+        self.assertEqual(stale.disconnect.await_count, 2)
 
     async def test_unanswered_rediscovery_explains_setup_mode(self):
         stale = SimpleNamespace(
