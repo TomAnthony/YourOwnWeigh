@@ -329,6 +329,18 @@ function canonicalMac(value: string): string {
 function parseJson(value: string): any {
   return JSON.parse(value);
 }
+function readingCandidateIds(value: unknown): number[] {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (id) => Number.isSafeInteger(id) && id > 0 && id < 2147483648,
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
 function dateAge(value: string): number {
   const date = new Date(`${value}T00:00:00Z`);
   if (
@@ -2668,6 +2680,91 @@ async function browserPost(
         throw new Error("Reading is missing or already assigned");
       await queueRosterEdits(db, userId);
       return go("/readings", "Reading assigned");
+    }
+    const readingNameScaleUser = /^\/readings\/(\d+)\/name-scale-user$/.exec(
+      path,
+    );
+    if (readingNameScaleUser) {
+      const id = Number(readingNameScaleUser[1]);
+      const reading = await one(db, "SELECT * FROM readings WHERE id=?", id);
+      if (!reading) return new Response("Not Found", { status: 404 });
+      if (reading.user_id !== null)
+        throw new Error("Reading is already assigned");
+      const candidates = readingCandidateIds(reading.candidate_ids);
+      const candidateId = formInteger(form, "candidate_id");
+      if (
+        candidateId < 1 ||
+        candidateId > 2147483647 ||
+        !candidates.includes(candidateId)
+      )
+        throw new Error("Choose a scale user from this reading");
+      const existing = await one<{ id: number; name: string }>(
+        db,
+        "SELECT id,name FROM users WHERE id=?",
+        candidateId,
+      );
+      const user = existing ? null : parsedUser(form);
+      // Keep every existing membership; naming a scale user from a second
+      // scale's backlog must not remove them from the first scale.
+      const currentMemberships = await rows<{ scale_id: number }>(
+        db,
+        "SELECT scale_id FROM scale_users WHERE user_id=?",
+        candidateId,
+      );
+      const memberships = await updateMemberships(db, candidateId, [
+        ...new Set([
+          ...currentMemberships.map((row) => row.scale_id),
+          reading.scale_id,
+        ]),
+      ]);
+      const assign = (readingId: number) =>
+        db
+          .prepare(
+            "UPDATE readings SET user_id=?,attribution='manual' WHERE id=? AND user_id IS NULL",
+          )
+          .bind(candidateId, readingId);
+      const statements: D1PreparedStatement[] = [];
+      if (user)
+        statements.push(
+          db
+            .prepare(
+              "INSERT INTO users(id,name,short_name,height_cm,age_years,birth_date,sex,reference_weight_kg,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            )
+            .bind(
+              candidateId,
+              user.name,
+              user.short,
+              user.height,
+              user.age,
+              user.dob,
+              user.sex,
+              user.weight,
+              now(),
+            ),
+        );
+      statements.push(...memberships, assign(id));
+      // Older unassigned readings from the same scale user should follow, but
+      // only when the candidate is unambiguous. A reading with several
+      // candidates is deliberately left for explicit per-reading assignment.
+      for (const other of await rows(
+        db,
+        "SELECT id,candidate_ids FROM readings WHERE user_id IS NULL AND id<>? AND scale_id=?",
+        id,
+        reading.scale_id,
+      )) {
+        const otherCandidates = readingCandidateIds(other.candidate_ids);
+        if (otherCandidates.length === 1 && otherCandidates[0] === candidateId)
+          statements.push(assign(other.id));
+      }
+      statements.push(refreshRecognitionWeight(db, candidateId));
+      await db.batch(statements);
+      await queueRosterEdits(db, candidateId);
+      return go(
+        "/readings",
+        existing
+          ? `Reading assigned to ${existing.name}`
+          : `Scale user ${candidateId} named ${user!.name}`,
+      );
     }
     const readingDelete = /^\/readings\/(\d+)\/delete$/.exec(path);
     if (readingDelete) {
