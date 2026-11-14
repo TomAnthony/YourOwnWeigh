@@ -559,6 +559,75 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(session.export("test")["firmware_version"], version)
                 self.assertEqual(session.export("test")["captured_at"], 1767225600)
 
+    async def test_wbs06_v551_skips_mtu_exchange_and_allows_only_ota(self):
+        transport = MockTransport("WBS06")
+        transport.max_write = 132
+        original = transport.reply
+
+        def reply(packet):
+            f = Decoder().feed(packet)[0]
+            if f.command == 0x101:
+                f = probe("WBS06", firmware=551)
+            original(encode(f.command, f.payload))
+
+        transport.reply = reply
+        written = transport.write
+
+        async def write(packet):
+            # v551 answers 0x155 with WPP error -3 (unknown command).
+            if not transport.ota and Decoder().feed(packet)[0].command == 0x155:
+                transport.sent.append(packet)
+                original(encode(0x100, tlv(0x110, struct.pack(">Hi", 0x155, -3))))
+                return
+            await written(packet)
+
+        transport.write = write
+        session = transport.session
+        identity = await session.probe()
+        self.assertTrue(identity["supported"])
+        self.assertEqual(identity["firmwareVersion"], 551)
+        self.assertNotIn(0x155, [Decoder().feed(p)[0].command for p in transport.sent])
+        self.assertEqual(session.mtu, 132)
+        caps = identity["capabilities"]
+        self.assertTrue(caps["ota"])
+        for name in ("serverRead", "serverWrite", "wifiWrite", "wifiRead",
+                     "completeSetup", "setTime", "enrollment"):
+            self.assertFalse(caps[name], name)
+        before = len(transport.sent)
+        with self.assertRaises(ProtocolError):
+            await session.complete_setup()
+        with self.assertRaises(ProtocolError):
+            await session.connect_wifi("Test", "password123")
+        with self.assertRaises(ProtocolError):
+            await session.set_time(1793000000, 0, 0, 0)
+        with self.assertRaises(ProtocolError):
+            await session.set_server("scales.example.com", "http")
+        with self.assertRaises(ProtocolError):
+            session.export("test")
+        self.assertEqual(await session.read_wifi(), dict(supported=False))
+        self.assertEqual(len(transport.sent), before)
+        result = await session.install(bytes(1000), lambda *p: None)
+        self.assertTrue(result["transferred"])
+        self.assertEqual(transport.total, 1000)
+        # Packets follow the size offered in the START reply (64 in the mock).
+        start = len(transport.sent) - transport.count
+        self.assertEqual({len(p) for p in transport.sent[start:-1]}, {64})
+
+    async def test_wbs06_unknown_old_firmware_still_requires_mtu_exchange(self):
+        transport = MockTransport("WBS06")
+        original = transport.reply
+
+        def reply(packet):
+            f = Decoder().feed(packet)[0]
+            if f.command == 0x101:
+                f = probe("WBS06", firmware=550)
+            original(encode(f.command, f.payload))
+
+        transport.reply = reply
+        identity = await transport.session.probe()
+        self.assertIn(0x155, [Decoder().feed(p)[0].command for p in transport.sent])
+        self.assertFalse(identity["capabilities"]["ota"])
+
     async def test_probe_required(self):
         with self.assertRaises(ProtocolError):
             await MockTransport("WBS06").session.complete_setup()

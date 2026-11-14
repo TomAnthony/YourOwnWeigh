@@ -998,3 +998,78 @@ test("portable PBKDF2 hash logs in and admin rotation invalidates other sessions
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("a WBS06 user limit counts seed people that were not imported", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "yow-ts-test-"));
+  const store = new LocalSqlite(join(directory, "test.sqlite3"));
+  const env: AppEnv = {
+    DB: store.asD1(),
+    ALLOW_HTTP_SCALE: true,
+    YOW_BOOTSTRAP_TOKEN: "dummy-test-bootstrap-token",
+  };
+  let cookie = "";
+  let csrf = "";
+  const post = (path: string, fields: Record<string, string>) =>
+    handleApp(
+      new Request(`https://local.test${path}`, {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ _csrf: csrf, ...fields }).toString(),
+      }),
+      env,
+    );
+  try {
+    const first = await handleApp(new Request("https://local.test/setup"), env);
+    cookie = first.headers.get("set-cookie")!.split(";")[0];
+    csrf = /name="_csrf" value="([a-f0-9]+)"/.exec(await first.text())![1];
+    const setup = await post("/setup", {
+      bootstrap_token: "dummy-test-bootstrap-token",
+      password: "password-123",
+      confirm: "password-123",
+    });
+    assert.equal(setup.status, 303);
+    cookie = setup.headers.get("set-cookie")!.split(";")[0];
+    const dashboard = await handleApp(
+      new Request("https://local.test/", { headers: { Cookie: cookie } }),
+      env,
+    );
+    csrf = /name="_csrf" value="([a-f0-9]+)"/.exec(await dashboard.text())![1];
+    await post("/scales", {
+      label: "Bathroom",
+      mac: "24:E4:2F:12:34:56",
+      secret: "private-device-secret",
+    });
+    // Seven Withings people stay on the scale; none was imported locally.
+    const seed = Array.from({ length: 7 }, (_, i) => ({ id: 5000 + i, sn: "OLD" }));
+    await env.DB.prepare(
+      "UPDATE scales SET model='WBS06',settings_ready=1,roster_snapshot=? WHERE id=1",
+    )
+      .bind(JSON.stringify(seed))
+      .run();
+    const user = (name: string) => ({
+      name,
+      short_name: name.slice(0, 3).toUpperCase(),
+      height_cm: "170",
+      age_years: "40",
+      sex: "1",
+      reference_weight_kg: "60",
+      scales: "1",
+    });
+    assert.equal((await post("/users", user("Alice"))).status, 303);
+    const rejected = await post("/users", user("Bob"));
+    assert.match(
+      new URL(rejected.headers.get("location")!, "https://local.test").searchParams.get("notice")!,
+      /keeps 7 Withings people .* at most eight users/,
+    );
+    const members = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM scale_users WHERE scale_id=1",
+    ).first<{ n: number }>();
+    assert.equal(members?.n, 1);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

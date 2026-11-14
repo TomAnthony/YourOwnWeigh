@@ -62,3 +62,65 @@ test("roster overlays use metres and preserve people skipped during import", asy
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test("WBS06 roster appends local members after the seed people; WBS04 does not", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-roster-")),
+    store = new LocalSqlite(join(dir, "db.sqlite3")),
+    db = store.asD1();
+  try {
+    await db
+      .prepare(
+        "INSERT INTO scales(id,label,model,mac,secret) VALUES(1,'Demo','WBS06','020000000001','0123456789abcdef')",
+      )
+      .run();
+    for (const [id, name, short, active] of [
+      [5, "Alice", "ALI", 1],
+      [6, "Bob", "BOB", 1],
+      [7, "Retired", "RET", 0],
+      [8, "Elsewhere", "ELS", 1],
+    ] as const)
+      await db
+        .prepare(
+          "INSERT INTO users(id,name,short_name,height_cm,age_years,sex,reference_weight_kg,created_at,active) VALUES(?,?,?,170,40,1,60,1700000001,?)",
+        )
+        .bind(id, name, short, active)
+        .run();
+    // Bob was chosen first; the retired user and a non-member are excluded.
+    for (const [user, rank] of [[6, 1], [5, 2], [7, 3]])
+      await db
+        .prepare("INSERT INTO scale_users(scale_id,user_id,rank) VALUES(1,?,?)")
+        .bind(user, rank)
+        .run();
+    const seed = [{ id: 900, sn: "OLD", ht: 1.7, cs: "11,6,2,10", ft: [] }];
+    const result = (await roster({ DB: db }, {
+      id: 1,
+      model: "WBS06",
+      roster_snapshot: JSON.stringify(seed),
+    } as any)) as any[];
+    assert.deepEqual(result.map((u) => u.id), [900, 6, 5]);
+    assert.deepEqual(result[0], seed[0]); // Not imported locally: kept as is.
+    assert.deepEqual(result[2], {
+      fm: 3, att: 0, ft: [], cs: "11,6,2,10", cr: 1700000001,
+      id: 5, sn: "ALI", fn: "Alice", ht: 1.7, agt: 40, sx: 1, wt: 60,
+    });
+    // A WBS06 with no Withings roster at all still gets its local users.
+    const fresh = (await roster({ DB: db }, {
+      id: 1, model: "WBS06", roster_snapshot: "[]",
+    } as any)) as any[];
+    assert.deepEqual(fresh.map((u) => [u.id, u.cs]), [[6, "2"], [5, "2"]]);
+    const cardio = (await roster({ DB: db }, {
+      id: 1, model: "WBS04", roster_snapshot: JSON.stringify(seed),
+    } as any)) as any[];
+    assert.deepEqual(cardio.map((u) => u.id), [900]);
+    // Nine people cannot be sent.
+    const full = Array.from({ length: 8 }, (_, i) => ({ id: 1000 + i }));
+    await assert.rejects(
+      roster({ DB: db }, {
+        id: 1, model: "WBS06", roster_snapshot: JSON.stringify(full),
+      } as any),
+      /at most eight/,
+    );
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
