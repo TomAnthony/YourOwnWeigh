@@ -2,6 +2,13 @@
 import { scaleModel } from "./models.ts";
 import { METRICS, storedMeasures, type Metric } from "./metrics.ts";
 import { WEB_APP_VERSION } from "./version.ts";
+import {
+  LOCALES,
+  translator,
+  type Language,
+  type MessageKey,
+  type Translate,
+} from "./i18n.ts";
 type Row = Record<string, any>;
 export const escapeHtml = (value: unknown): string =>
   String(value ?? "").replace(
@@ -17,16 +24,19 @@ export const hidden = (csrf: string) =>
   `<input type="hidden" name="_csrf" value="${e(csrf)}">`;
 const option = (value: string | number, label: string, selected: unknown) =>
   `<option value="${e(value)}"${String(value) === String(selected) ? " selected" : ""}>${e(label)}</option>`;
-export const timeLabel = (value: unknown): string => {
+export const timeLabel = (
+  value: unknown,
+  language: Language = "en",
+): string => {
   const date = new Date(n(value) * 1000);
   return Number.isFinite(date.valueOf()) && n(value) > 0
     ? e(
-        new Intl.DateTimeFormat("en-GB", {
+        new Intl.DateTimeFormat(LOCALES[language], {
           dateStyle: "medium",
           timeStyle: "short",
         }).format(date),
       )
-    : "Unknown";
+    : e(translator(language)("time.unknown"));
 };
 /** Battery percentage at or below which a scale is shown as needing attention. */
 export const LOW_BATTERY = 20;
@@ -42,38 +52,62 @@ export function batteryOf(scale: Row): number | null {
   return typeof level === "number" && level >= 0 && level <= 100 ? level : null;
 }
 /** What to do about a low battery, worded for the model's power source. */
-export function batteryAction(model: unknown): string {
-  return scaleModel(String(model ?? ""))?.rechargeable
-    ? "Charge Soon"
-    : "Replace Batteries";
+export function batteryAction(
+  model: unknown,
+  language: Language = "en",
+): string {
+  return translator(language)(
+    scaleModel(String(model ?? ""))?.rechargeable
+      ? "battery.chargeSoon"
+      : "battery.replace",
+  );
 }
 /** Dashboard row: one badge per scale that has reported a battery level. */
-export function scaleBatteries(scales: Row[]): string {
+export function scaleBatteries(
+  scales: Row[],
+  language: Language = "en",
+): string {
+  const t = translator(language);
   const badges = scales
     .map((s) => {
       const level = batteryOf(s);
       if (level === null) return "";
       const low = level <= LOW_BATTERY;
-      return `<span class="badge scale-battery${low ? " warn" : ""}" title="Battery reported ${timeLabel(s.last_session_at)}">${SCALE_ICON}<span>${e(s.label)}</span>${batteryIcon(level)}<span>${level} %</span>${low ? `<span>· ${batteryAction(s.model)}</span>` : ""}</span>`;
+      return `<span class="badge scale-battery${low ? " warn" : ""}" title="${e(t("battery.reportedTitle", { time: timeLabel(s.last_session_at, language) }))}">${SCALE_ICON}<span>${e(s.label)}</span>${batteryIcon(level)}<span>${level} %</span>${low ? `<span>· ${e(batteryAction(s.model, language))}</span>` : ""}</span>`;
     })
     .join("");
   return badges ? `<div class="scale-batteries">${badges}</div>` : "";
 }
-export function weightLabel(row: Row, unit: string): string {
+const decimal = (value: number, digits: number, language: Language) =>
+  new Intl.NumberFormat(LOCALES[language], {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  }).format(value);
+/** Translated name of a metric. */
+export const metricName = (metric: Metric, t: Translate = translator("en")) =>
+  t(`metric.${metric.key}` as MessageKey);
+export function weightLabel(
+  row: Row,
+  unit: string,
+  language: Language = "en",
+): string {
   if (row.weight_value == null || row.weight_unit == null) return "—";
   const kg = n(row.weight_value) * 10 ** n(row.weight_unit);
-  if (unit === "lb") return `${(kg * 2.2046226218487757).toFixed(1)} lb`;
+  if (unit === "lb")
+    return `${decimal(kg * 2.2046226218487757, 1, language)} lb`;
   if (unit === "st") {
     const tenths = Math.round(kg * 2.2046226218487757 * 10);
-    return `${Math.floor(tenths / 140)} st ${((tenths % 140) / 10).toFixed(1)} lb`;
+    return `${Math.floor(tenths / 140)} st ${decimal((tenths % 140) / 10, 1, language)} lb`;
   }
-  return `${kg.toFixed(2)} kg`;
+  return `${decimal(kg, 2, language)} kg`;
 }
 function metricPicker(
   metrics: Metric[],
   selected: number,
   name = "metric",
   selections: Record<string, number> = {},
+  t: Translate = translator("en"),
 ): string {
   if (metrics.length < 2) return "";
   const preserved = Object.entries(selections)
@@ -83,10 +117,16 @@ function metricPicker(
         `<input type="hidden" name="${e(key)}" value="${e(value)}">`,
     )
     .join("");
-  return `<form method="get" class="metric-picker">${preserved}<label>Measurement<select name="${e(name)}" data-submit-on-change>${metrics.map((m) => option(m.type, m.label, selected)).join("")}</select></label><button class="secondary" type="submit">Show</button></form>`;
+  return `<form method="get" class="metric-picker">${preserved}<label>${e(t("metric.picker"))}<select name="${e(name)}" data-submit-on-change>${metrics.map((m) => option(m.type, metricName(m, t), selected)).join("")}</select></label><button class="secondary" type="submit">${e(t("metric.show"))}</button></form>`;
 }
-function metricLabel(row: Row, type: number, weightUnit: string): string {
-  if (type === 1) return weightLabel(row, weightUnit);
+function metricLabel(
+  row: Row,
+  type: number,
+  weightUnit: string,
+  language: Language = "en",
+): string {
+  const t = translator(language);
+  if (type === 1) return weightLabel(row, weightUnit, language);
   const matches = storedMeasures(row).filter((m) => m.type === type);
   if (!matches.length) return "—";
   const metric = METRICS.find((v) => v.type === type)!;
@@ -97,16 +137,17 @@ function metricLabel(row: Row, type: number, weightUnit: string): string {
           ? weightLabel(
               { weight_value: m.value, weight_unit: m.unit },
               weightUnit,
+              language,
             )
-          : `${new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(m.value * 10 ** m.unit)}${metric.unit === "index" ? "" : ` ${e(metric.unit)}`}`;
+          : `${new Intl.NumberFormat(LOCALES[language], { maximumFractionDigits: 2 }).format(m.value * 10 ** m.unit)}${metric.unit === "index" ? "" : ` ${e(metric.unit)}`}`;
       return matches.length > 1
-        ? `${value} (Position ${e(m.position ?? "Unspecified")})`
+        ? `${value} (${e(t("reading.position", { position: m.position ?? t("reading.positionUnspecified") }))})`
         : value;
     })
     .join("; ");
 }
-function metricTitle(type: number): string {
-  return METRICS.find((m) => m.type === type)?.label ?? "Weight";
+function metricTitle(type: number, t: Translate = translator("en")): string {
+  return metricName(METRICS.find((m) => m.type === type) ?? METRICS[0], t);
 }
 export function layout(
   title: string,
@@ -115,17 +156,19 @@ export function layout(
   loggedIn: boolean,
   notice = "",
   active = "",
+  language: Language = "en",
 ): string {
+  const t = translator(language);
   const links = [
-    ["/", "Dashboard"],
-    ["/readings", "Readings"],
-    ["/scales", "Scales"],
-    ["/users", "Users"],
-    ["/sync", "Sync"],
-    ["/settings", "Settings"],
-    ["/firmware", "Firmware Bridge"],
+    ["/", t("nav.dashboard")],
+    ["/readings", t("nav.readings")],
+    ["/scales", t("nav.scales")],
+    ["/users", t("nav.users")],
+    ["/sync", t("nav.sync")],
+    ["/settings", t("nav.settings")],
+    ["/firmware", t("nav.firmware")],
   ];
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>${e(title)} · YourOwnWeigh</title><link rel="icon" href="/favicon.png" type="image/png">
     <meta name="csrf-token" content="${e(csrf)}"><link rel="stylesheet" href="/app.css?v=${WEB_APP_VERSION}"><script src="/app.js?v=${WEB_APP_VERSION}" defer></script></head><body>
     <nav><a class="brand" href="/" aria-label="YourOwnWeigh"><img src="/favicon.png" width="36" height="36" alt=""><strong>YOW</strong></a>${
@@ -133,10 +176,10 @@ export function layout(
         ? links
             .map(
               ([url, label]) =>
-                `<a href="${url}"${active === url ? ' aria-current="page"' : ""}>${label}</a>`,
+                `<a href="${url}"${active === url ? ' aria-current="page"' : ""}>${e(label)}</a>`,
             )
             .join("") +
-          `<form action="/logout" method="post">${hidden(csrf)}<button>Sign Out</button></form>`
+          `<form action="/logout" method="post">${hidden(csrf)}<button>${e(t("nav.signOut"))}</button></form>`
         : ""
     }</nav>
     ${notice ? `<p class="flash" role="status">${e(notice)}</p>` : ""}<main>${body}</main><footer class="site-footer"><span>YourOwnWeigh · Web App v${e(WEB_APP_VERSION)}</span><a href="https://github.com/TomAnthony/YourOwnWeigh" target="_blank" rel="noopener noreferrer">GitHub</a></footer></body></html>`;
@@ -154,9 +197,9 @@ export function setupPage(
 export function loginPage(csrf: string): string {
   return `<section><h1>Sign In</h1><form method="post">${hidden(csrf)}<label>Admin Password<input name="password" type="password" required></label><button>Sign In</button></form></section>`;
 }
-function readingTime(row: Row): string {
+function readingTime(row: Row, language: Language = "en"): string {
   const trusted = row.time_quality === "trusted";
-  return `${timeLabel(trusted ? row.meastime : row.first_received_at)}${trusted ? "" : '<span class="hint">Received Time; Device Date Unverified</span>'}`;
+  return `${timeLabel(trusted ? row.meastime : row.first_received_at, language)}${trusted ? "" : `<span class="hint">${e(translator(language)("reading.receivedTime"))}</span>`}`;
 }
 function healthSyncStatus(row: Row): string {
   if (!row.user_id || row.weight_value == null)
@@ -175,12 +218,14 @@ export function dashboardPage(
   }>,
   unit: string,
   scales: Row[] = [],
+  language: Language = "en",
 ): string {
+  const t = translator(language);
   const selections = Object.fromEntries(
     cards.map(({ user, metric = 1 }) => [`metric_${user.id}`, metric]),
   );
-  return `<section class="page-heading"><div><h1>Dashboard</h1></div><a class="button secondary" href="/readings">View All Readings</a></section>
-  ${scaleBatteries(scales)}${
+  return `<section class="page-heading"><div><h1>${e(t("nav.dashboard"))}</h1></div><a class="button secondary" href="/readings">${e(t("dashboard.viewAllReadings"))}</a></section>
+  ${scaleBatteries(scales, language)}${
     cards.length
       ? `<div class="cards">${cards
           .map(
@@ -190,17 +235,17 @@ export function dashboardPage(
               metrics = [METRICS[0]],
               metric = 1,
             }) => `<section class="card"><div class="section-heading"><div>
-    <h2><a href="/users/${e(user.id)}/readings">${e(user.name)}</a></h2></div><a href="/users/${e(user.id)}/readings">All Readings →</a></div>
-    ${metricPicker(metrics, metric, `metric_${user.id}`, selections)}
+    <h2><a href="/users/${e(user.id)}/readings">${e(user.name)}</a></h2></div><a href="/users/${e(user.id)}/readings">${e(t("dashboard.allReadings"))}</a></div>
+    ${metricPicker(metrics, metric, `metric_${user.id}`, selections, t)}
     ${
       readings.length
-        ? `<p class="metric">${metricLabel(readings[0], metric, unit)}</p><div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>Scale</th></tr></thead><tbody>
-    ${readings.map((r) => `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${e(r.scale_label)}</td></tr>`).join("")}</tbody></table></div>`
-        : '<p class="empty">No readings recorded yet.</p>'
+        ? `<p class="metric">${metricLabel(readings[0], metric, unit, language)}</p><div class="wide"><table><thead><tr><th>${e(t("dashboard.when"))}</th><th>${e(metricTitle(metric, t))}</th><th>${e(t("dashboard.scale"))}</th></tr></thead><tbody>
+    ${readings.map((r) => `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r, language)}</td><td>${metricLabel(r, metric, unit, language)}</td><td>${e(r.scale_label)}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="empty">${e(t("dashboard.noReadings"))}</p>`
     }</section>`,
           )
           .join("")}</div>`
-      : '<section><p class="empty">No users have been added yet.</p><a class="button" href="/firmware">Add Your First Scale</a></section>'
+      : `<section><p class="empty">${e(t("dashboard.noUsers"))}</p><a class="button" href="/firmware">${e(t("dashboard.addFirstScale"))}</a></section>`
   }`;
 }
 export function readingsPage(

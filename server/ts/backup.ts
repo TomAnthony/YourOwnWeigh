@@ -5,6 +5,7 @@
  */
 import { bridgeHash } from "./bridge.ts";
 import { firmwareVersion } from "./firmware_observation.ts";
+import { isLanguagePreference } from "./i18n.ts";
 import { validateStoredMetrics } from "./metrics.ts";
 import { SCALE_MODELS } from "./models.ts";
 type Row = Record<string, string | number | null>;
@@ -50,7 +51,11 @@ const access = new Set([
   "api_password",
   "sync_password_mode",
 ]);
-const preferences = new Set(["display_weight_unit", "next_local_user_id"]);
+const preferences = new Set([
+  "display_weight_unit",
+  "display_language",
+  "next_local_user_id",
+]);
 const now = () => Math.floor(Date.now() / 1000);
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_ROWS = 25000;
@@ -291,7 +296,11 @@ function parse(raw: string): Backup {
     validateStoredMetrics(r);
   }
   for (const r of b.sections.settings)
-    if (!preferences.has(String(r.key)) || typeof r.value !== "string")
+    if (
+      !preferences.has(String(r.key)) ||
+      typeof r.value !== "string" ||
+      (r.key === "display_language" && !isLanguagePreference(r.value))
+    )
       throw new Error("Unknown preference");
   const seenAccess = new Set();
   for (const r of b.accessSettings) {
@@ -457,7 +466,9 @@ export async function commitBackup(
     ])
       statements.push(db.prepare(`DELETE FROM ${table}`));
     statements.push(
-      db.prepare("DELETE FROM settings WHERE key='display_weight_unit'"),
+      db.prepare(
+        "DELETE FROM settings WHERE key IN ('display_weight_unit','display_language')",
+      ),
     );
   }
   // Rows refer to source IDs; resolve them inside the same final transaction.

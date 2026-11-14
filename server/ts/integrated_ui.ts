@@ -1,4 +1,11 @@
 /** Household and firmware views; all Bluetooth operations belong to the bridge. */
+import {
+  LANGUAGE_NAMES,
+  LANGUAGES,
+  translator,
+  type Language,
+  type LanguagePreference,
+} from "./i18n.ts";
 import { SCALE_MODELS, scaleModel } from "./models.ts";
 import {
   batteryAction,
@@ -135,19 +142,31 @@ export function settingsWorkspace(
   csrf: string,
   unit: string,
   separate: boolean,
+  languagePreference: LanguagePreference = "auto",
+  language: Language = "en",
 ): string {
-  return `<section class="page-heading"><h1>Settings</h1></section><div class="firmware-grid"><section><h2>Display</h2><form action="/preferences" method="post">${hidden(csrf)}<label>Weight Unit<select name="weight_unit">${[
-    ["kg", "Kilograms"],
-    ["lb", "Pounds"],
-    ["st", "Stones And Pounds"],
-  ]
-    .map(
-      ([v, l]) =>
-        `<option value="${v}"${v === unit ? " selected" : ""}>${l}</option>`,
-    )
-    .join(
-      "",
-    )}</select></label><button>Save Display Settings</button></form></section>
+  const t = translator(language);
+  const options = (choices: Array<[string, string]>, selected: string) =>
+    choices
+      .map(
+        ([v, l]) =>
+          `<option value="${v}"${v === selected ? " selected" : ""}>${e(l)}</option>`,
+      )
+      .join("");
+  return `<section class="page-heading"><h1>Settings</h1></section><div class="firmware-grid"><section><h2>${e(t("settings.display"))}</h2><form action="/preferences" method="post">${hidden(csrf)}<label>${e(t("settings.weightUnit"))}<select name="weight_unit">${options(
+    [
+      ["kg", t("settings.unit.kg")],
+      ["lb", t("settings.unit.lb")],
+      ["st", t("settings.unit.st")],
+    ],
+    unit,
+  )}</select></label><label>${e(t("settings.language"))}<select name="language">${options(
+    [
+      ["auto", t("settings.languageAuto")],
+      ...LANGUAGES.map((l): [string, string] => [l, LANGUAGE_NAMES[l]]),
+    ],
+    languagePreference,
+  )}</select></label><button>${e(t("settings.saveDisplay"))}</button></form></section>
     <section class="backup-panel"><h2>Backup And Restore</h2><p>Back up your household or restore a saved export.</p><div class="action-row"><a class="button secondary" href="/api/backup/export">Export Database</a><button type="button" class="secondary" data-open-dialog="backup-import-dialog">Import Database</button></div><p class="hint">Exports include device secrets and password hashes. Keep them private.</p></section></div>
     <dialog id="backup-import-dialog"><button class="dialog-close" data-close-dialog type="button" aria-label="Close">×</button><h2>Import Database</h2><p>Choose a saved database export. You can review it before adding missing data or replacing the household.</p><form id="backup-import" action="/api/backup/import" method="post" enctype="multipart/form-data">${hidden(csrf)}<label>Backup File<input type="file" name="backup" accept=".json" required></label><p class="hint">Your current passwords stay unless you explicitly choose to restore access settings.</p><div class="dialog-actions"><button>Review Import</button><button type="button" class="secondary" data-close-dialog>Cancel</button></div></form></dialog>
     <div class="firmware-grid"><section><h2>Admin Password</h2><p>${separate ? "The Sync API uses a separate password." : "The Sync API uses this password too. Update your Shortcut after changing it."}</p><form action="/settings" method="post">${hidden(csrf)}<input type="hidden" name="purpose" value="admin_password"><label>Current Admin Password<input name="current" type="password" required></label><label>New Password<input name="new" type="password" minlength="8" required></label><label>Confirm Password<input name="confirm" type="password" minlength="8" required></label><button>Change Admin Password</button></form></section>

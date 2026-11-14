@@ -17,6 +17,7 @@ import {
   settingsWorkspace,
   syncPage,
 } from "./integrated_ui.ts";
+import { isLanguagePreference, resolveLanguage, translator } from "./i18n.ts";
 import { scaleModel } from "./models.ts";
 import { handleScaleRequest, zoneTriplet, roster, screenIds } from "./scale_api.ts";
 import {
@@ -1604,8 +1605,21 @@ export async function handleApp(
     }
   }
   const notice = (url.searchParams.get("notice") ?? "").slice(0, 250);
+  const storedLanguage = await setting(db, "display_language");
+  const languagePreference = isLanguagePreference(storedLanguage)
+    ? storedLanguage
+    : "auto";
+  const language = resolveLanguage(
+    languagePreference,
+    request.headers.get("Accept-Language"),
+  );
+  const t = translator(language);
   const page = (title: string, body: string, active = "") =>
-    html(layout(title, body, csrf, loggedIn, notice, active), 200, cookie);
+    html(
+      layout(title, body, csrf, loggedIn, notice, active, language),
+      200,
+      cookie,
+    );
   const go = (location: string, message = "") =>
     redirect(location, message, cookie);
   if (path.startsWith("/api/backup/")) {
@@ -1735,7 +1749,7 @@ export async function handleApp(
       });
     }
     return page(
-      "Dashboard",
+      t("nav.dashboard"),
       dashboardPage(
         cards,
         (await setting(db, "display_weight_unit")) ?? "kg",
@@ -1743,6 +1757,7 @@ export async function handleApp(
           db,
           "SELECT label,model,battery_level,last_session_at FROM scales ORDER BY label,id",
         ),
+        language,
       ),
       "/",
     );
@@ -1955,6 +1970,8 @@ export async function handleApp(
         (await setting(db, "display_weight_unit")) ?? "kg",
         mode === "separate" ||
           (mode === null && !!(await setting(db, "api_password"))),
+        languagePreference,
+        language,
       ),
       "/settings",
     );
@@ -2145,8 +2162,20 @@ async function browserPost(
       const unit = formText(form, "weight_unit");
       if (!["kg", "lb", "st"].includes(unit))
         throw new Error("Invalid display unit");
-      await db.batch([saveSetting(db, "display_weight_unit", unit)]);
-      return go("/settings", "Display weight unit saved");
+      const preference =
+        formText(form, "language") ||
+        ((await setting(db, "display_language")) ?? "auto");
+      if (!isLanguagePreference(preference))
+        throw new Error("Invalid display language");
+      await db.batch([
+        saveSetting(db, "display_weight_unit", unit),
+        saveSetting(db, "display_language", preference),
+      ]);
+      const saved = resolveLanguage(
+        preference,
+        request.headers.get("Accept-Language"),
+      );
+      return go("/settings", translator(saved)("settings.displaySaved"));
     }
     if (path === "/scales") {
       const label = formText(form, "label").trim();
