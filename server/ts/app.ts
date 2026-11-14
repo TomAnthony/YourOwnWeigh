@@ -1298,7 +1298,10 @@ async function queueRosterEdits(db: D1Database, userId: number) {
     "SELECT * FROM scales WHERE model IN ('WBS06','WBS04') AND settings_ready=1 AND roster_snapshot IS NOT NULL",
   )) {
     const baseline = JSON.parse(scale.roster_snapshot);
-    if (!baseline.some((u: Row) => u.id === userId)) continue;
+    // WBS06 also carries local users outside its seed roster, so any user
+    // change (added, edited, moved off this scale) may alter what it receives.
+    if (scale.model !== "WBS06" && !baseline.some((u: Row) => u.id === userId))
+      continue;
     try {
       await roster({ DB: db }, scale as any);
       await run(db, "UPDATE scales SET roster_enabled=1 WHERE id=?", scale.id);
@@ -2537,6 +2540,7 @@ async function browserPost(
         ...memberships,
         saveSetting(db, "next_local_user_id", String(id + 1)),
       ]);
+      await queueRosterEdits(db, id);
       return go("/users", `User ${user.name} added as stable scale ID ${id}`);
     }
     const userDelete = /^\/users\/(\d+)\/delete$/.exec(path);

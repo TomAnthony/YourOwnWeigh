@@ -331,32 +331,53 @@ export async function roster(
   )
     throw new Error("Invalid roster baseline");
   const { results } = await env.DB.prepare(
-    "SELECT u.*,su.scale_id AS membership FROM users u LEFT JOIN scale_users su ON su.user_id=u.id AND su.scale_id=?",
+    "SELECT u.*,su.scale_id AS membership,su.rank AS membership_rank FROM users u LEFT JOIN scale_users su ON su.user_id=u.id AND su.scale_id=?",
   )
     .bind(scale.id)
     .all<Record<string, any>>();
   const byId = new Map(results.map((u) => [u.id, u]));
   await backfillRecognitionWeights(env.DB, results);
+  const overlay = (entry: Record<string, any>, user: Record<string, any>) => ({
+    ...entry,
+    id: user.id,
+    sn: user.short_name,
+    fn: user.name,
+    ht: user.height_cm / 100,
+    agt: user.birth_date ? ageFromDOB(user.birth_date) : user.age_years,
+    sx: user.sex,
+    wt: user.reference_weight_kg,
+    ...(user.reference_weight_at !== null
+      ? { cr: user.reference_weight_at }
+      : {}),
+  });
   const users = baseline.flatMap((entry) => {
     const user = byId.get(entry.id);
     if (!user) return [entry]; // Not imported locally: keep the scale's person.
     if (!user.active || !user.membership) return [];
-    return [
-      {
-        ...entry,
-        id: user.id,
-        sn: user.short_name,
-        fn: user.name,
-        ht: user.height_cm / 100,
-        agt: user.birth_date ? ageFromDOB(user.birth_date) : user.age_years,
-        sx: user.sex,
-        wt: user.reference_weight_kg,
-        ...(user.reference_weight_at !== null
-          ? { cr: user.reference_weight_at }
-          : {}),
-      },
-    ];
+    return [overlay(entry, user)];
   });
+  if (scale.model === "WBS06") {
+    // A WBS06 that never had a Withings roster (or not enough people on it)
+    // also receives local users chosen for it. They use the same entry shape
+    // as an edited seed; a WBS06 accepted and attributed an edited seed on
+    // hardware (issue #22). Seed people keep their slots and order.
+    const listed = new Set(baseline.map((entry) => entry.id));
+    const added = results
+      .filter((u) => u.active && u.membership && !listed.has(u.id))
+      .sort((a, b) => a.membership_rank - b.membership_rank || a.id - b.id);
+    const template = {
+      fm: 3,
+      att: 0,
+      ft: [],
+      cs: typeof baseline[0]?.cs === "string" ? baseline[0].cs : "2",
+    };
+    for (const user of added)
+      users.push(
+        overlay({ ...template, cr: user.reference_weight_at ?? user.created_at }, user),
+      );
+    if (users.length > 8)
+      throw new Error("A scale can have at most eight users");
+  }
   if (!users.length) throw new Error("An empty roster has not been qualified");
   return users;
 }
