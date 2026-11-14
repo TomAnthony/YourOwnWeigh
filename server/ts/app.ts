@@ -1715,13 +1715,15 @@ export async function handleApp(
   if (!adminConfigured) {
     if (path !== "/setup") return go("/setup");
     return page(
-      "First-Run Setup",
-      setupPage(csrf, !!env.YOW_BOOTSTRAP_TOKEN, browser.is_admin === 2),
+      t("setup.pageTitle"),
+      setupPage(csrf, !!env.YOW_BOOTSTRAP_TOKEN, browser.is_admin === 2, t),
     );
   }
   if (path === "/setup") return go("/login");
   if (path === "/login")
-    return loggedIn ? go("/") : page("Sign In", loginPage(csrf));
+    return loggedIn
+      ? go("/")
+      : page(t("auth.signIn"), loginPage(csrf, t));
   if (!loggedIn) return go("/login");
   if (path === "/") {
     const users = await rows(
@@ -1781,7 +1783,7 @@ export async function handleApp(
       ...(metric === 1 ? [] : [metric]),
     );
     return page(
-      "Readings",
+      t("nav.readings"),
       readingsPage(
         readings,
         users,
@@ -1789,6 +1791,7 @@ export async function handleApp(
         csrf,
         metrics,
         metric,
+        language,
       ),
       "/readings",
     );
@@ -1812,19 +1815,24 @@ export async function handleApp(
       ...(metric === 1 ? [] : [metric]),
     );
     return page(
-      `${user.name} Readings`,
+      t("userReadings.title", { name: String(user.name) }),
       userReadingsPage(
         user,
         readings,
         (await setting(db, "display_weight_unit")) ?? "kg",
         metrics,
         metric,
+        language,
       ),
       "/readings",
     );
   }
   if (path === "/firmware") {
-    return page("Firmware Bridge", firmwareWorkspace(csrf), "/firmware");
+    return page(
+      t("nav.firmware"),
+      firmwareWorkspace(csrf, language),
+      "/firmware",
+    );
   }
   if (path === "/scales" || /^\/scales\/\d+$/.test(path)) {
     const scales = await rows(db, "SELECT * FROM scales ORDER BY label,id");
@@ -1849,7 +1857,11 @@ export async function handleApp(
           scale.id,
         )
       ).map((r) => r.user_id);
-    return page("Scales", scalesWorkspace(scales, csrf, localUsers), "/scales");
+    return page(
+      t("nav.scales"),
+      scalesWorkspace(scales, csrf, localUsers, language),
+      "/scales",
+    );
   }
   if (path === "/users" || /^\/users\/\d+$/.test(path)) {
     const users = await rows(
@@ -1937,7 +1949,7 @@ export async function handleApp(
     }
     const importScaleId = Number(url.searchParams.get("import_scale"));
     return page(
-      "Users",
+      t("nav.users"),
       usersPage(
         users,
         scales,
@@ -1948,23 +1960,25 @@ export async function handleApp(
         scales.some((scale) => scale.id === importScaleId)
           ? importScaleId
           : undefined,
+        language,
       ),
       "/users",
     );
   }
   if (path === "/sync")
     return page(
-      "Sync",
+      t("nav.sync"),
       syncPage(
         url.origin,
         await rows(db, "SELECT * FROM users WHERE active=1 ORDER BY name"),
+        language,
       ),
       "/sync",
     );
   if (path === "/preferences" || path === "/settings") {
     const mode = await setting(db, "sync_password_mode");
     return page(
-      "Settings",
+      t("nav.settings"),
       settingsWorkspace(
         csrf,
         (await setting(db, "display_weight_unit")) ?? "kg",
