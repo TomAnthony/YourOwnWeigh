@@ -273,6 +273,29 @@ tr:hover td {
   background: #fff1df;
   color: #936026;
 }
+.scale-batteries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.badge.scale-battery {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.6rem;
+}
+.scale-battery svg {
+  flex: none;
+  height: 0.95em;
+  width: auto;
+}
+.scale-battery .icon-scale {
+  width: 0.95em;
+}
+.scale-battery .icon-battery {
+  width: 1.9em;
+  margin-left: 0.2rem;
+}
 code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

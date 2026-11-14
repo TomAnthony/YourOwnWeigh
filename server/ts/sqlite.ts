@@ -188,6 +188,13 @@ export class LocalSqlite {
         ),
       );
     }
+    if (!scale.has("battery_level"))
+      this.database.exec(
+        readFileSync(
+          join(ROOT, "server/migrations/0011_battery_level.sql"),
+          "utf8",
+        ),
+      );
     if (!columns("readings").has("time_quality")) {
       this.database.exec(
         "ALTER TABLE readings ADD COLUMN time_quality TEXT NOT NULL DEFAULT 'trusted'",
