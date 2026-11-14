@@ -15,7 +15,8 @@ import {
   translateMessage,
   translator,
 } from "../i18n.ts";
-import { timeLabel, weightLabel } from "../ui.ts";
+import { scaleBatteries, timeLabel, weightLabel } from "../ui.ts";
+import { scalesWorkspace } from "../integrated_ui.ts";
 
 test("Accept-Language picks the best supported language", () => {
   assert.equal(browserLanguage("de-DE,de;q=0.9,en;q=0.8"), "de");
@@ -98,6 +99,34 @@ test("dates and weights follow the display language", () => {
   );
   assert.match(timeLabel(1793000000, "de"), /^\d\d\.\d\d\.2026, \d\d:\d\d$/);
   assert.equal(timeLabel(0, "de"), "Unbekannt");
+});
+
+test("battery texts follow the display language", () => {
+  const scale = {
+    id: 1,
+    label: "Bathroom",
+    model: "WBS04",
+    mac: "0024e4000001",
+    secret: "s",
+    battery_level: 12,
+    last_session_at: 1793000000,
+    settings_ready: 1,
+  };
+  const pill = scaleBatteries([scale], "de");
+  assert.match(pill, /12 %/);
+  assert.match(pill, /Bald aufladen/);
+  assert.match(pill, /title="Akkustand gemeldet am \d\d\.\d\d\.2026/);
+  const card = scalesWorkspace([scale], "csrf", [], "de");
+  assert.match(card, /<th>Akku<\/th><td>12 %/);
+  assert.match(card, /Gemeldet am \d\d\.\d\d\.2026/);
+  assert.match(
+    scalesWorkspace([{ ...scale, battery_level: null }], "csrf", [], "de"),
+    /<th>Akku<\/th><td>Noch nicht gemeldet<\/td>/,
+  );
+  assert.match(
+    scaleBatteries([{ ...scale, model: "WBS06" }], "de"),
+    /Batterien wechseln/,
+  );
 });
 
 test("dashboard and settings follow the browser or the saved language", async () => {
