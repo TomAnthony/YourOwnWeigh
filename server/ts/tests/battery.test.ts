@@ -139,7 +139,10 @@ test("scale card always has a Battery row, Not Yet Reported until the first leve
     /<th>Battery<\/th><td>Not Yet Reported<\/td>/,
   );
   const ok = scalesWorkspace([scale({ battery_level: 82 })], "csrf");
-  assert.match(ok, /<th>Battery<\/th><td>82 %<span class="hint">Reported /);
+  assert.match(
+    ok,
+    /<tr class="battery-row"><th>Battery<\/th><td>82 %<span class="hint">Reported /,
+  );
   assert.doesNotMatch(ok, /Replace Batteries/);
   const low = scalesWorkspace(
     [scale({ model: "WBS04", battery_level: 12 })],
@@ -147,6 +150,6 @@ test("scale card always has a Battery row, Not Yet Reported until the first leve
   );
   assert.match(
     low,
-    /<th>Battery<\/th><td>12 % <span class="badge warn">Charge Soon<\/span><span class="hint">Reported /,
+    /<tr class="battery-row"><th>Battery<\/th><td>12 % <span class="badge warn">Charge Soon<\/span><span class="hint">Reported /,
   );
 });
