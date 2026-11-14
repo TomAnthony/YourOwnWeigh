@@ -1,6 +1,13 @@
 /** Household and firmware views; all Bluetooth operations belong to the bridge. */
 import { SCALE_MODELS, scaleModel } from "./models.ts";
-import { escapeHtml as e, hidden, timeLabel } from "./ui.ts";
+import {
+  batteryAction,
+  batteryOf,
+  escapeHtml as e,
+  hidden,
+  LOW_BATTERY,
+  timeLabel,
+} from "./ui.ts";
 import { WEB_APP_VERSION } from "./version.ts";
 type Row = Record<string, any>;
 
@@ -75,6 +82,13 @@ function editDevice(s: Row, csrf: string, users: Row[]): string {
     <details class="advanced-settings"><summary>Advanced</summary><dl class="identity-grid"><dt>Last Sync</dt><dd>${s.last_session_at ? timeLabel(s.last_session_at) : "Not Yet Seen"}</dd></dl><p class="hint">Internal protocol settings. The selected time zone supplies clock offsets automatically.</p><div class="field-list">${scaleModel(s.model)?.transport === "classic" || scaleModel(s.model)?.localRoster ? "" : advanced.map(([key, label]) => `<label>${label}<input type="number" name="${key}" value="${e(s[key] ?? 0)}"></label>`).join("")}</div>${scaleModel(s.model)?.classicGates ? '<p class="hint">This model retains its internal settings and on-scale users.</p>' : ""}</details>
     <div class="dialog-actions"><button>Save Settings</button><button class="secondary" type="button" data-close-dialog>Cancel</button></div></form>${scaleModel(s.model)?.localRoster ? "" : `<form action="/users/fetch-withings" method="post" class="modal-secondary-action">${hidden(csrf)}<input type="hidden" name="scale_id" value="${e(s.id)}"><button class="text-button">${!scaleModel(s.model)?.classicGates && !s.settings_ready ? "Finish Device Import" : "Import Users From Withings"}</button></form>`}</dialog>`;
 }
+function batteryRow(s: Row): string {
+  const level = batteryOf(s);
+  if (level === null)
+    return "<tr><th>Battery</th><td>Not Yet Reported</td></tr>";
+  const low = level <= LOW_BATTERY;
+  return `<tr class="battery-row"><th>Battery</th><td>${level} %${low ? ` <span class="badge warn">${batteryAction(s.model)}</span>` : ""}<span class="hint">Reported ${timeLabel(s.last_session_at)}</span></td></tr>`;
+}
 function firmwareRow(s: Row): string {
   const known = s.firmware_version != null && s.firmware_confirmed_at != null;
   const hint = known
@@ -99,7 +113,7 @@ export function scalesWorkspace(
         String(s.mac)
           .replace(/(..)(?=.)/g, "$1:")
           .toUpperCase(),
-      )}</code></td></tr>${firmwareRow(s)}<tr><th>Secret</th><td><button class="secret-reveal" type="button" data-reveal-secret="scale-secret-${e(s.id)}" aria-expanded="false">•••••••••••••••• <span class="hint">(Click To Reveal)</span></button><code id="scale-secret-${e(s.id)}" hidden>${e(s.secret)}</code></td></tr></tbody></table>
+      )}</code></td></tr>${firmwareRow(s)}${batteryRow(s)}<tr><th>Secret</th><td><button class="secret-reveal" type="button" data-reveal-secret="scale-secret-${e(s.id)}" aria-expanded="false">•••••••••••••••• <span class="hint">(Click To Reveal)</span></button><code id="scale-secret-${e(s.id)}" hidden>${e(s.secret)}</code></td></tr></tbody></table>
       <button type="button" class="text-button" data-open-dialog="edit-device-${e(s.id)}">Edit Settings</button></section>`,
             )
             .join("")

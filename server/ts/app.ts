@@ -1736,7 +1736,14 @@ export async function handleApp(
     }
     return page(
       "Dashboard",
-      dashboardPage(cards, (await setting(db, "display_weight_unit")) ?? "kg"),
+      dashboardPage(
+        cards,
+        (await setting(db, "display_weight_unit")) ?? "kg",
+        await rows(
+          db,
+          "SELECT label,model,battery_level,last_session_at FROM scales ORDER BY label,id",
+        ),
+      ),
       "/",
     );
   }

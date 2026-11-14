@@ -28,6 +28,37 @@ export const timeLabel = (value: unknown): string => {
       )
     : "Unknown";
 };
+/** Battery percentage at or below which a scale is shown as needing attention. */
+export const LOW_BATTERY = 20;
+const SCALE_ICON =
+  '<svg class="icon-scale" viewBox="0 0 16 16" aria-hidden="true"><rect x=".75" y=".75" width="14.5" height="14.5" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="3.5" width="6" height="3" rx="1" fill="currentColor"/></svg>';
+function batteryIcon(level: number): string {
+  const fill = Math.max(2, (14 * level) / 100).toFixed(1);
+  return `<svg class="icon-battery" viewBox="0 0 24 12" aria-hidden="true"><rect x=".75" y=".75" width="18.5" height="10.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="21" y="3.5" width="2.5" height="5" rx="1" fill="currentColor"/><rect x="3" y="3" width="${fill}" height="6" rx="1" fill="currentColor"/></svg>`;
+}
+/** Stored battery level of a scale row, or null when never reported. */
+export function batteryOf(scale: Row): number | null {
+  const level = scale.battery_level;
+  return typeof level === "number" && level >= 0 && level <= 100 ? level : null;
+}
+/** What to do about a low battery, worded for the model's power source. */
+export function batteryAction(model: unknown): string {
+  return scaleModel(String(model ?? ""))?.rechargeable
+    ? "Charge Soon"
+    : "Replace Batteries";
+}
+/** Dashboard row: one badge per scale that has reported a battery level. */
+export function scaleBatteries(scales: Row[]): string {
+  const badges = scales
+    .map((s) => {
+      const level = batteryOf(s);
+      if (level === null) return "";
+      const low = level <= LOW_BATTERY;
+      return `<span class="badge scale-battery${low ? " warn" : ""}" title="Battery reported ${timeLabel(s.last_session_at)}">${SCALE_ICON}<span>${e(s.label)}</span>${batteryIcon(level)}<span>${level} %</span>${low ? `<span>· ${batteryAction(s.model)}</span>` : ""}</span>`;
+    })
+    .join("");
+  return badges ? `<div class="scale-batteries">${badges}</div>` : "";
+}
 export function weightLabel(row: Row, unit: string): string {
   if (row.weight_value == null || row.weight_unit == null) return "—";
   const kg = n(row.weight_value) * 10 ** n(row.weight_unit);
@@ -143,12 +174,13 @@ export function dashboardPage(
     metric?: number;
   }>,
   unit: string,
+  scales: Row[] = [],
 ): string {
   const selections = Object.fromEntries(
     cards.map(({ user, metric = 1 }) => [`metric_${user.id}`, metric]),
   );
   return `<section class="page-heading"><div><h1>Dashboard</h1></div><a class="button secondary" href="/readings">View All Readings</a></section>
-  ${
+  ${scaleBatteries(scales)}${
     cards.length
       ? `<div class="cards">${cards
           .map(
