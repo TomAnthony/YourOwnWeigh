@@ -17,7 +17,13 @@ import {
   settingsWorkspace,
   syncPage,
 } from "./integrated_ui.ts";
-import { isLanguagePreference, resolveLanguage, translator } from "./i18n.ts";
+import {
+  isLanguagePreference,
+  resolveLanguage,
+  translateMessage,
+  translator,
+  type MessageKey,
+} from "./i18n.ts";
 import { scaleModel } from "./models.ts";
 import { handleScaleRequest, zoneTriplet, roster, screenIds } from "./scale_api.ts";
 import {
@@ -1646,18 +1652,24 @@ export async function handleApp(
           await file.text(),
           browser.token_hash,
         );
+        const T = (key: MessageKey) => escapeHtml(t(key));
+        const section = (name: string) => {
+          const key = `backup.section.${name}` as MessageKey;
+          const label = t(key);
+          return label === key ? name.replaceAll("_", " ") : label;
+        };
         return page(
-          "Review Backup Import",
-          `<section><h1>Review Backup Import</h1><dl>${Object.entries(
+          t("backup.reviewTitle"),
+          `<section><h1>${T("backup.reviewTitle")}</h1><dl>${Object.entries(
             staged.counts,
           )
             .map(
               ([name, count]) =>
-                `<dt>${escapeHtml(name.replaceAll("_", " "))}</dt><dd>${count}</dd>`,
+                `<dt>${escapeHtml(section(name))}</dt><dd>${count}</dd>`,
             )
             .join(
               "",
-            )}</dl><form action="/api/backup/commit" method="post"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="import_id" value="${staged.id}"><input type="hidden" name="digest" value="${staged.digest}"><label><input type="radio" name="mode" value="merge" checked> Add Missing Data (Keep Existing Edits)</label><label><input type="radio" name="mode" value="replace"> Replace Household Data</label><p>Replacement removes current users, readings and devices. <a href="/api/backup/export">Export Current Data First</a>.</p>${staged.hasAccess ? '<label><input type="checkbox" name="restore_access" value="1"> Restore Access Settings (Use The Backup’s Passwords And Sign Out)</label>' : ""}<label><input type="checkbox" name="confirmed" value="1" required> I Have Reviewed This Import</label><div class="dialog-actions"><button>Import Backup</button><a href="/settings">Cancel</a></div></form></section>`,
+            )}</dl><form action="/api/backup/commit" method="post"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="import_id" value="${staged.id}"><input type="hidden" name="digest" value="${staged.digest}"><label><input type="radio" name="mode" value="merge" checked> ${T("backup.merge")}</label><label><input type="radio" name="mode" value="replace"> ${T("backup.replace")}</label><p>${T("backup.replaceHint")} <a href="/api/backup/export">${T("backup.exportFirst")}</a>.</p>${staged.hasAccess ? `<label><input type="checkbox" name="restore_access" value="1"> ${T("backup.restoreAccess")}</label>` : ""}<label><input type="checkbox" name="confirmed" value="1" required> ${T("backup.confirmed")}</label><div class="dialog-actions"><button>${T("backup.importButton")}</button><a href="/settings">${T("common.cancel")}</a></div></form></section>`,
           "/settings",
         );
       }
@@ -1687,8 +1699,8 @@ export async function handleApp(
       }
     } catch (error) {
       return page(
-        "Import Not Completed",
-        `<section><h1>Import Not Completed</h1><p>${escapeHtml(safeError(error))}</p><a href="/settings">Back To Settings</a></section>`,
+        t("backup.failedTitle"),
+        `<section><h1>${escapeHtml(t("backup.failedTitle"))}</h1><p>${escapeHtml(translateMessage(safeError(error), language))}</p><a href="/settings">${escapeHtml(t("backup.backToSettings"))}</a></section>`,
         "/settings",
       );
     }
@@ -2185,11 +2197,7 @@ async function browserPost(
         saveSetting(db, "display_weight_unit", unit),
         saveSetting(db, "display_language", preference),
       ]);
-      const saved = resolveLanguage(
-        preference,
-        request.headers.get("Accept-Language"),
-      );
-      return go("/settings", translator(saved)("settings.displaySaved"));
+      return go("/settings", "Display settings saved");
     }
     if (path === "/scales") {
       const label = formText(form, "label").trim();

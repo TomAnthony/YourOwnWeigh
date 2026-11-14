@@ -11,6 +11,7 @@ import {
   MESSAGE_KEYS,
   browserLanguage,
   resolveLanguage,
+  translateMessage,
   translator,
 } from "../i18n.ts";
 import { timeLabel, weightLabel } from "../ui.ts";
@@ -48,6 +49,24 @@ test("every catalog matches the English placeholders", () => {
     translator("de")("reading.position", { position: 2 }),
     "Position 2",
   );
+});
+
+test("server messages are translated when shown", () => {
+  assert.equal(translateMessage("Reading assigned", "de"), "Messung zugeordnet");
+  assert.equal(translateMessage("Reading assigned", "en"), "Reading assigned");
+  assert.equal(
+    translateMessage("Invalid MAC address", "de"),
+    "Ungültige MAC-Adresse",
+  );
+  assert.equal(
+    translateMessage("Invalid goff", "de"),
+    "Ungültiger Wert: goff",
+  );
+  assert.equal(
+    translateMessage("User Jane Doe added as stable scale ID 7", "de"),
+    "Person Jane Doe mit fester Waagen-ID 7 angelegt",
+  );
+  assert.equal(translateMessage("Something new", "de"), "Something new");
 });
 
 test("dates and weights follow the display language", () => {
@@ -131,12 +150,13 @@ test("dashboard and settings follow the browser or the saved language", async ()
       language: "de",
     });
     assert.equal(saved.status, 303);
-    assert.equal(
-      new URL(
-        saved.headers.get("location") ?? "",
-        "https://local.test",
-      ).searchParams.get("notice"),
-      "Anzeigeeinstellungen gespeichert",
+    const savedAt = new URL(
+      saved.headers.get("location") ?? "",
+      "https://local.test",
+    );
+    assert.match(
+      await (await request(savedAt.pathname + savedAt.search, "en")).text(),
+      /<p class="flash" role="status">Anzeigeeinstellungen gespeichert<\/p>/,
     );
     assert.match(await (await request("/", "en")).text(), /<html lang="de">/);
 

@@ -4,6 +4,7 @@ import { METRICS, storedMeasures, type Metric } from "./metrics.ts";
 import { WEB_APP_VERSION } from "./version.ts";
 import {
   LOCALES,
+  translateMessage,
   translator,
   type Language,
   type MessageKey,
@@ -182,7 +183,7 @@ export function layout(
           `<form action="/logout" method="post">${hidden(csrf)}<button>${e(t("nav.signOut"))}</button></form>`
         : ""
     }</nav>
-    ${notice ? `<p class="flash" role="status">${e(notice)}</p>` : ""}<main>${body}</main><footer class="site-footer"><span>YourOwnWeigh · Web App v${e(WEB_APP_VERSION)}</span><a href="https://github.com/TomAnthony/YourOwnWeigh" target="_blank" rel="noopener noreferrer">GitHub</a></footer></body></html>`;
+    ${notice ? `<p class="flash" role="status">${e(translateMessage(notice, language))}</p>` : ""}<main>${body}</main><footer class="site-footer"><span>YourOwnWeigh · Web App v${e(WEB_APP_VERSION)}</span><a href="https://github.com/TomAnthony/YourOwnWeigh" target="_blank" rel="noopener noreferrer">GitHub</a></footer></body></html>`;
 }
 export function setupPage(
   csrf: string,
