@@ -178,7 +178,15 @@ class ScaleSession:
         secret = identity["secret"]
         if not re.fullmatch(r"[0-9a-fA-F]{16}", secret) and ((supported and self.model != "WBS13") or secret):
             raise ProtocolError("Probe contains an invalid device identity")
-        if not classic and supported:
+        ota_only = supported and identity["firmwareVersion"] in s.ota_only_firmware
+        if ota_only:
+            # No MTU exchange exists on this firmware (0x155 is answered with
+            # -3). Bound control frames by the ATT write limit; OTA packets are
+            # further capped by the size the scale offers in its START reply.
+            self.mtu = self.transport.max_write
+            LOG.info("Firmware %d has no MTU exchange; OTA-only mode, write limit %d",
+                     identity["firmwareVersion"], self.mtu)
+        elif not classic and supported:
             reply = await self.request(0x155, tlv(0x990, struct.pack(">H", 512)))
             if self.model == "WBS13":
                 # Original v1311 handler: 0x990 maximum packet, 0x992 ATT MTU
@@ -221,6 +229,15 @@ class ScaleSession:
                 completeSetup=False, firmwareRead=False, otaDestinationRead=False,
             )
         version = self.identity["firmwareVersion"]
+        if version in self.spec.ota_only_firmware:
+            # Only installing a known image is enabled on these older builds.
+            return dict(
+                ota=True, serverRead=False, serverWrite=False,
+                serverTransports=[], hostnameMaxBytes=0, wifiWrite=False,
+                wifiRead=False, wifiConnectionResult=False,
+                completeSetup=False, setTime=False, enrollment=False,
+                firmwareRead=False, otaDestinationRead=False,
+            )
         if self.model == "WBS05":
             # The normal probe supplies the secret on stock and YOW firmware.
             # YOW uses local users; vendor import needs a client certificate.

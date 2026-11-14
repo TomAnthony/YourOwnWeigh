@@ -36,7 +36,7 @@ The below models are currently supported. Pull Requests to add more models are v
 | Scale | Model | Stock Firmware | YOW Firmware | Thanks | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Body Smart | **WBS13** | v1311 | v103 | | |
-| Body | **WBS06** | v1181 | v127 | | |
+| Body | **WBS06** | v1181 | v127 | | Stock v551 is also accepted as an OTA source; see [#22](https://github.com/TomAnthony/YourOwnWeigh/issues/22). |
 | Body+ | **WBS05** | v1651 | v100 | | |
 | Body Cardio | **WBS04** | v2231 | v100 | [KindOfNerdy](https://github.com/KindOfNerdy) | |
 | Wireless Scale | **WBS03**<br>**(WS‑30)** | v921 | v102 | | HTTP only scale sync. |
