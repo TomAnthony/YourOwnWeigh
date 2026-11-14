@@ -760,6 +760,29 @@ async function updateMemberships(
     );
     if ((count?.count ?? 0) >= 8)
       throw new Error("A scale can have at most eight users");
+    // A WBS06 also keeps seed people that were never imported locally, and
+    // its roster cannot exceed eight people in total (see roster()).
+    const scale = await one<{ model: string; roster_snapshot: string | null }>(
+      db,
+      "SELECT model,roster_snapshot FROM scales WHERE id=?",
+      id,
+    );
+    if (scale?.model === "WBS06" && scale.roster_snapshot) {
+      const seed = parseJson(scale.roster_snapshot);
+      const ids = Array.isArray(seed) ? seed.map((u: Row) => u.id) : [];
+      const known = ids.length
+        ? await rows<{ id: number }>(
+            db,
+            `SELECT id FROM users WHERE id IN (${ids.map(() => "?").join(",")})`,
+            ...ids,
+          )
+        : [];
+      const kept = ids.length - known.length;
+      if ((count?.count ?? 0) + kept >= 8)
+        throw new Error(
+          `This scale already keeps ${kept} Withings ${kept === 1 ? "person" : "people"} not imported here; a scale can have at most eight users`,
+        );
+    }
   }
   const current = await rows<{ scale_id: number }>(
     db,
