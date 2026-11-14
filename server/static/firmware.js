@@ -7,6 +7,76 @@
   const $ = (id) => document.getElementById(id);
   const csrf = root.dataset.csrf;
   const localRosterModels = new Set((root.dataset.localRosterModels || "").split(","));
+  // The controller writes English. For other languages the server embeds
+  // English → translated pairs ({name} matches any text), and text is
+  // translated as it lands in the DOM. Unknown text stays as written.
+  const translations = (() => {
+    try {
+      return JSON.parse($("firmware-i18n")?.textContent || "[]");
+    } catch {
+      return [];
+    }
+  })().map(([source, target]) => {
+    const names = [];
+    const pattern = source
+      .split(/(\{\w+\})/)
+      .map((part) => {
+        const placeholder = /^\{(\w+)\}$/.exec(part);
+        if (!placeholder) return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        names.push(placeholder[1]);
+        return "([\\s\\S]+?)";
+      })
+      .join("");
+    return { names, target, pattern: new RegExp(`^${pattern}$`) };
+  });
+  const tr = (text) => {
+    if (!text || !/[A-Za-z]/.test(text)) return text;
+    for (const { names, target, pattern } of translations) {
+      const match = pattern.exec(text);
+      if (match)
+        return target.replace(/\{(\w+)\}/g, (whole, name) => {
+          const index = names.indexOf(name);
+          return index < 0 ? whole : tr(match[index + 1]);
+        });
+    }
+    for (const separator of ["\n", " · "])
+      if (text.includes(separator))
+        return text.split(separator).map(tr).join(separator);
+    return text;
+  };
+  if (translations.length && typeof MutationObserver === "function") {
+    const attributes = ["title", "placeholder", "aria-label"];
+    const translateNode = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = tr(node.data);
+        if (text !== node.data) node.data = text;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        for (const name of attributes) {
+          const value = node.getAttribute(name);
+          const text = value && tr(value);
+          if (text && text !== value) node.setAttribute(name, text);
+        }
+        node.childNodes.forEach(translateNode);
+      }
+    };
+    new MutationObserver((records) => {
+      for (const record of records)
+        if (record.type === "childList") record.addedNodes.forEach(translateNode);
+        else if (record.type === "characterData") translateNode(record.target);
+        else {
+          const value = record.target.getAttribute(record.attributeName);
+          const text = value && tr(value);
+          if (text && text !== value)
+            record.target.setAttribute(record.attributeName, text);
+        }
+    }).observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: attributes,
+    });
+  }
   let socket,
     clientId,
     snapshot = {},

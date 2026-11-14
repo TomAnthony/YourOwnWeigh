@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalSqlite } from "../sqlite.ts";
@@ -10,6 +10,7 @@ import {
   LANGUAGES,
   MESSAGE_KEYS,
   browserLanguage,
+  clientTranslations,
   resolveLanguage,
   translateMessage,
   translator,
@@ -52,21 +53,38 @@ test("every catalog matches the English placeholders", () => {
 });
 
 test("server messages are translated when shown", () => {
-  assert.equal(translateMessage("Reading assigned", "de"), "Messung zugeordnet");
+  assert.equal(
+    translateMessage("Reading assigned", "de"),
+    "Messung zugeordnet",
+  );
   assert.equal(translateMessage("Reading assigned", "en"), "Reading assigned");
   assert.equal(
     translateMessage("Invalid MAC address", "de"),
     "Ungültige MAC-Adresse",
   );
-  assert.equal(
-    translateMessage("Invalid goff", "de"),
-    "Ungültiger Wert: goff",
-  );
+  assert.equal(translateMessage("Invalid goff", "de"), "Ungültiger Wert: goff");
   assert.equal(
     translateMessage("User Jane Doe added as stable scale ID 7", "de"),
     "Person Jane Doe mit fester Waagen-ID 7 angelegt",
   );
   assert.equal(translateMessage("Something new", "de"), "Something new");
+});
+
+test("firmware.js strings in the catalog still exist in the script", () => {
+  const script = readFileSync(
+    new URL("../../static/firmware.js", import.meta.url),
+    "utf8",
+  );
+  const pairs = clientTranslations("de", "fw.");
+  assert.ok(pairs.length > 100);
+  for (const [english] of pairs) {
+    // Bridge stage names arrive from the bridge, not from this script.
+    if (/^[a-z]/.test(english)) continue;
+    for (const part of english.split(/\{\w+\}/))
+      if (part.trim().length > 3)
+        assert.ok(script.includes(part), `firmware.js lacks "${part}"`);
+  }
+  assert.deepEqual(clientTranslations("en", "fw."), []);
 });
 
 test("dates and weights follow the display language", () => {

@@ -1,5 +1,6 @@
 /** Household and firmware views; all Bluetooth operations belong to the bridge. */
 import {
+  clientTranslations,
   LANGUAGE_NAMES,
   LANGUAGES,
   translator,
@@ -76,6 +77,7 @@ export function firmwareWorkspace(
     <dialog id="flash-dialog"><button class="dialog-close" data-close-dialog type="button">×</button><h2 id="flash-title">${T("bridge.flashTitle")}</h2><p id="flash-warning" class="notice" hidden></p><p>${T("bridge.flashIntro")}</p><p id="flash-summary" class="firmware-artifact"></p><label><span id="flash-prompt">${T("bridge.flashPrompt")}</span><input id="flash-confirmation" autocomplete="off" spellcheck="false" aria-describedby="flash-warning flash-summary"></label><div class="dialog-actions"><button id="confirm-flash" type="button" disabled>${T("bridge.confirmFlash")}</button><button type="button" data-close-dialog class="secondary">${T("common.cancel")}</button></div></dialog>
     <dialog id="enroll-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>${T("bridge.enrollTitle")}</h2><p id="enroll-description">${T("bridge.enrollIntro")}</p><label>${T("bridge.deviceLabel")}<input id="device-label" maxlength="80"></label><div class="dialog-actions"><button id="confirm-enroll" type="button">${T("bridge.importDevice")}</button><button type="button" data-close-dialog class="secondary">${T("common.later")}</button></div></dialog>
     <dialog id="roster-dialog"><button class="dialog-close" type="button" data-close-dialog>×</button><h2>${T("bridge.rosterTitle")}</h2><p id="roster-message"></p><div id="roster-users"></div><div class="dialog-actions"><button id="confirm-roster" type="button">${T("users.importSelected")}</button><button type="button" data-close-dialog class="secondary">${T("common.later")}</button></div></dialog>
+    ${language === "en" ? "" : `<script type="application/json" id="firmware-i18n">${JSON.stringify(clientTranslations(language, "fw.", "msg.")).replace(/</g, "\\u003c")}</script>`}
   </div><script src="/firmware.js?v=${WEB_APP_VERSION}" defer></script>`;
 }
 

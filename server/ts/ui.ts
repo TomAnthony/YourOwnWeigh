@@ -197,7 +197,10 @@ export function setupPage(
   return `<section><h1>${T("setup.passwordTitle")}</h1><p>${T("setup.passwordIntro")}</p><form method="post">${hidden(csrf)}<input type="hidden" name="step" value="password"><label>${T("auth.adminPassword")}<input name="password" type="password" minlength="8" required autocomplete="new-password"></label><label>${T("setup.confirmAdmin")}<input name="confirm" type="password" minlength="8" required autocomplete="new-password"></label>
     <label><input type="checkbox" name="separate_sync" value="1" data-toggle="setup-sync-fields"> ${T("sync.alternativePassword")}</label><div id="setup-sync-fields" hidden><label>${T("setup.syncPassword")}<input name="sync_password" type="password" minlength="8" autocomplete="new-password"></label><label>${T("setup.syncConfirm")}<input name="sync_confirm" type="password" minlength="8" autocomplete="new-password"></label></div><button>${T("setup.create")}</button></form></section>`;
 }
-export function loginPage(csrf: string, t: Translate = translator("en")): string {
+export function loginPage(
+  csrf: string,
+  t: Translate = translator("en"),
+): string {
   return `<section><h1>${e(t("auth.signIn"))}</h1><form method="post">${hidden(csrf)}<label>${e(t("auth.adminPassword"))}<input name="password" type="password" required></label><button>${e(t("auth.signIn"))}</button></form></section>`;
 }
 function readingTime(row: Row, language: Language = "en"): string {
