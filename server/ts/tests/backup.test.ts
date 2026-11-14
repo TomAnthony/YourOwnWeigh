@@ -478,3 +478,48 @@ test("firmware observations survive restore and pre-tracking backups still impor
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("scale battery level survives backup, is validated, and older backups default it to null", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-battery-backup-"));
+  const store = new LocalSqlite(join(dir, "db"));
+  try {
+    await seed(store);
+    await store.prepare("UPDATE scales SET battery_level=64 WHERE id=7").run();
+    const backup = await exportBackup(store.asD1());
+    assert.equal(backup.sections.scales[0].battery_level, 64);
+    for (const bad of [101, -1, 6.5, "64"]) {
+      const invalid = structuredClone(backup);
+      (invalid.sections.scales[0] as any).battery_level = bad;
+      await assert.rejects(
+        stageBackup(store.asD1(), JSON.stringify(invalid), "admin"),
+        /Invalid scale battery level/,
+      );
+    }
+    for (const legacy of [false, true]) {
+      const copy = structuredClone(backup);
+      if (legacy) delete copy.sections.scales[0].battery_level;
+      const stage = await stageBackup(
+        store.asD1(),
+        JSON.stringify(copy),
+        "admin",
+      );
+      await commitBackup(
+        store.asD1(),
+        stage.id,
+        stage.digest,
+        "admin",
+        "replace",
+        false,
+      );
+      assert.equal(
+        (await store
+          .prepare("SELECT battery_level FROM scales WHERE id=7")
+          .first<any>())!.battery_level,
+        legacy ? null : 64,
+      );
+    }
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
