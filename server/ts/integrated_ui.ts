@@ -87,7 +87,7 @@ function batteryRow(s: Row): string {
   if (level === null)
     return "<tr><th>Battery</th><td>Not Yet Reported</td></tr>";
   const low = level <= LOW_BATTERY;
-  return `<tr><th>Battery</th><td>${level} %${low ? ` <span class="badge warn">${batteryAction(s.model)}</span>` : ""}<span class="hint">Reported ${timeLabel(s.last_session_at)}</span></td></tr>`;
+  return `<tr class="battery-row"><th>Battery</th><td>${level} %${low ? ` <span class="badge warn">${batteryAction(s.model)}</span>` : ""}<span class="hint">Reported ${timeLabel(s.last_session_at)}</span></td></tr>`;
 }
 function firmwareRow(s: Row): string {
   const known = s.firmware_version != null && s.firmware_confirmed_at != null;

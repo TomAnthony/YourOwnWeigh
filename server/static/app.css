@@ -826,6 +826,9 @@ label input[type="checkbox"] {
 .scale-details code {
   font-family: inherit;
 }
+.scale-details .battery-row > * {
+  vertical-align: baseline;
+}
 .secret-reveal,
 .secret-reveal:hover {
   padding: 0;
