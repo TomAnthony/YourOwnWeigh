@@ -62,7 +62,7 @@ test("roster overlays use metres and preserve people skipped during import", asy
     rmSync(dir, { recursive: true, force: true });
   }
 });
-test("WBS06 roster appends local members after the seed people; WBS04 does not", async () => {
+test("WBS06 and WBS04 rosters append local members after the seed people", async () => {
   const dir = mkdtempSync(join(tmpdir(), "yow-roster-")),
     store = new LocalSqlite(join(dir, "db.sqlite3")),
     db = store.asD1();
@@ -107,10 +107,17 @@ test("WBS06 roster appends local members after the seed people; WBS04 does not",
       id: 1, model: "WBS06", roster_snapshot: "[]",
     } as any)) as any[];
     assert.deepEqual(fresh.map((u) => [u.id, u.cs]), [[6, "2"], [5, "2"]]);
+    // Body Cardio gets the same local users, with its own fm.
     const cardio = (await roster({ DB: db }, {
       id: 1, model: "WBS04", roster_snapshot: JSON.stringify(seed),
     } as any)) as any[];
-    assert.deepEqual(cardio.map((u) => u.id), [900]);
+    assert.deepEqual(cardio.map((u) => [u.id, u.fm]), [[900, undefined], [6, 131], [5, 131]]);
+    assert.equal(cardio[2].cs, "11,6,2,10");
+    // Other seeded models still send only their seed people.
+    const other = (await roster({ DB: db }, {
+      id: 1, model: "WBS03", roster_snapshot: JSON.stringify(seed),
+    } as any)) as any[];
+    assert.deepEqual(other.map((u) => u.id), [900]);
     // Nine people cannot be sent.
     const full = Array.from({ length: 8 }, (_, i) => ({ id: 1000 + i }));
     await assert.rejects(

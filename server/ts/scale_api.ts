@@ -356,8 +356,8 @@ export async function roster(
     if (!user.active || !user.membership) return [];
     return [overlay(entry, user)];
   });
-  if (scale.model === "WBS06") {
-    // A WBS06 that never had a Withings roster (or not enough people on it)
+  if (scale.model === "WBS06" || scale.model === "WBS04") {
+    // A scale that never had a Withings roster (or not enough people on it)
     // also receives local users chosen for it. They use the same entry shape
     // as an edited seed; a WBS06 accepted and attributed an edited seed on
     // hardware (issue #22). Seed people keep their slots and order.
@@ -366,7 +366,9 @@ export async function roster(
       .filter((u) => u.active && u.membership && !listed.has(u.id))
       .sort((a, b) => a.membership_rank - b.membership_rank || a.id - b.id);
     const template = {
-      fm: 3,
+      // Withings seeds Body Cardio people with fm 131 (3 plus bit 7); the
+      // WBS04 firmware ignores `ft`.
+      fm: scale.model === "WBS04" ? 131 : 3,
       att: 0,
       ft: [],
       cs: typeof baseline[0]?.cs === "string" ? baseline[0].cs : "2",

@@ -1315,16 +1315,14 @@ async function enrollDevice(
   ).run();
   return saved;
 }
-async function queueRosterEdits(db: D1Database, userId: number) {
+async function queueRosterEdits(db: D1Database) {
   for (const scale of await rows(
     db,
     "SELECT * FROM scales WHERE model IN ('WBS06','WBS04') AND settings_ready=1 AND roster_snapshot IS NOT NULL",
   )) {
-    const baseline = JSON.parse(scale.roster_snapshot);
-    // WBS06 also carries local users outside its seed roster, so any user
-    // change (added, edited, moved off this scale) may alter what it receives.
-    if (scale.model !== "WBS06" && !baseline.some((u: Row) => u.id === userId))
-      continue;
+    // Both models also carry local users outside their seed roster, so any
+    // user change (added, edited, moved off this scale) may alter what they
+    // receive.
     try {
       await roster({ DB: db }, scale as any);
       await run(db, "UPDATE scales SET roster_enabled=1 WHERE id=?", scale.id);
@@ -2563,7 +2561,7 @@ async function browserPost(
         ...memberships,
         saveSetting(db, "next_local_user_id", String(id + 1)),
       ]);
-      await queueRosterEdits(db, id);
+      await queueRosterEdits(db);
       return go("/users", `User ${user.name} added as stable scale ID ${id}`);
     }
     const userDelete = /^\/users\/(\d+)\/delete$/.exec(path);
@@ -2649,7 +2647,7 @@ async function browserPost(
           db.prepare("UPDATE users SET active=0 WHERE id=?").bind(id),
           db.prepare("DELETE FROM scale_users WHERE user_id=?").bind(id),
         ]);
-        await queueRosterEdits(db, id);
+        await queueRosterEdits(db);
         return go("/users", "User retired; historical readings remain");
       }
       const user = parsedUser(form);
@@ -2671,7 +2669,7 @@ async function browserPost(
           ),
         ...memberships,
       ]);
-      await queueRosterEdits(db, id);
+      await queueRosterEdits(db);
       return go(
         "/users",
         "User updated; roster edits will be sent to supported scales on their next connection",
@@ -2693,7 +2691,7 @@ async function browserPost(
       ]);
       if (result.meta.changes !== 1)
         throw new Error("Reading is missing or already assigned");
-      await queueRosterEdits(db, userId);
+      await queueRosterEdits(db);
       return go("/readings", "Reading assigned");
     }
     const readingDelete = /^\/readings\/(\d+)\/delete$/.exec(path);
