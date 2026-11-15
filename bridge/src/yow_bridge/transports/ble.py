@@ -216,7 +216,12 @@ class Backend:
                 await transport.client.start_notify(characteristic, on_data)
             return transport
         except BaseException:
-            await transport.disconnect()
+            try:
+                await transport.disconnect()
+            except Exception:
+                # A transient LE device may already be gone from BlueZ
+                # (UnknownObject). Never let cleanup mask the original error.
+                LOG.debug("BLE cleanup after a failed connect also failed", exc_info=True)
             if bluez and opened_le:
                 try:
                     await bluez.call(device_path, DEVICE, "Disconnect", timeout=3)

@@ -23,6 +23,11 @@ class ModelSpec:
     known_firmware: tuple[int, ...]
     hostname_limit: int
     display: str  # human name used by the simulator
+    # Older stock firmware accepted only as an OTA source. These builds predate
+    # the 0x155 MTU exchange, so probing skips it and keeps every other command
+    # (Wi-Fi, setup, import, server target) disabled until the scale runs a
+    # known version.
+    ota_only_firmware: tuple[int, ...] = ()
 
 
 MODELS: dict[str, ModelSpec] = {
@@ -51,6 +56,11 @@ MODELS: dict[str, ModelSpec] = {
         known_firmware=(1181, 123, 124, 125, 126, 127),
         hostname_limit=48,
         display="Body",
+        # v551 (2019) is what Withings currently serves WBS06 scales. Its WPP
+        # dispatcher answers 0x155 with -3 (unknown command) but implements
+        # the same 0x401/0x402/0x403 OTA, and its v4 bootloader is identical
+        # to v1181's (issue #22). v551 -> v127 was confirmed on hardware.
+        ota_only_firmware=(551,),
     ),
     "WBS13": ModelSpec(
         transport="ble",
