@@ -526,6 +526,11 @@ class ScaleSession:
         self.require_probe()
         if not self.capabilities()["ota"]:
             raise ProtocolError(self.connection_warning() or "Unqualified source firmware; OTA is unavailable")
+        classic = self.transport_kind == "classic"
+        if self.model == "WBS06" and classic and self.transport.max_write < 512 + 4:
+            # v551 requires 512-byte payloads plus four serial framing bytes.
+            # Reject a known-incompatible transport before START can erase a slot.
+            raise ProtocolError("Classic OTA packet exceeds the RFCOMM MTU")
         self.ota_started = True  # START may erase even if its response is lost.
         progress("starting", 0, len(image))
         reply = await self.request(
@@ -534,7 +539,6 @@ class ScaleSession:
         if len(reply.payload) != 4 or reply.payload[0] != 0:
             raise ProtocolError("OTA START rejected or malformed")
         offered, batch = struct.unpack_from(">HB", reply.payload, 1)
-        classic = self.transport_kind == "classic"
         maximum = self.mtu if classic else 512
         if not 1 <= offered <= maximum or not 1 <= batch <= 32:
             raise ProtocolError("Invalid OTA packet/window size")

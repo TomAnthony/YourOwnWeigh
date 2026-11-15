@@ -168,10 +168,10 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_wbs06_551_classic_probe_and_ota(self):
         # Classic discovery starts with a generic candidate. The identity must
         # normalize Body/boot-4 to WBS06 without switching framing to BLE.
-        for remainder in (0, 7):
-            with self.subTest(remainder=remainder):
+        for remainder, limit in ((0, 516), (7, 1018)):
+            with self.subTest(remainder=remainder, limit=limit):
                 transport = MockTransport("WBS03")
-                transport.max_write = 1018
+                transport.max_write = limit
                 transport.ota_packet_size, transport.ota_window = 512, 4
                 with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551)):
                     for _ in range(2):
@@ -195,7 +195,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_wbs06_551_classic_rejects_unreviewed_ota_limits(self):
         for offered, window, limit in ((126, 15, 1018), (252, 4, 1018), (512, 15, 1018),
-                                       (513, 4, 1018), (512, 4, 512)):
+                                       (513, 4, 1018)):
             transport = MockTransport("WBS03")
             transport.max_write = limit
             transport.ota_packet_size, transport.ota_window = offered, window
@@ -205,6 +205,23 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
                 await transport.session.install(bytes(300), lambda *p: None)
             self.assertEqual(transport.total, 0)
             self.assertTrue(transport.session.ota_started)
+
+    async def test_wbs06_551_classic_rejects_insufficient_mtu_before_erase(self):
+        for limit in (512, 515):
+            with self.subTest(limit=limit):
+                transport = MockTransport("WBS03")
+                transport.max_write = limit
+                transport.ota_packet_size, transport.ota_window = 512, 4
+                with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551)):
+                    await transport.session.probe()
+                before = list(transport.sent)
+                progress = []
+                with self.assertRaisesRegex(ProtocolError, "RFCOMM MTU"):
+                    await transport.session.install(bytes(600), lambda *p: progress.append(p))
+                self.assertEqual(transport.sent, before)  # No START or data writes.
+                self.assertFalse(transport.session.ota_started)
+                self.assertFalse(transport.ota)
+                self.assertEqual(progress, [])
 
     async def test_wbs06_other_versions_use_ble(self):
         for version in (127, 1181, 552):
