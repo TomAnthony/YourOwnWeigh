@@ -115,7 +115,7 @@ class MockTransport:
         if self.ota:
             self.total += len(data)
             self.count += 1
-            if self.count % (15 if getattr(self, "wpp_profile", None) == "WBS13" else 3) == 0:
+            if self.count % getattr(self, "ota_window", 15 if getattr(self, "wpp_profile", None) == "WBS13" else 3) == 0:
                 self.reply(encode(0x402))
             if self.total == self.size:
                 self.reply(encode(0x403))
@@ -132,8 +132,8 @@ class MockTransport:
         elif frame.command == 0x401:
             self.size = struct.unpack(">I", frame.value(0x401)[1:])[0]
             self.ota = True
-            window = 15 if getattr(self, "wpp_profile", None) == "WBS13" else 3
-            self.reply(encode(0x401, b"\x00" + struct.pack(">HB", 64, window)))
+            window = getattr(self, "ota_window", 15 if getattr(self, "wpp_profile", None) == "WBS13" else 3)
+            self.reply(encode(0x401, b"\x00" + struct.pack(">HB", getattr(self, "ota_packet_size", 64), window)))
         else:
             self.reply(encode(frame.command))
 
@@ -148,6 +148,131 @@ class MockTransport:
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_wbs06_551_ble_requires_classic_before_erase(self):
+        transport = MockTransport("WBS06")
+        transport.max_write = 132
+        with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551)):
+            identity = await transport.session.probe()
+        self.assertTrue(identity["supported"])
+        self.assertEqual(identity["transport"], "ble")
+        self.assertIn("Scan Classic", identity["connectionWarning"])
+        self.assertFalse(identity["capabilities"]["ota"])
+        self.assertEqual(transport.session.mtu, 20)
+        for key in ("serverWrite", "wifiWrite", "wifiRead", "completeSetup", "setTime", "enrollment"):
+            self.assertFalse(identity["capabilities"][key])
+        with self.assertRaisesRegex(ProtocolError, "requires Classic Bluetooth"):
+            await transport.session.install(bytes(300), lambda *p: None)
+        self.assertEqual([Decoder().feed(p)[0].command for p in transport.sent], [0x101])
+        self.assertFalse(transport.session.ota_started)
+
+    async def test_wbs06_551_classic_probe_and_ota(self):
+        # Classic discovery starts with a generic candidate. The identity must
+        # normalize Body/boot-4 to WBS06 without switching framing to BLE.
+        for remainder in (0, 7):
+            with self.subTest(remainder=remainder):
+                transport = MockTransport("WBS03")
+                transport.max_write = 1018
+                transport.ota_packet_size, transport.ota_window = 512, 4
+                with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551)):
+                    for _ in range(2):
+                        identity = await transport.session.probe()
+                        self.assertEqual(identity["model"], "WBS06")
+                        self.assertEqual(identity["transport"], "classic")
+                        self.assertTrue(identity["capabilities"]["ota"])
+                        self.assertIsNone(identity["connectionWarning"])
+                        self.assertEqual(transport.session.mtu, 512)
+                self.assertEqual([Decoder().feed(p[4:])[0].command
+                                  for p in transport.sent if p != b"\x01\x00"], [0x101, 0x101])
+                before = len(transport.sent)
+                image = (bytes(range(256)) * 9)[:512 * 4 + remainder]
+                progress = []
+                result = await transport.session.install(image, lambda *p: progress.append(p))
+                self.assertTrue(result["transferred"])
+                packets = transport.sent[before + 1:]  # Skip framed START.
+                self.assertEqual(b"".join(p[4:] for p in packets), image)
+                self.assertTrue(all(len(p) == 516 for p in packets[:-1]))
+                self.assertEqual(progress[-1], ("transfer_complete", len(image), len(image)))
+
+    async def test_wbs06_551_classic_rejects_unreviewed_ota_limits(self):
+        for offered, window, limit in ((126, 15, 1018), (252, 4, 1018), (512, 15, 1018),
+                                       (513, 4, 1018), (512, 4, 512)):
+            transport = MockTransport("WBS03")
+            transport.max_write = limit
+            transport.ota_packet_size, transport.ota_window = offered, window
+            with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551)):
+                await transport.session.probe()
+            with self.assertRaisesRegex(ProtocolError, "packet|window|MTU"):
+                await transport.session.install(bytes(300), lambda *p: None)
+            self.assertEqual(transport.total, 0)
+            self.assertTrue(transport.session.ota_started)
+
+    async def test_wbs06_other_versions_use_ble(self):
+        for version in (127, 1181, 552):
+            transport = MockTransport("WBS03")
+            with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=version)):
+                identity = await transport.session.probe()
+            self.assertTrue(identity["supported"])
+            self.assertEqual(identity["transport"], "classic")
+            self.assertFalse(identity["capabilities"]["ota"])
+            self.assertIn("Scan BLE", identity["connectionWarning"])
+            with self.assertRaisesRegex(ProtocolError, "Scan BLE"):
+                await transport.session.install(bytes(300), lambda *p: None)
+            self.assertEqual(len(transport.sent), 2)  # Reset + probe only.
+
+    async def test_wbs06_551_does_not_bypass_identity_checks(self):
+        for model in ("WBS06", "WBS03"):
+            for changes in ({"boot": 3}, {"hardware": 1}, {"name": "Another Scale"}):
+                transport = MockTransport(model)
+                with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551, **changes)):
+                    identity = await transport.session.probe()
+                self.assertFalse(identity["capabilities"]["ota"])
+                with self.assertRaises(ProtocolError):
+                    await transport.session.install(bytes(300), lambda *p: None)
+                self.assertEqual(len(transport.sent), 2 if model == "WBS03" else 1)
+
+    async def test_application_classic_scan_normalizes_body(self):
+        import tempfile
+        from types import SimpleNamespace
+        from yow_bridge.application import Application
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = Application(directory)
+            transport = MockTransport("WBS03")
+            transport.max_write = 1018
+
+            async def scan(seconds, found):
+                found(dict(deviceId="classic-body", name="Body BC", modelCandidate="WBS03", presence="seen"))
+
+            async def connect(device_id, receive, disconnected):
+                transport.session = app.session
+                return transport
+
+            with patch("yow_bridge.application.backend", return_value=SimpleNamespace(scan=scan, connect=connect)):
+                await app.execute(dict(name="device.scan.start", parameters=dict(model="WBS03", durationSeconds=1)))
+            await app.execute(dict(name="device.connect", parameters={}, deviceId="classic-body"))
+            with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=551)):
+                identity = await app.execute(dict(name="device.probe", parameters={}))
+            self.assertEqual(identity["model"], "WBS06")
+            self.assertEqual(identity["transport"], "classic")
+            self.assertTrue(identity["capabilities"]["ota"])
+            self.assertEqual(app.snapshot()["device"]["transport"], "classic")
+
+    async def test_modern_wbs06_mtu_failure_is_not_a_legacy_fallback(self):
+        class RejectMTU(MockTransport):
+            async def write(self, packet):
+                if Decoder().feed(packet)[0].command == 0x155:
+                    self.sent.append(packet)
+                    self.reply(encode(0x100, tlv(0x110, struct.pack(">Hi", 0x155, -3))))
+                    return
+                await super().write(packet)
+
+        for version in (552, 1181, 127):
+            transport = RejectMTU("WBS06")
+            with patch(__name__ + ".probe", return_value=probe("WBS06", firmware=version)):
+                with self.assertRaisesRegex(ProtocolError, "rejected command 0x155"):
+                    await transport.session.probe()
+            self.assertIsNone(transport.session.identity)
+
     async def test_wbs05_stock_and_candidate_probe_and_ota(self):
         for version in (1651, 100):
             with self.subTest(version=version):

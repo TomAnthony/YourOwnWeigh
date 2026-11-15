@@ -210,8 +210,9 @@ class Profile(ServiceInterface):
 
 class Transport:
     # RFCOMM is a stream: the kernel segments writes at its negotiated frame
-    # size. A full WS-30 packet is at most 252 WPP bytes + 4 framing bytes.
-    max_write = 256
+    # size. WBS06 v551 uses 512 WPP bytes + 4 framing bytes; WS-30/WS-50
+    # retain their smaller limits in the model/session layer.
+    max_write = 516
 
     def __init__(self, bluez, path, receive, disconnected):
         self.bluez, self.path = bluez, path

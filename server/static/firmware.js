@@ -16,6 +16,7 @@
     flashArtifact = null,
     migration = null,
     offerIdentityKey = null,
+    connectionNotice = "",
     offerReport = "";
   let knownDevices = [],
     prompted = new Set(),
@@ -48,6 +49,13 @@
   const label = (model) => SCALE_LABELS[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
+  const needsClassic = (device) =>
+    device?.supported !== false && device?.model === "WBS06" &&
+    device.firmwareVersion === 551 && device.transport !== "classic";
+  const connectionWarning = (device) => device?.connectionWarning ||
+    (needsClassic(device)
+      ? "WBS06 v551 requires Classic Bluetooth for firmware updates. Disconnect, put the scale back in Start App, then use Scan Classic. Classic requires a Mac or Linux computer."
+      : "");
   const unknownFirmware = (artifact) =>
     !["known_release", "known_stock"].includes(artifact.classification);
   const flashPhrase = (artifact) =>
@@ -162,7 +170,7 @@
       !device || unsupported || (!caps.serverRead && !caps.wifiRead);
     $("set-server").disabled ||= !caps.serverWrite;
     $("install-firmware").disabled ||=
-      !caps.ota || !selectedArtifact || selectedArtifact.model !== model();
+      needsClassic(device) || !caps.ota || !selectedArtifact || selectedArtifact.model !== model();
     $("download-firmware").disabled ||= !selectedArtifact || unsupported;
     ["import-device", "export-device", "reveal-secret"].forEach((id) => {
       $(id).hidden =
@@ -215,6 +223,11 @@
     const target = $("device-identity");
     target.replaceChildren();
     const d = snapshot.device;
+    // Keep the instructions visible if v551 drops its BLE connection before
+    // the user can act. A new scan or identified device replaces this notice.
+    if (d) connectionNotice = connectionWarning(d);
+    $("connection-warning").textContent = connectionNotice;
+    $("connection-warning").hidden = !connectionNotice;
     if (!d) {
       $("device-secret").hidden = true;
       $("device-secret").textContent = "";
@@ -248,6 +261,7 @@
       ],
       ["MAC", d.mac],
       ["Firmware", d.firmwareVersion],
+      ...(d.transport ? [["Connection", d.transport === "classic" ? "Bluetooth Classic" : "Bluetooth LE"]] : []),
       ["Bootloader", d.bootloaderVersion],
       ...(d.secretAvailable === false
         ? [["Secret", "Not Provided By Scale"]]
@@ -282,10 +296,10 @@
     if (known?.time_zone) $("scale-timezone").value = known.time_zone;
     if (snapshot.device.supported !== false) offerEnrollment();
     message(
-      snapshot.device.supported === false
+      connectionWarning(snapshot.device) || (snapshot.device.supported === false
         ? "Identity Read · This Model Is Not Yet Supported"
-        : "Connected And Ready",
-      false,
+        : "Connected And Ready"),
+      !!connectionWarning(snapshot.device),
       "connection",
     );
   }
@@ -715,6 +729,8 @@
     await action(async () => {
       const sequence = actionSequence;
       $("scale-model").value = scaleModel;
+      connectionNotice = "";
+      $("connection-warning").hidden = true;
       snapshot.candidates = [];
       renderCandidates([]);
       scanInProgress = true;

@@ -58,6 +58,19 @@ Classic results distinguish **Paired · Not Seen This Scan**, **Seen This Scan**
 
 The WS-30 probe allows its serial reset to settle and retries the read-only identity request once after a short first timeout. OTA and configuration writes are not retried this way.
 
+**WBS06 stock v551 requires Scan Classic for its firmware update.** If a BLE
+probe finds v551, the bridge warns and disables OTA before sending any update
+command. Disconnect, put the scale back into Start App, choose **Scan Classic**,
+and connect to its Body entry. The identity probe confirms WBS06 and enables
+its 512-byte/four-packet Classic OTA path. After updating, reconnect with
+**Scan BLE** for normal YOW setup. Classic requires macOS or Linux; it is not
+available in the Windows bridge.
+
+Stock v551 repeatedly loses BLE after about 40 seconds on the tested Mac.
+Direct Classic OTA to YOW v127 passed on that Mac/scale; Linux's WBS06 Classic
+hardware path remains untested. The bridge implementation uses the exchange
+qualified by that diagnostic harness. See the [v551 investigation](../docs/wbs06-v551.md).
+
 An unrecognised model that speaks the same WPP identity protocol can supply credentials for the web app's read-only Withings firmware-offer lookup. Device-changing commands stay disabled. On macOS, enter the scale's pairing code when prompted; Bluetooth bonding does not register the scale with Withings or complete setup. Other Bluetooth services or probe formats need their own adapter.
 
 Body Smart/WBS13 supports stock v1311 / bootloader 2 and YOW v100–v103, generating the pinned v103 image. Its factory identity omits the secret; YOW firmware supplies it for device import. On v100–v103, the owner hostname, Wi-Fi settings, clock and explicit Complete Setup commands are available. Live OTA, reconnect/probe, setup, local-user roster adoption, HTTP capture and HTTPS sync to the YOW Cloudflare Worker passed on 31 October 2026, including weight, body composition, heart rate and recovery of queued readings. Use local server users for its roster: Withings import requires a separate client-certificate lookup.
