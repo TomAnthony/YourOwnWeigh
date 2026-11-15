@@ -414,11 +414,23 @@ class ScaleSession:
         self.require_probe()
         if not self.capabilities()["wifiRead"]:
             return dict(supported=False)
+        record = await self._read_wifi_record()
+        if record is None:
+            return dict(ssid="", unset=True, supported=True, observedAt=timestamp())
+        # WS-30 may include a password; expose only its SSID.
+        return dict(ssid=self._wifi_ssid(record), supported=True, observedAt=timestamp())
+
+    @staticmethod
+    def _wifi_ssid(record):
+        return record[1:1 + record[0]].decode("utf-8")
+
+    async def _read_wifi_record(self):
+        """Read the validated wire record for private comparison only."""
         reply = await self.request(0x104)
         # WBS13 v1311 and WBS02 v1721 (also retained by their owner patches)
         # send no payload when the stored Wi-Fi DB item is absent.
         if self.model in ("WBS13", "WBS02") and not reply.payload:
-            return dict(ssid="", unset=True, supported=True, observedAt=timestamp())
+            return None
         data = reply.value(0x104)
         if not data or len(data) < data[0] + 2:
             raise ProtocolError("Invalid stored Wi-Fi response")
@@ -426,10 +438,7 @@ class ScaleSession:
         password_length = data[end]
         if len(data) != end + 1 + password_length or password_length > 64:
             raise ProtocolError("Invalid stored Wi-Fi response")
-        # WS-30 may include a password; expose only its SSID.
-        return dict(
-            ssid=data[1:end].decode("utf-8"), supported=True, observedAt=timestamp()
-        )
+        return data
 
     async def read_secondary_wifi(self):
         self.require_probe()
@@ -453,8 +462,9 @@ class ScaleSession:
                 or not 1 <= len(ssid) <= 32 or not 8 <= len(password) <= 63
                 or any(ord(c) < 32 or ord(c) > 126 for c in ssid+password)):
             raise ValueError("Use a 1–32 byte printable ASCII SSID and 8–63 byte WPA2-AES password")
-        primary = await self.read_wifi()
-        if primary.get("ssid") == ssid:
+        primary = await self._read_wifi_record()
+        primary_ssid = self._wifi_ssid(primary)
+        if primary_ssid == ssid:
             raise ValueError("Choose a secondary network different from the primary")
         raw = ssid.encode("ascii")
         # Store the network-specific derived key, not a second copy of the
@@ -464,9 +474,9 @@ class ScaleSession:
         if data != bytes([1, 0x11, 0, len(raw)]) + raw:
             raise ProtocolError("Secondary Wi-Fi write rejected or not verified")
         readback = await self.read_secondary_wifi()
-        if readback.get("ssid") != ssid or (await self.read_wifi()).get("ssid") != primary.get("ssid"):
+        if readback.get("ssid") != ssid or await self._read_wifi_record() != primary:
             raise ProtocolError("Wi-Fi profile readback does not match")
-        return dict(ssid=ssid, primarySsid=primary.get("ssid"), readbackMatches=True,
+        return dict(ssid=ssid, primarySsid=primary_ssid, readbackMatches=True,
                     primaryPreserved=True, joinStatus="not-tested", observedAt=timestamp())
 
     async def clear_secondary_wifi(self):

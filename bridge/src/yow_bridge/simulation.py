@@ -78,6 +78,10 @@ class Session(ScaleSession):
     async def read_wifi(self):
         return dict(ssid=self.ssid, supported=True, observedAt=timestamp())
 
+    async def _read_wifi_record(self):
+        ssid = self.ssid.encode("utf-8")
+        return bytes([len(ssid)]) + ssid + b"\x00"
+
     async def owner(self, value):
         if self.capabilities().get("secondaryWifi") and value[:2] in (b"\x01\x10", b"\x01\x11"):
             if value[1] == 0x11:

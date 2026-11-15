@@ -81,7 +81,9 @@ The existing deferred reply mechanism at context+0x198 is retained. The bridge
 advertises `secondaryWifi` only for WBS03 firmware 1103. Its new commands are
 `device.set_secondary_wifi` and `device.clear_secondary_wifi`; configuration
 reads include `secondaryWifi`. Writes require printable ASCII SSID (1–32 bytes)
-and passphrase (8–63 bytes). The primary SSID is checked before and after saving.
+and passphrase (8–63 bytes). The bridge compares the full primary Wi-Fi readback
+before and after saving the backup profile. It only exposes the
+primary SSID to the caller.
 The UI distinguishes storage verification from an actual connection.
 
 ## Build and offline validation

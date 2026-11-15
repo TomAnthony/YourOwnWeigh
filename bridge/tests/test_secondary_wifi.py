@@ -9,7 +9,8 @@ class SecondaryWifiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.session = ScaleSession("WBS03", None)
         self.session.identity = dict(firmwareVersion=1103, secret="0123456789abcdef")
-        self.session.read_wifi = AsyncMock(return_value=dict(ssid="PRIMARY"))
+        self.primary_record = b"\x07PRIMARY\x0btest-key-01"
+        self.session._read_wifi_record = AsyncMock(return_value=self.primary_record)
         self.session.owner = AsyncMock()
 
     async def test_wpa2_reference_vector_and_no_credentials_in_result(self):
@@ -22,6 +23,7 @@ class SecondaryWifiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["joinStatus"], "not-tested")
         self.assertTrue(result["primaryPreserved"])
         self.assertNotIn("password", str(result))
+        self.assertNotIn("test-key-01", str(result))
         self.assertNotIn(expected.decode(), str(result))
 
     async def test_other_firmware_and_model_cannot_write(self):
@@ -59,7 +61,7 @@ class SecondaryWifiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_primary_change_is_reported(self):
         self.session.owner.side_effect = [b"\x01\x11\x00\x04IEEE", b"\x01\x10\x00\x04IEEE"]
-        self.session.read_wifi.side_effect = [dict(ssid="PRIMARY"), dict(ssid="DIFFERENT")]
+        self.session._read_wifi_record.side_effect = [self.primary_record, b"\x07PRIMARY\x0btest-key-02"]
         with self.assertRaisesRegex(ProtocolError, "readback"):
             await self.session.set_secondary_wifi("IEEE", "password")
 
