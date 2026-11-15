@@ -45,6 +45,7 @@
   ];
   const SCALE_LABELS = { WBS06: "Body (WBS06)", WBS03: "WS-30 (WBS03)", WBS02: "WS-50 (WBS02)", WBS13: "Body Smart (WBS13)", WBS04: "Body Cardio (WBS04)", WBS05: "Body+ (WBS05)" };
   const CLASSIC = new Set(["WBS03", "WBS02"]);
+  const supportedModels = () => snapshot.models ?? Object.keys(SCALE_LABELS);
   const label = (model) => SCALE_LABELS[model] || "WBS06";
   const uuid = () => crypto.randomUUID();
   const model = () => snapshot.device?.model || $("scale-model").value;
@@ -136,7 +137,11 @@
       caps = device?.capabilities || {};
     const linked = snapshot.state === "connected";
     if (device?.model) $("scale-model").value = device.model;
-    $("scale-model").disabled = occupied || linked;
+    const picker = $("scale-model");
+    const available = supportedModels();
+    for (const option of picker.options) option.disabled = !available.includes(option.value);
+    if (!available.includes(picker.value) && available.length) picker.value = available[0];
+    picker.disabled = occupied || linked || !available.length;
     $("candidates").hidden = linked;
     for (const button of $("candidates").querySelectorAll(
       "button[data-device-id]",
@@ -146,8 +151,8 @@
       );
       button.disabled = !candidate || !canConnect(candidate);
     }
-    $("scan-ble").disabled ||= linked;
-    $("scan-classic").disabled ||= linked;
+    $("scan-ble").disabled ||= linked || !available.some((m) => !CLASSIC.has(m));
+    $("scan-classic").disabled ||= linked || !available.some((m) => CLASSIC.has(m));
     const unsupported = device?.supported === false;
     $("manual-firmware").disabled = occupied || !connected || unsupported;
     $("generate-firmware").disabled ||= unsupported;
@@ -743,20 +748,18 @@
   // selected BLE demo model there instead of always resetting to WBS06.
   $("scan-ble").onclick = () => {
     const selected = $("scale-model").value;
-    return scan(
-      snapshot.simulated &&
-      Object.hasOwn(SCALE_LABELS, selected) &&
-      !CLASSIC.has(selected)
-        ? selected
-        : "WBS06",
-    );
+    const available = supportedModels().filter((m) => !CLASSIC.has(m));
+    const target = snapshot.simulated && available.includes(selected) ? selected
+      : available.includes("WBS06") ? "WBS06" : available[0];
+    if (target) return scan(target);
   };
-  $("scan-classic").onclick = () =>
-    scan(
-      snapshot.simulated && CLASSIC.has($("scale-model").value)
-        ? $("scale-model").value
-        : "WBS03",
-    );
+  $("scan-classic").onclick = () => {
+    const selected = $("scale-model").value;
+    const available = supportedModels().filter((m) => CLASSIC.has(m));
+    const target = snapshot.simulated && available.includes(selected) ? selected
+      : available.includes("WBS03") ? "WBS03" : available[0];
+    if (target) return scan(target);
+  };
   $("disconnect").onclick = () =>
     action(async () => {
       await command("device.disconnect");

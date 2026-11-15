@@ -188,6 +188,36 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
         connect.assert_awaited_once_with(0x001122334455)
         device.get_rfcomm_services_for_id_async.assert_not_called()
 
+    async def test_two_watchers_publish_removal_only_after_losing_both_observations(self):
+        radio = windows.Backend()
+        watchers = [Mock(), Mock()]
+        callbacks = [{}, {}]
+        for watcher, handlers in zip(watchers, callbacks):
+            for kind in ("added", "updated", "removed"):
+                getattr(watcher, "add_" + kind).side_effect = (
+                    lambda cb, key=kind, target=handlers: target.setdefault(key, cb)
+                )
+        found = []
+        with patch.object(windows, "DeviceInformation") as factory:
+            factory.create_watcher.side_effect = watchers
+            scan = asyncio.create_task(radio.scan(1, found.append))
+            await asyncio.sleep(0)
+            paired = self.info()
+            seen = self.info(**{windows.PRESENT: True})
+            def update(info):
+                paired.name = info.name
+            paired.update = update
+            callbacks[0]["added"](watchers[0], paired)
+            callbacks[1]["added"](watchers[1], seen)
+            callbacks[1]["removed"](watchers[1], seen)
+            callbacks[0]["updated"](watchers[0], SimpleNamespace(id="scale", name="Unrelated"))
+            await asyncio.sleep(0)
+            radio.stop.set()
+            await scan
+        self.assertEqual([event.get("presence") for event in found], ["paired_only", "seen", "paired_only", None])
+        self.assertEqual(found[-1], {"deviceId": "scale", "removed": True})
+        self.assertNotIn("scale", radio.devices)
+
     async def test_unscanned_device_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Scan again"):
             await windows.Backend().connect("unknown", Mock(), Mock())

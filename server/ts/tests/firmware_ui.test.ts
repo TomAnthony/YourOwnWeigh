@@ -242,6 +242,21 @@ test("WBS05 candidate is labeled, uses FLASH, and allows enrollment", async () =
   assert.equal(commands[0].parameters.confirmation, "FLASH");
 });
 
+test("the Windows picker excludes WS-50 and the Classic scan uses WS-30", async () => {
+  const { get, commands, emit } = browser("known_release");
+  const picker = get("scale-model");
+  picker.options = Object.keys(SCALE_MODELS).map(value => ({ value, disabled: false }));
+  picker.value = "WBS02";
+  const snapshot = { state: "disconnected", os: "Windows", models: ["WBS06", "WBS03"], candidates: [] };
+  emit({ kind: "connection", connected: true, snapshot });
+  assert.deepEqual(new Set(picker.options.filter((option: any) => !option.disabled).map((option: any) => option.value)), new Set(snapshot.models));
+  assert.equal(picker.value, "WBS06");
+  await get("scan-classic").onclick();
+  assert.equal(commands[0].parameters.model, "WBS03");
+  emit({ kind: "connection", connected: true, snapshot: {...snapshot, models: ["WBS06"]} });
+  assert.equal(get("scan-classic").disabled, true);
+});
+
 for (const simulated of [true, false]) {
   for (const [selected, family] of [
     ["WBS06", "ble"],

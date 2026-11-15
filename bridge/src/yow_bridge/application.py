@@ -403,6 +403,10 @@ class Application:
                 self.transport_backend = backend(model)
 
             def found(candidate):
+                if candidate.get("removed"):
+                    self.candidates.pop(candidate["deviceId"], None)
+                    self.emit("snapshot", snapshot=self.snapshot())
+                    return
                 self.candidates[candidate["deviceId"]] = candidate
                 self.emit("candidate", command, candidate=candidate)
 

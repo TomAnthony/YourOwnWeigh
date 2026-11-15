@@ -16,6 +16,7 @@ LOG = logging.getLogger("yow")
 ADDRESS = "System.Devices.Aep.DeviceAddress"
 CONNECTED = "System.Devices.Aep.IsConnected"
 PRESENT = "System.Devices.Aep.IsPresent"
+PRESENCE_RANK = {"paired_only": 0, "seen": 1, "connected": 2}
 
 
 def property_value(properties, key, default):
@@ -55,7 +56,6 @@ class Backend:
         self.devices.clear()
         self.stop.clear()
         loop = asyncio.get_running_loop()
-        cache = {}
         active = True
         # These selectors carry different IssueInquiry directives. Combining
         # them with OR stalls enumeration on Windows; use independent watchers.
@@ -63,34 +63,45 @@ class Backend:
             BluetoothDevice.get_device_selector_from_pairing_state(paired),
             [ADDRESS, CONNECTED, PRESENT], DeviceInformationKind.ASSOCIATION_ENDPOINT
         ) for paired in (True, False)]
+        caches = [{} for _ in watchers]
+        published = {}
 
-        def update(kind, info):
+        def update(index, kind, info):
             if not active:
                 return
+            cache = caches[index]
+            device_id = info.id
             if kind == "removed":
-                cache.pop(info.id, None)
-                self.devices.pop(info.id, None)
-                return
-            if kind == "added":
-                cache[info.id] = info
-            elif info.id in cache:
-                cache[info.id].update(info)
+                cache.pop(device_id, None)
+            elif kind == "added":
+                cache[device_id] = info
+            elif device_id in cache:
+                cache[device_id].update(info)
             else:
                 return
-            result = candidate(cache[info.id])
-            if result:
-                self.devices[info.id] = True
+            # A pairing transition may briefly put a device in both watchers.
+            # Keep the best remaining observation until both stop reporting it.
+            detections = (candidate(source[device_id]) for source in caches if device_id in source)
+            result = max((d for d in detections if d), key=lambda d: PRESENCE_RANK[d["presence"]], default=None)
+            if result is not None:
+                if published.get(device_id) == result:
+                    return
+                published[device_id] = result
+                self.devices[device_id] = True
                 found(result)
+            elif published.pop(device_id, None) is not None:
+                self.devices.pop(device_id, None)
+                found(dict(deviceId=device_id, removed=True))
 
         # WinRT events arrive on worker threads. All state/callbacks belong to
         # the asyncio loop; queued events from a stopped watcher are ignored.
         tokens = []
         started = []
         try:
-            for watcher in watchers:
+            for index, watcher in enumerate(watchers):
                 for kind in ("added", "updated", "removed"):
                     token = getattr(watcher, "add_" + kind)(
-                        lambda sender, info, kind=kind: loop.call_soon_threadsafe(update, kind, info)
+                        lambda sender, info, index=index, kind=kind: loop.call_soon_threadsafe(update, index, kind, info)
                     )
                     tokens.append((watcher, kind, token))
                 watcher.start()
@@ -123,6 +134,7 @@ class Backend:
 
 
 class Transport:
+    allowed_models = frozenset({"WBS03"})
     max_write = 256  # WPP + SPP framing; Windows handles RFCOMM segmentation.
 
     def __init__(self, sock, receive, disconnected):
