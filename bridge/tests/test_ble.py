@@ -3,7 +3,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from yow_bridge.transports import ble
 
@@ -203,14 +203,28 @@ class WindowsBLETests(unittest.IsolatedAsyncioTestCase):
 
 
 class WindowsBackendSelectionTests(unittest.TestCase):
-    def test_ble_models_use_bleak_and_classic_models_are_refused(self):
+    def test_windows_routes_ble_and_ws30_and_excludes_ws50(self):
+        import sys
+        from types import SimpleNamespace
+
         from yow_bridge import transports
         from yow_bridge.models.registry import MODELS
-        with patch.object(transports.sys, "platform", "win32"):
+
+        classic_backend = Mock()
+        classic_module = SimpleNamespace(Backend=classic_backend)
+        with patch.object(transports.sys, "platform", "win32"), patch.dict(
+            sys.modules, {"yow_bridge.transports.classic_windows": classic_module}
+        ):
+            expected = []
             for model, spec in MODELS.items():
                 with self.subTest(model=model):
                     if spec.transport == "ble":
+                        expected.append(model)
                         self.assertIsInstance(transports.backend(model), ble.Backend)
+                    elif model == "WBS03":
+                        expected.append(model)
+                        self.assertIs(transports.backend(model), classic_backend.return_value)
                     else:
                         with self.assertRaisesRegex(RuntimeError, "Bluetooth LE"):
                             transports.backend(model)
+            self.assertEqual(transports.supported_models(windows=True), expected)
