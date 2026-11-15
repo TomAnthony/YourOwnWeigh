@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zoneTriplet, roster } from "../scale_api.ts";
 import { LocalSqlite } from "../sqlite.ts";
+import { handleApp, type AppEnv } from "../app.ts";
 test("timezone contract covers DST boundaries, southern hemisphere and fractional offsets", () => {
   for (const v of JSON.parse(
     readFileSync("contracts/time/v1/vectors.json", "utf8"),
@@ -125,6 +126,75 @@ test("WBS06 and WBS04 rosters append local members after the seed people", async
         id: 1, model: "WBS06", roster_snapshot: JSON.stringify(full),
       } as any),
       /at most eight/,
+    );
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("local users avoid seed IDs and count retained seed people against the limit", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "yow-roster-")),
+    store = new LocalSqlite(join(dir, "db.sqlite3")),
+    env: AppEnv = { DB: store.asD1(), YOW_BOOTSTRAP_TOKEN: "dummy-test-bootstrap-token" },
+    db = env.DB;
+  let cookie = "", csrf = "";
+  const request = (path: string, fields?: Record<string, string>) =>
+    handleApp(
+      new Request(`https://local.test${path}`, {
+        method: fields ? "POST" : "GET",
+        headers: {
+          ...(cookie ? { Cookie: cookie } : {}),
+          ...(fields ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+        },
+        body: fields ? new URLSearchParams({ _csrf: csrf, ...fields }).toString() : undefined,
+      }),
+      env,
+    );
+  const token = async (response: Response) =>
+    /name="_csrf" value="([a-f0-9]+)"/.exec(await response.text())![1];
+  const addUser = (name: string) =>
+    request("/users", {
+      name, short_name: name.slice(0, 3).toUpperCase(), height_cm: "170",
+      age_years: "40", sex: "1", reference_weight_kg: "60", scales: "1",
+    });
+  const members = async () =>
+    (await db
+      .prepare("SELECT user_id FROM scale_users WHERE scale_id=1 ORDER BY user_id")
+      .all<{ user_id: number }>()).results.map((row) => row.user_id);
+  try {
+    const first = await request("/setup");
+    cookie = first.headers.get("set-cookie")!.split(";")[0];
+    csrf = await token(first);
+    const setup = await request("/setup", {
+      bootstrap_token: "dummy-test-bootstrap-token", password: "password-123", confirm: "password-123",
+    });
+    assert.equal(setup.status, 303, setup.headers.get("location") ?? await setup.text());
+    cookie = setup.headers.get("set-cookie")!.split(";")[0];
+    csrf = await token(await request("/"));
+    // Seed person 17 was imported, 18 was skipped and stays on the scale.
+    await db
+      .prepare(
+        "INSERT INTO scales(id,label,model,mac,secret,roster_snapshot) VALUES(1,'Demo','WBS04','020000000001','0123456789abcdef',?)",
+      )
+      .bind(JSON.stringify([{ id: 17, sn: "IMP" }, { id: 18, sn: "SKP" }]))
+      .run();
+    await db
+      .prepare(
+        "INSERT INTO users(id,name,short_name,height_cm,age_years,sex,reference_weight_kg,created_at) VALUES(17,'Imported','IMP',170,40,1,60,1)",
+      )
+      .run();
+    await db.prepare("INSERT INTO scale_users(scale_id,user_id,rank) VALUES(1,17,1)").run();
+    assert.equal((await addUser("Local")).status, 303);
+    assert.deepEqual(await members(), [17, 19]);
+    // Seed 18 plus 17, 19 and five more local members fill all eight slots.
+    for (const name of ["Ann", "Ben", "Cid", "Dan", "Eve"])
+      assert.equal((await addUser(name)).status, 303);
+    assert.equal((await members()).length, 7);
+    await addUser("Ninth");
+    assert.equal((await members()).length, 7);
+    assert.equal(
+      (await db.prepare("SELECT COUNT(*) AS n FROM users WHERE name='Ninth'").first<{ n: number }>())!.n,
+      0,
     );
   } finally {
     store.close();

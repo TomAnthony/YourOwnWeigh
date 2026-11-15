@@ -37,6 +37,8 @@ type ScaleRow = {
 };
 
 const NONCE_TTL = 120;
+// Seeded models that also receive local users outside their Withings roster.
+export const APPENDS_LOCAL_USERS = new Set(["WBS06", "WBS04"]);
 // browser_auth_limits also holds browser/Sync API counters with a ten-minute window.
 const AUTH_LIMIT_RETENTION = 600;
 const MAX_LIVE_CHALLENGES = 1024;
@@ -356,7 +358,7 @@ export async function roster(
     if (!user.active || !user.membership) return [];
     return [overlay(entry, user)];
   });
-  if (scale.model === "WBS06" || scale.model === "WBS04") {
+  if (APPENDS_LOCAL_USERS.has(scale.model)) {
     // A scale that never had a Withings roster (or not enough people on it)
     // also receives local users chosen for it. They use the same entry shape
     // as an edited seed; a WBS06 accepted and attributed an edited seed on

@@ -18,7 +18,13 @@ import {
   syncPage,
 } from "./integrated_ui.ts";
 import { scaleModel } from "./models.ts";
-import { handleScaleRequest, zoneTriplet, roster, screenIds } from "./scale_api.ts";
+import {
+  APPENDS_LOCAL_USERS,
+  handleScaleRequest,
+  zoneTriplet,
+  roster,
+  screenIds,
+} from "./scale_api.ts";
 import {
   dashboardPage,
   escapeHtml,
@@ -741,6 +747,13 @@ function captureSettings(
   };
 }
 
+function snapshotIds(snapshot: string | null): number[] {
+  if (!snapshot) return [];
+  const entries = parseJson(snapshot);
+  return Array.isArray(entries)
+    ? entries.map((entry: Row) => Number(entry?.id))
+    : [];
+}
 async function updateMemberships(
   db: D1Database,
   userId: number,
@@ -760,14 +773,14 @@ async function updateMemberships(
     );
     if ((count?.count ?? 0) >= 8)
       throw new Error("A scale can have at most eight users");
-    // A WBS06 also keeps seed people that were never imported locally, and
-    // its roster cannot exceed eight people in total (see roster()).
+    // WBS04/WBS06 also keep seed people that were never imported locally, and
+    // their roster cannot exceed eight people in total (see roster()).
     const scale = await one<{ model: string; roster_snapshot: string | null }>(
       db,
       "SELECT model,roster_snapshot FROM scales WHERE id=?",
       id,
     );
-    if (scale?.model === "WBS06" && scale.roster_snapshot) {
+    if (scale && APPENDS_LOCAL_USERS.has(scale.model) && scale.roster_snapshot) {
       const seed = parseJson(scale.roster_snapshot);
       const ids = Array.isArray(seed) ? seed.map((u: Row) => u.id) : [];
       const known = ids.length
@@ -2536,10 +2549,21 @@ async function browserPost(
         db,
         "SELECT COALESCE(MAX(id),0)+1 AS id FROM users",
       );
-      const id = Math.max(
+      // Seed people skipped during import keep their Withings IDs on the
+      // scale; a local user with the same ID would replace them in roster().
+      const seeds = new Set(
+        (
+          await rows<{ roster_snapshot: string }>(
+            db,
+            "SELECT roster_snapshot FROM scales WHERE roster_snapshot IS NOT NULL",
+          )
+        ).flatMap((scale) => snapshotIds(scale.roster_snapshot)),
+      );
+      let id = Math.max(
         highest?.id ?? 1,
         Number((await setting(db, "next_local_user_id")) ?? "1"),
       );
+      while (seeds.has(id)) id++;
       if (id > 2147483647) throw new Error("No user IDs remain");
       const memberships = await updateMemberships(db, id, user.scales);
       await db.batch([
