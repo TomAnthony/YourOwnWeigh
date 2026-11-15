@@ -1,8 +1,10 @@
 # WS-30 two-network candidate
 
-Status, 10 November 2026: **1103 is an experimental private candidate, not yet
-flashed or radio-qualified.** The household scale still runs hardware-tested
-YOW 102. Its primary Wi-Fi has not been replaced.
+**1103 RC3 is an experimental candidate.** The same fallback implementation
+was exercised on one WS-30 in a combined test image. Primary settings matched
+the pre-OTA backup, the secondary profile was saved and read back, and normal
+weigh-ins reached YOW when the primary network was out of range. The standalone
+1103 image still needs hardware qualification.
 
 ## Behavior
 
@@ -132,7 +134,10 @@ rejected by the controlled installer.
 ## Hardware trial and recovery
 
 `tools/ws30_multi_wifi_trial.py` has separate `install`, `configure`, `verify`
-and `rollback` phases. Supply the known Windows device ID, the original private
+and `rollback` phases. These phases on Windows use the WS-30 Classic transport
+from [PR #30](https://github.com/TomAnthony/YourOwnWeigh/pull/30); `preflight`
+is platform-independent. The firmware and web controls work independently of
+the Windows transport and can be reviewed from the main branch. Supply the known Windows device ID, the original private
 identity export and a private state directory. Configure reads `{ssid,password}`
 from a private JSON file; credentials are never CLI arguments. See `--help`.
 
@@ -143,10 +148,10 @@ journal. After START, any error is uncertain and cannot automatically replay OTA
 A new Bluetooth probe is required after transfer. Configuration checks the full
 primary response byte-for-byte, not just the displayed SSID.
 
-Qualification still required: boot and probe 1103; save/read the backup; a normal
-weigh-in while only the backup AP is reachable; receipt and assignment on YOW;
-exactly one delivery to Garmin; cold-boot persistence; primary-only and both-AP
-priority; wrong backup key and no-network timeout; measured battery cost; OTA
+Qualification still required on the standalone 1103 image: boot/probe, save and
+readback, and an assigned weigh-in when only the backup AP is reachable. Also
+check cold-boot persistence, primary priority with both APs visible, recovery
+after both networks fail, wrong backup key, radio duration, battery cost, and OTA
 rollback to the pinned 102 image. A successful transfer or emulated radio is not
 proof of these outcomes. Rollback leaves the secondary item dormant and uses the
 original primary profile. Recovery after a firmware that cannot boot may require
