@@ -11,7 +11,11 @@ export function timeZoneSelect(name: string, value = "", id = ""): string {
 export function firmwareWorkspace(csrf: string): string {
   return `<div id="firmware-workspace" data-csrf="${e(csrf)}" data-local-roster-models="${Object.keys(SCALE_MODELS).filter((model) => SCALE_MODELS[model].localRoster).join(",")}"><section class="bridge-heading"><h1>Firmware Bridge</h1><div id="bridge-connection" class="bridge-status is-offline"><span class="status-dot" aria-hidden="true"></span><span id="bridge-status-text" role="status">Python Bridge Not Connected</span><button type="button" id="revoke-bridge" class="text-button" title="Disconnect from this server. An active firmware transfer continues locally." hidden>Disconnect Bridge</button></div></section>
     <section id="bridge-offline"><h2>Connect The Python Bridge</h2>
-      <p>Run the bridge on your Mac or Linux computer and leave it running while setting up a scale.</p>
+      <p>Run the bridge on your computer and leave it running while setting up a scale.</p>
+      <details><summary>Windows</summary><p>In PowerShell, from the project folder:</p><pre><code>py -3.12 -m venv .venv
+.venv/Scripts/python.exe -m pip install ./bridge
+.venv/Scripts/yow-bridge.exe</code></pre><p>For a WS-30, pair it in Windows Bluetooth settings if prompted, then generate an invitation below.</p></details>
+      <p>On macOS or Linux:</p>
       <ol><li>Install: <code>python3.11 -m venv .venv &amp;&amp; .venv/bin/pip install ./bridge</code></li>
       <li>Run <code>.venv/bin/yow-bridge</code> in Terminal.</li><li>Generate an invitation and paste it into Terminal.</li></ol>
       <div class="action-row"><button id="new-invitation" type="button">Generate Connection Invitation</button><button id="copy-invitation" class="secondary" type="button" hidden>Copy Invitation</button></div>

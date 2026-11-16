@@ -50,6 +50,23 @@ class Commands(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_scan_removal_clears_the_application_and_the_published_snapshot(self):
+        class ScanBackend:
+            async def scan(self, duration, found):
+                found(dict(deviceId="gone", name="WS-30", modelCandidate="WBS03", presence="seen"))
+                found(dict(deviceId="gone", removed=True))
+
+        self.app.simulate = False
+        with patch("yow_bridge.application.backend", return_value=ScanBackend()):
+            result = await self.run_command(command("device.scan.start", dict(model="WBS03", durationSeconds=1)))
+        self.assertEqual(result["result"]["candidates"], [])
+        events = []
+        while not self.app.outgoing.empty():
+            events.append(self.app.outgoing.get_nowait())
+        candidate_idx = next(i for i, e in enumerate(events) if e["kind"] == "candidate")
+        self.assertEqual(events[candidate_idx + 1]["kind"], "snapshot")
+        self.assertEqual(events[candidate_idx + 1]["snapshot"]["candidates"], [])
+
     async def test_snapshot_advertises_wbs04(self):
         self.assertIn("WBS04", self.app.snapshot()["models"])
 

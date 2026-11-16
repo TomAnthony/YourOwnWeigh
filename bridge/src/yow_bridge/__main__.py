@@ -317,9 +317,9 @@ def main():
     logging.getLogger("websockets").setLevel(logging.WARNING)
     LOG.info("YourOwnWeigh bridge %s", __version__)
     if sys.platform not in ("darwin", "linux", "win32") and not args.simulate:
-        parser.error("Bluetooth is supported on macOS, Linux and Windows (BLE).")
+        parser.error("Bluetooth is supported on macOS, Linux and Windows.")
     if sys.platform == "win32" and not args.simulate:
-        LOG.warning("Windows support is experimental (BLE scales only).")
+        LOG.warning("Windows support is experimental (Bluetooth LE and WS-30).")
     try:
         path = args.state_dir / "pairing.json"
         if args.resume:

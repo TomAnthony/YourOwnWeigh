@@ -10,7 +10,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-dependencies = ["bleak>=1.0,<3", "websockets>=15,<17", "pyobjc-framework-IOBluetooth>=11,<13; sys_platform == 'darwin'", "dbus-fast>=2.24,<6; sys_platform == 'linux'"]
+dependencies = [
+    "bleak>=1.0,<3", "websockets>=15,<17",
+    "pyobjc-framework-IOBluetooth>=11,<13; sys_platform == 'darwin'",
+    "dbus-fast>=2.24,<6; sys_platform == 'linux'",
+    "winrt-Windows.Devices.Bluetooth>=4!0,<5!0; sys_platform == 'win32'",
+    "winrt-Windows.Foundation>=4!0,<5!0; sys_platform == 'win32'",
+    "winrt-Windows.Devices.Enumeration>=4!0,<5!0; sys_platform == 'win32'",
+]
 
 [project.scripts]
 yow-bridge = "yow_bridge.__main__:main"

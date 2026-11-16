@@ -18,11 +18,10 @@ import uuid
 from pathlib import Path
 
 from . import __version__
-from .models.registry import MODELS
 from .firmware import RELEASES, atomic_write, generate, inspect
 from .models.protocol import ProtocolError
 from .models.session import ScaleSession, timestamp
-from .transports import backend
+from .transports import backend, supported_models
 
 from . import BRIDGE_PROTOCOL
 
@@ -118,14 +117,16 @@ class Application:
         return event
 
     def snapshot(self):
+        os_name = platform.system()
         return dict(
             helperVersion=__version__,
-            os=platform.system(),
+            os=os_name,
             simulated=self.simulate,
-            models=list(MODELS),
+            models=supported_models(windows=os_name == "Windows" and not self.simulate),
             backends=["CoreBluetooth", "IOBluetooth"]
-            if platform.system() == "Darwin"
-            else ["BlueZ GATT", "BlueZ RFCOMM"] if platform.system() == "Linux" else [],
+            if os_name == "Darwin"
+            else ["BlueZ GATT", "BlueZ RFCOMM"] if os_name == "Linux"
+            else ["WinRT BLE", "Windows RFCOMM"] if os_name == "Windows" else [],
             deviceId=self.device_id,
             connectionGeneration=self.generation,
             state="connected" if self.connected else "disconnected",
@@ -402,6 +403,10 @@ class Application:
                 self.transport_backend = backend(model)
 
             def found(candidate):
+                if candidate.get("removed"):
+                    self.candidates.pop(candidate["deviceId"], None)
+                    self.emit("snapshot", snapshot=self.snapshot())
+                    return
                 self.candidates[candidate["deviceId"]] = candidate
                 self.emit("candidate", command, candidate=candidate)
 

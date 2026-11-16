@@ -513,6 +513,23 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["ssid"], "")
         self.assertTrue(result["unset"])
 
+    async def test_classic_probe_respects_the_transport_model_allowlist(self):
+        transport = MockTransport("WBS03")
+        transport.allowed_models = frozenset({"WBS03"})
+        frame = probe("WBS03", name="Withings WS50", boot=12, firmware=1023)
+        with patch(__name__ + ".probe", return_value=frame):
+            identity = await transport.session.probe()
+        self.assertEqual(identity["model"], "WBS02")
+        self.assertFalse(identity["supported"])
+        self.assertFalse(identity["capabilities"]["ota"])
+        self.assertFalse(identity["capabilities"]["wifiWrite"])
+        sent = len(transport.sent)
+        with self.assertRaises(ProtocolError):
+            await transport.session.connect_wifi("Example", "test-password")
+        with self.assertRaises(ProtocolError):
+            await transport.session.install(b"", lambda *_: None)
+        self.assertEqual(len(transport.sent), sent)
+
     async def test_ws50_unconfigured_wifi_accepts_the_stock_serial_reply(self):
         for firmware in (1721, 1023):
             with self.subTest(firmware=firmware):

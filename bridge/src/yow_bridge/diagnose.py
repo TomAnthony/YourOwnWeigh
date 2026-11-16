@@ -28,6 +28,9 @@ async def check(args):
     candidates = {}
 
     def found(device):
+        if device.get("removed"):
+            candidates.pop(device["deviceId"], None)
+            return
         previous = candidates.get(device["deviceId"])
         candidates[device["deviceId"]] = device
         if previous is None or previous["presence"] != device["presence"]:

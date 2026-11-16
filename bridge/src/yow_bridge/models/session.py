@@ -181,6 +181,9 @@ class ScaleSession:
             and (self.model != "WBS05" or body_plus)
         )
         supported = supported and (self.model in ("WBS13", "WBS04", "WBS05") or not getattr(self.transport, "identity_only", False))
+        allowed_models = getattr(self.transport, "allowed_models", None)
+        if allowed_models is not None and self.model not in allowed_models:
+            supported = False
         # A factory-new Body Smart returned a valid identity with an empty
         # secret. Show that identity without enabling provisioning or claiming
         # credentials are available. Supported models still require their key;

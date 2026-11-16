@@ -48,7 +48,7 @@ You can check your model under the batteries. Not all models with the same name 
 
 The web app and Python bridge are supported on macOS, Windows, and Linux.
 
-On Windows the Python bridge currently only suports Bluetooth LE scales, as the Classic transport (for WS-30/WS-50) has no Windows port yet.
+On Windows the Python bridge supports Bluetooth LE scales and the WS-30 over Bluetooth Classic. See [Windows setup](bridge/README.md#windows-setup) for pairing and hardware coverage.
 
 Thanks to [mbragagnolo](https://github.com/mbragagnolo/) for the Windows port!
 
@@ -150,7 +150,7 @@ See this [blog post](https://www.tomanthony.co.uk/blog/withings-yow-free-wifi-sy
 
 There are 3 areas that can help (all are achievable without special equipment):
 
- 1. Adding Windows support to the Python bridge - most of the code should be transferrable but I don't have the hardware to check things.
+ 1. Qualifying more Windows Bluetooth adapters and adding WS-50 support on Windows.
  2. Adding support for more models of scales. You must own the model of scales you are adding, and be willing to test against them. You need to be comfortable with modding firmware, or trust AI to do it for you, and be willing to then install that on your own device.
  3. If you can't contribute firmware, but do own a model of scales (check under the batteries for the model number) not on the [firmware list](CONTRIBUTING.md), then running a Python script can identify the firmware used for that model, which is also useful.
 

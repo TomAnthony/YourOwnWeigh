@@ -28,7 +28,9 @@ Linux discovery, connection, reconnect, identity probing and server/SSID readbac
 
 ### Windows Setup
 
-Use Python 3.11+ on Windows 10/11 with a working Bluetooth adapter. Bleak uses the WinRT backend, so no extra Bluetooth packages are needed. Only Bluetooth LE scales are supported; WS-30 and WS-50 need the Classic RFCOMM transport, which has no Windows port.
+Use Python 3.11+ on Windows 10/11 with a working Bluetooth adapter. The package installs the required Bluetooth dependencies. BLE uses Bleak's WinRT backend. WS-30 uses WinRT discovery and native Winsock RFCOMM. WS-50 is unsupported on Windows.
+
+For WS-30, start setup with the underside button and pair it in Windows Bluetooth settings if prompted. In Firmware Bridge select **WS-30 (WBS03)** and scan. A paired device can appear while asleep, so keep the scale in setup mode for Connect and Probe. The transport resolves SPP by service GUID and requires no COM port or fixed RFCOMM channel. See the [hardware results](../docs/hardware-acceptance.md#connect-and-configure).
 
 ```powershell
 py -3.11 -m venv .venv

@@ -3,21 +3,26 @@
 import sys
 
 
+def supported_models(windows):
+    from ..models.registry import MODELS
+
+    return [name for name, model in MODELS.items()
+            if not windows or model.transport == "ble" or name == "WBS03"]
+
+
 def backend(model):
-    from ..models.registry import spec
-    # Windows: BLE models only, through Bleak's WinRT backend. Classic
-    # (WS-30/WS-50) needs RFCOMM code that has no Windows port.
-    if sys.platform == "win32" and spec(model).transport != "ble":
-        raise RuntimeError(
-            "On Windows only Bluetooth LE scales are supported, not WS-30/WS-50."
-        )
     if sys.platform not in ("darwin", "linux", "win32"):
-        raise RuntimeError("Bluetooth is supported on macOS, Linux and Windows (BLE).")
+        raise RuntimeError("Bluetooth is supported on macOS, Linux and Windows.")
+    from ..models.registry import spec
+    if sys.platform == "win32" and model not in supported_models(windows=True):
+        raise RuntimeError("Windows supports Bluetooth LE scales and WS-30 (WBS03)")
     if spec(model).transport == "ble":
         from .ble import Backend
     elif spec(model).transport == "classic":
         if sys.platform == "linux":
             from .classic_linux import Backend
+        elif sys.platform == "win32":
+            from .classic_windows import Backend
         else:
             from .classic_macos import Backend
     else:

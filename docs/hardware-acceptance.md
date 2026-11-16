@@ -9,6 +9,18 @@ transport; daily Wi-Fi sync runs on the scale without the bridge computer.
 
 ## Connect And Configure
 
+Windows WS-30 check (10 November 2026): Python 3.12.7, Intel BE200 Bluetooth,
+PyWinRT discovery and native Winsock RFCOMM. Identity/export passed on stock
+921 / bootloader 15. Generated the pinned YOW 102 image (SHA-256
+`97d0bbd2cbbdfb81872f05aa6a395d2c3c856553ec3ecf89e679a1fc6dabb34a`), transferred
+it fully, reconnected and confirmed running firmware 102. Owner hostname
+write/readback, clock configuration, retained Wi-Fi SSID and Complete Setup
+passed. Daily Wi-Fi reception remains unverified. No COM port, WSL, custom
+driver, channel guess or factory reset was used. WinRT returned zero serial
+services for this device, while native SPP GUID resolution worked. Low batteries
+initially prevented stable discovery; replacement fixed it. Other Windows
+Bluetooth adapters and other scale models remain untested.
+
 1. Install the bridge and run it in Terminal without `--simulate`, optionally with `--log-file local/captures/bridge-live.log`. Quit other Bluetooth setup apps and grant Bluetooth access to Terminal.
 2. Put the scale in setup mode. Scan BLE for WBS06/WBS13 or Classic for WS-30, then Connect. Check the model, MAC, bootloader and running firmware. Unsupported models must not allow device-changing commands.
 3. Read the server and SSID. Refresh the browser and reconnect the scale; controls must follow the current connection and reject stale commands.
