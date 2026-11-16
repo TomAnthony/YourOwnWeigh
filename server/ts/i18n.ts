@@ -527,6 +527,9 @@ const en = {
   "fw.nameUnrecognisedTransport": "{name} (Unrecognised {transport})",
   "fw.unknown": "Unknown",
   "fw.notProvidedByScale": "Not Provided By Scale",
+  "fw.connection": "Connection",
+  "fw.v551NeedsClassic":
+    "WBS06 v551 requires Classic Bluetooth for firmware updates. Disconnect, put the scale back in Start App, then use Scan Classic. Classic requires a Mac or Linux computer.",
   "fw.checkingDeviceIdentity": "Checking Device Identity…",
   "fw.identityRead": "Identity Read",
   "fw.thisModelIsNotYetSupported": "This Model Is Not Yet Supported",
@@ -1224,6 +1227,9 @@ const de: Record<MessageKey, string> = {
   "fw.nameUnrecognisedTransport": "{name} (nicht erkannt, {transport})",
   "fw.unknown": "Unbekannt",
   "fw.notProvidedByScale": "Von der Waage nicht geliefert",
+  "fw.connection": "Verbindung",
+  "fw.v551NeedsClassic":
+    "WBS06 v551 braucht für Firmware-Updates Bluetooth Classic. Trenne die Verbindung, bring die Waage wieder in „Start App“ und nutze dann „Classic suchen“. Classic geht nur mit einem Mac oder Linux-Rechner.",
   "fw.checkingDeviceIdentity": "Geräteidentität wird geprüft…",
   "fw.identityRead": "Identität gelesen",
   "fw.thisModelIsNotYetSupported": "Dieses Modell wird noch nicht unterstützt",
