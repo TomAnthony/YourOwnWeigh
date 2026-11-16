@@ -57,6 +57,14 @@ export function screenIds(cs: unknown): number[] | null {
     return null;
   return cs.split(",").map(Number);
 }
+/** Battery percentage from a session form: exactly one whole number 0-100. */
+export function batteryLevel(params: URLSearchParams): number | null {
+  const values = params.getAll("batterylvl");
+  if (values.length !== 1 || !/^\d{1,3}$/.test(values[0])) return null;
+  const level = Number(values[0]);
+  return level <= 100 ? level : null;
+}
+
 function randomHex(bytes: number): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -539,6 +547,14 @@ async function newSession(
       `UPDATE scales SET last_session_at=? WHERE id=? AND ${present}`,
     ).bind(timestamp, scale.id, token),
   ];
+  const battery = batteryLevel(params);
+  if (battery !== null) {
+    statements.push(
+      env.DB.prepare(
+        `UPDATE scales SET battery_level=? WHERE id=? AND ${present}`,
+      ).bind(battery, scale.id, token),
+    );
+  }
   const reportedVersion = sessionFirmware(params, scale.model);
   if (reportedVersion !== null) {
     statements.push(

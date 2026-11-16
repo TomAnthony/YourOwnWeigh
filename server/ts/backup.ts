@@ -15,7 +15,7 @@ const columns: Record<string, string[]> = {
       " ",
     ),
   scales:
-    "id label model mac secret goff dst ngoff time_zone withings_capture ble_name ble_probe_identifier ble_hardware_version ble_bootloader_version ble_firmware_version ble_rescue_version ble_wifi_ssid ble_owner_host ble_owner_transport ble_captured_at firmware_version firmware_confirmed_at firmware_source feature_mask reported_feature_mask reported_feature_at reported_mfgid debug_mask beta_ws temp_code weight_code settings_ready roster_enabled roster_last_sent_at roster_snapshot screen_response summary_response weather_response last_session_at".split(
+    "id label model mac secret goff dst ngoff time_zone withings_capture ble_name ble_probe_identifier ble_hardware_version ble_bootloader_version ble_firmware_version ble_rescue_version ble_wifi_ssid ble_owner_host ble_owner_transport ble_captured_at firmware_version firmware_confirmed_at firmware_source feature_mask reported_feature_mask reported_feature_at reported_mfgid debug_mask beta_ws temp_code weight_code settings_ready roster_enabled roster_last_sent_at roster_snapshot screen_response summary_response weather_response last_session_at battery_level".split(
       " ",
     ),
   scale_users: "scale_id user_id rank".split(" "),
@@ -128,6 +128,13 @@ function parse(raw: string): Backup {
         !("reference_weight_at" in row)
       )
         row.reference_weight_at = null;
+      if (
+        section === "scales" &&
+        row &&
+        typeof row === "object" &&
+        !("battery_level" in row)
+      )
+        row.battery_level = null;
       // Backups from before firmware tracking remain importable. Use the export's
       // original observation time, never the time the backup is restored.
       if (
@@ -183,6 +190,12 @@ function parse(raw: string): Backup {
           !["bluetooth", "wifi"].includes(String(row.firmware_source)))
       )
         throw new Error("Invalid firmware observation");
+      if (
+        section === "scales" &&
+        row.battery_level !== null &&
+        !integer(row.battery_level, 0, 100)
+      )
+        throw new Error("Invalid scale battery level");
       if ("id" in row && !integer(row.id, 1))
         throw new Error(`Invalid ${section} ID`);
       if (

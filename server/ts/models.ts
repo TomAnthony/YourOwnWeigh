@@ -30,6 +30,8 @@ export interface ScaleModel {
   classicGates: boolean;
   /** Build the roster from selected household users, without vendor import. */
   localRoster: boolean;
+  /** Built-in rechargeable battery (charge) rather than replaceable cells. */
+  rechargeable: boolean;
 }
 
 export const SCALE_MODELS: Record<string, ScaleModel> = {
@@ -48,6 +50,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 48,
     classicGates: false,
     localRoster: false,
+    rechargeable: false,
   },
   WBS13: {
     transport: "ble",
@@ -64,6 +67,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 48,
     classicGates: false,
     localRoster: true,
+    rechargeable: false,
   },
   WBS04: {
     transport: "ble",
@@ -80,6 +84,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 48,
     classicGates: false,
     localRoster: false,
+    rechargeable: true,
   },
   WBS05: {
     transport: "ble",
@@ -96,6 +101,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 48,
     classicGates: false,
     localRoster: true,
+    rechargeable: false,
   },
   WBS03: {
     transport: "classic",
@@ -112,6 +118,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 59,
     classicGates: true,
     localRoster: false,
+    rechargeable: false,
   },
   WBS02: {
     transport: "classic",
@@ -128,6 +135,7 @@ export const SCALE_MODELS: Record<string, ScaleModel> = {
     hostnameLimit: 59,
     classicGates: true,
     localRoster: false,
+    rechargeable: false,
   },
 };
 
