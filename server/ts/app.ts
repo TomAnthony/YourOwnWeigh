@@ -17,6 +17,13 @@ import {
   settingsWorkspace,
   syncPage,
 } from "./integrated_ui.ts";
+import {
+  isLanguagePreference,
+  resolveLanguage,
+  translateMessage,
+  translator,
+  type MessageKey,
+} from "./i18n.ts";
 import { scaleModel } from "./models.ts";
 import { handleScaleRequest, zoneTriplet, roster, screenIds } from "./scale_api.ts";
 import {
@@ -1604,8 +1611,21 @@ export async function handleApp(
     }
   }
   const notice = (url.searchParams.get("notice") ?? "").slice(0, 250);
+  const storedLanguage = await setting(db, "display_language");
+  const languagePreference = isLanguagePreference(storedLanguage)
+    ? storedLanguage
+    : "auto";
+  const language = resolveLanguage(
+    languagePreference,
+    request.headers.get("Accept-Language"),
+  );
+  const t = translator(language);
   const page = (title: string, body: string, active = "") =>
-    html(layout(title, body, csrf, loggedIn, notice, active), 200, cookie);
+    html(
+      layout(title, body, csrf, loggedIn, notice, active, language),
+      200,
+      cookie,
+    );
   const go = (location: string, message = "") =>
     redirect(location, message, cookie);
   if (path.startsWith("/api/backup/")) {
@@ -1632,18 +1652,24 @@ export async function handleApp(
           await file.text(),
           browser.token_hash,
         );
+        const T = (key: MessageKey) => escapeHtml(t(key));
+        const section = (name: string) => {
+          const key = `backup.section.${name}` as MessageKey;
+          const label = t(key);
+          return label === key ? name.replaceAll("_", " ") : label;
+        };
         return page(
-          "Review Backup Import",
-          `<section><h1>Review Backup Import</h1><dl>${Object.entries(
+          t("backup.reviewTitle"),
+          `<section><h1>${T("backup.reviewTitle")}</h1><dl>${Object.entries(
             staged.counts,
           )
             .map(
               ([name, count]) =>
-                `<dt>${escapeHtml(name.replaceAll("_", " "))}</dt><dd>${count}</dd>`,
+                `<dt>${escapeHtml(section(name))}</dt><dd>${count}</dd>`,
             )
             .join(
               "",
-            )}</dl><form action="/api/backup/commit" method="post"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="import_id" value="${staged.id}"><input type="hidden" name="digest" value="${staged.digest}"><label><input type="radio" name="mode" value="merge" checked> Add Missing Data (Keep Existing Edits)</label><label><input type="radio" name="mode" value="replace"> Replace Household Data</label><p>Replacement removes current users, readings and devices. <a href="/api/backup/export">Export Current Data First</a>.</p>${staged.hasAccess ? '<label><input type="checkbox" name="restore_access" value="1"> Restore Access Settings (Use The Backup’s Passwords And Sign Out)</label>' : ""}<label><input type="checkbox" name="confirmed" value="1" required> I Have Reviewed This Import</label><div class="dialog-actions"><button>Import Backup</button><a href="/settings">Cancel</a></div></form></section>`,
+            )}</dl><form action="/api/backup/commit" method="post"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="import_id" value="${staged.id}"><input type="hidden" name="digest" value="${staged.digest}"><label><input type="radio" name="mode" value="merge" checked> ${T("backup.merge")}</label><label><input type="radio" name="mode" value="replace"> ${T("backup.replace")}</label><p>${T("backup.replaceHint")} <a href="/api/backup/export">${T("backup.exportFirst")}</a>.</p>${staged.hasAccess ? `<label><input type="checkbox" name="restore_access" value="1"> ${T("backup.restoreAccess")}</label>` : ""}<label><input type="checkbox" name="confirmed" value="1" required> ${T("backup.confirmed")}</label><div class="dialog-actions"><button>${T("backup.importButton")}</button><a href="/settings">${T("common.cancel")}</a></div></form></section>`,
           "/settings",
         );
       }
@@ -1673,8 +1699,8 @@ export async function handleApp(
       }
     } catch (error) {
       return page(
-        "Import Not Completed",
-        `<section><h1>Import Not Completed</h1><p>${escapeHtml(safeError(error))}</p><a href="/settings">Back To Settings</a></section>`,
+        t("backup.failedTitle"),
+        `<section><h1>${escapeHtml(t("backup.failedTitle"))}</h1><p>${escapeHtml(translateMessage(safeError(error), language))}</p><a href="/settings">${escapeHtml(t("backup.backToSettings"))}</a></section>`,
         "/settings",
       );
     }
@@ -1701,13 +1727,15 @@ export async function handleApp(
   if (!adminConfigured) {
     if (path !== "/setup") return go("/setup");
     return page(
-      "First-Run Setup",
-      setupPage(csrf, !!env.YOW_BOOTSTRAP_TOKEN, browser.is_admin === 2),
+      t("setup.pageTitle"),
+      setupPage(csrf, !!env.YOW_BOOTSTRAP_TOKEN, browser.is_admin === 2, t),
     );
   }
   if (path === "/setup") return go("/login");
   if (path === "/login")
-    return loggedIn ? go("/") : page("Sign In", loginPage(csrf));
+    return loggedIn
+      ? go("/")
+      : page(t("auth.signIn"), loginPage(csrf, t));
   if (!loggedIn) return go("/login");
   if (path === "/") {
     const users = await rows(
@@ -1735,8 +1763,16 @@ export async function handleApp(
       });
     }
     return page(
-      "Dashboard",
-      dashboardPage(cards, (await setting(db, "display_weight_unit")) ?? "kg"),
+      t("nav.dashboard"),
+      dashboardPage(
+        cards,
+        (await setting(db, "display_weight_unit")) ?? "kg",
+        await rows(
+          db,
+          "SELECT label,model,battery_level,last_session_at FROM scales ORDER BY label,id",
+        ),
+        language,
+      ),
       "/",
     );
   }
@@ -1759,7 +1795,7 @@ export async function handleApp(
       ...(metric === 1 ? [] : [metric]),
     );
     return page(
-      "Readings",
+      t("nav.readings"),
       readingsPage(
         readings,
         users,
@@ -1767,6 +1803,7 @@ export async function handleApp(
         csrf,
         metrics,
         metric,
+        language,
       ),
       "/readings",
     );
@@ -1790,19 +1827,24 @@ export async function handleApp(
       ...(metric === 1 ? [] : [metric]),
     );
     return page(
-      `${user.name} Readings`,
+      t("userReadings.title", { name: String(user.name) }),
       userReadingsPage(
         user,
         readings,
         (await setting(db, "display_weight_unit")) ?? "kg",
         metrics,
         metric,
+        language,
       ),
       "/readings",
     );
   }
   if (path === "/firmware") {
-    return page("Firmware Bridge", firmwareWorkspace(csrf), "/firmware");
+    return page(
+      t("nav.firmware"),
+      firmwareWorkspace(csrf, language),
+      "/firmware",
+    );
   }
   if (path === "/scales" || /^\/scales\/\d+$/.test(path)) {
     const scales = await rows(db, "SELECT * FROM scales ORDER BY label,id");
@@ -1827,7 +1869,11 @@ export async function handleApp(
           scale.id,
         )
       ).map((r) => r.user_id);
-    return page("Scales", scalesWorkspace(scales, csrf, localUsers), "/scales");
+    return page(
+      t("nav.scales"),
+      scalesWorkspace(scales, csrf, localUsers, language),
+      "/scales",
+    );
   }
   if (path === "/users" || /^\/users\/\d+$/.test(path)) {
     const users = await rows(
@@ -1915,7 +1961,7 @@ export async function handleApp(
     }
     const importScaleId = Number(url.searchParams.get("import_scale"));
     return page(
-      "Users",
+      t("nav.users"),
       usersPage(
         users,
         scales,
@@ -1926,28 +1972,32 @@ export async function handleApp(
         scales.some((scale) => scale.id === importScaleId)
           ? importScaleId
           : undefined,
+        language,
       ),
       "/users",
     );
   }
   if (path === "/sync")
     return page(
-      "Sync",
+      t("nav.sync"),
       syncPage(
         url.origin,
         await rows(db, "SELECT * FROM users WHERE active=1 ORDER BY name"),
+        language,
       ),
       "/sync",
     );
   if (path === "/preferences" || path === "/settings") {
     const mode = await setting(db, "sync_password_mode");
     return page(
-      "Settings",
+      t("nav.settings"),
       settingsWorkspace(
         csrf,
         (await setting(db, "display_weight_unit")) ?? "kg",
         mode === "separate" ||
           (mode === null && !!(await setting(db, "api_password"))),
+        languagePreference,
+        language,
       ),
       "/settings",
     );
@@ -2138,8 +2188,16 @@ async function browserPost(
       const unit = formText(form, "weight_unit");
       if (!["kg", "lb", "st"].includes(unit))
         throw new Error("Invalid display unit");
-      await db.batch([saveSetting(db, "display_weight_unit", unit)]);
-      return go("/settings", "Display weight unit saved");
+      const preference =
+        formText(form, "language") ||
+        ((await setting(db, "display_language")) ?? "auto");
+      if (!isLanguagePreference(preference))
+        throw new Error("Invalid display language");
+      await db.batch([
+        saveSetting(db, "display_weight_unit", unit),
+        saveSetting(db, "display_language", preference),
+      ]);
+      return go("/settings", "Display settings saved");
     }
     if (path === "/scales") {
       const label = formText(form, "label").trim();

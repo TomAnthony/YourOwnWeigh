@@ -5,6 +5,7 @@
  */
 import { bridgeHash } from "./bridge.ts";
 import { firmwareVersion } from "./firmware_observation.ts";
+import { isLanguagePreference } from "./i18n.ts";
 import { validateStoredMetrics } from "./metrics.ts";
 import { SCALE_MODELS } from "./models.ts";
 type Row = Record<string, string | number | null>;
@@ -15,7 +16,7 @@ const columns: Record<string, string[]> = {
       " ",
     ),
   scales:
-    "id label model mac secret goff dst ngoff time_zone withings_capture ble_name ble_probe_identifier ble_hardware_version ble_bootloader_version ble_firmware_version ble_rescue_version ble_wifi_ssid ble_owner_host ble_owner_transport ble_captured_at firmware_version firmware_confirmed_at firmware_source feature_mask reported_feature_mask reported_feature_at reported_mfgid debug_mask beta_ws temp_code weight_code settings_ready roster_enabled roster_last_sent_at roster_snapshot screen_response summary_response weather_response last_session_at".split(
+    "id label model mac secret goff dst ngoff time_zone withings_capture ble_name ble_probe_identifier ble_hardware_version ble_bootloader_version ble_firmware_version ble_rescue_version ble_wifi_ssid ble_owner_host ble_owner_transport ble_captured_at firmware_version firmware_confirmed_at firmware_source feature_mask reported_feature_mask reported_feature_at reported_mfgid debug_mask beta_ws temp_code weight_code settings_ready roster_enabled roster_last_sent_at roster_snapshot screen_response summary_response weather_response last_session_at battery_level".split(
       " ",
     ),
   scale_users: "scale_id user_id rank".split(" "),
@@ -50,7 +51,11 @@ const access = new Set([
   "api_password",
   "sync_password_mode",
 ]);
-const preferences = new Set(["display_weight_unit", "next_local_user_id"]);
+const preferences = new Set([
+  "display_weight_unit",
+  "display_language",
+  "next_local_user_id",
+]);
 const now = () => Math.floor(Date.now() / 1000);
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_ROWS = 25000;
@@ -128,6 +133,13 @@ function parse(raw: string): Backup {
         !("reference_weight_at" in row)
       )
         row.reference_weight_at = null;
+      if (
+        section === "scales" &&
+        row &&
+        typeof row === "object" &&
+        !("battery_level" in row)
+      )
+        row.battery_level = null;
       // Backups from before firmware tracking remain importable. Use the export's
       // original observation time, never the time the backup is restored.
       if (
@@ -183,6 +195,12 @@ function parse(raw: string): Backup {
           !["bluetooth", "wifi"].includes(String(row.firmware_source)))
       )
         throw new Error("Invalid firmware observation");
+      if (
+        section === "scales" &&
+        row.battery_level !== null &&
+        !integer(row.battery_level, 0, 100)
+      )
+        throw new Error("Invalid scale battery level");
       if ("id" in row && !integer(row.id, 1))
         throw new Error(`Invalid ${section} ID`);
       if (
@@ -278,7 +296,11 @@ function parse(raw: string): Backup {
     validateStoredMetrics(r);
   }
   for (const r of b.sections.settings)
-    if (!preferences.has(String(r.key)) || typeof r.value !== "string")
+    if (
+      !preferences.has(String(r.key)) ||
+      typeof r.value !== "string" ||
+      (r.key === "display_language" && !isLanguagePreference(r.value))
+    )
       throw new Error("Unknown preference");
   const seenAccess = new Set();
   for (const r of b.accessSettings) {
@@ -444,7 +466,9 @@ export async function commitBackup(
     ])
       statements.push(db.prepare(`DELETE FROM ${table}`));
     statements.push(
-      db.prepare("DELETE FROM settings WHERE key='display_weight_unit'"),
+      db.prepare(
+        "DELETE FROM settings WHERE key IN ('display_weight_unit','display_language')",
+      ),
     );
   }
   // Rows refer to source IDs; resolve them inside the same final transaction.
