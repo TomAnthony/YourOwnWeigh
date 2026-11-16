@@ -6,6 +6,14 @@ the pre-OTA backup, the secondary profile was saved and read back, and normal
 weigh-ins reached YOW when the primary network was out of range. The standalone
 1103 image still needs hardware qualification.
 
+An additional physical test exercised the same fallback logic in the
+combined 1107 development image on a WS-30 with bootloader 15. After OTA,
+the full primary profile matched its pre-install readback and the secondary
+profile was still present. The PC saw the secondary AP but not the primary.
+A normal assigned weigh-in then opened a Wi-Fi session and was committed by
+YOW. The AP was inferred from network availability and the two saved
+profiles. This test leaves the standalone 1103 RC3 acceptance cases below open.
+
 ## Behavior
 
 Normal synchronization tries the existing primary network first, then one
