@@ -47,9 +47,14 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             while len(self.received) < 604:
                 await asyncio.sleep(0)
         self.assertEqual(self.received, b"\x01\x00\x01\x02" + b"\xff" * 600)
-        payload = bytes(range(256))
+        payload = bytes(range(256)) * 2 + b"\x00" * 4  # WBS06 Classic OTA packet.
+        self.assertGreaterEqual(self.transport.max_write, len(payload))
         await self.transport.write(payload)
-        self.assertEqual(await loop.sock_recv(self.peer, 512), payload)
+        received = bytearray()
+        async with asyncio.timeout(1):
+            while len(received) < len(payload):
+                received.extend(await loop.sock_recv(self.peer, 1024))
+        self.assertEqual(received, payload)
 
     async def test_eof_notifies_once_and_releases_bus(self):
         self.peer.close()

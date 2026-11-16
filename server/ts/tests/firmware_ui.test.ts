@@ -55,6 +55,7 @@ function browser(
   const commands: any[] = [];
   const device = {
     model, mac: "020000000013", firmwareVersion: 100,
+    transport: "ble", connectionWarning: null as string | null,
     capabilities: { ota: true, enrollment: true, secondaryWifi: false },
   };
   const artifact = {
@@ -176,6 +177,35 @@ test("an older bridge's explicit enrollment restriction is respected", async () 
   await get("probe").onclick();
   assert.notEqual(get("enroll-dialog").open, true);
   assert.equal(get("import-device").hidden, true);
+});
+
+test("v551 BLE warns and blocks OTA, including an older bridge advertising OTA", async () => {
+  const { get, device, emit } = browser("known_release", "WBS06");
+  device.firmwareVersion = 551;
+  device.capabilities.enrollment = false;
+  await get("probe").onclick();
+  assert.equal(get("install-firmware").disabled, true);
+  assert.equal(get("connection-warning").hidden, false);
+  assert.match(get("connection-warning").textContent, /Scan Classic/);
+  assert.notEqual(get("enroll-dialog").open, true);
+  assert.match(get("toast-region").children.at(-1).children[1].textContent, /Classic Bluetooth/);
+
+  emit({ kind: "connection", connected: true, snapshot: { state: "disconnected", device: null } });
+  assert.equal(get("connection-warning").hidden, false, "Keep instructions after the BLE timeout");
+  emit({ kind: "connection", connected: true, snapshot: {
+    state: "connected", device: { ...device, transport: "classic" },
+  } });
+  assert.equal(get("connection-warning").hidden, true);
+  assert.equal(get("install-firmware").disabled, false);
+});
+
+test("a reconnect snapshot renders the v551 warning without another probe", () => {
+  const { get, device, emit } = browser("known_release", "WBS06");
+  emit({ kind: "connection", connected: true, snapshot: {
+    state: "connected", device: { ...device, firmwareVersion: 551, transport: "ble" },
+  } });
+  assert.match(get("connection-warning").textContent, /Scan Classic/);
+  assert.equal(get("install-firmware").disabled, true);
 });
 
 for (const joined of [true, false]) {

@@ -139,6 +139,37 @@ class ClassicReceive(unittest.IsolatedAsyncioTestCase):
 class ClassicDiscovery(unittest.IsolatedAsyncioTestCase):
     """Exercise delegate sequencing without invoking the Bluetooth controller."""
 
+    def test_body_classic_candidate_is_retained_for_identity_probe(self):
+        backend, found = Backend(), []
+        backend.found = found.append
+        backend.remember(SimpleNamespace(
+            name=lambda: "Body BC", addressString=lambda: "00-24-E4-00-00-01",
+            isConnected=lambda: False,
+        ), discovered=True)
+        self.assertEqual(found[0]["modelCandidate"], "WBS03")
+        self.assertEqual(found[0]["presence"], "seen")
+
+    async def test_pending_channel_is_closed_when_open_times_out(self):
+        backend, closed, deadlines = Backend(), [], []
+        channel = SimpleNamespace(isOpen=lambda: False, closeChannel=lambda: closed.append(True))
+        service = SimpleNamespace(matchesUUID16_=lambda uuid: uuid == 0x1101,
+                                  getRFCOMMChannelID_=lambda _: (0, 9))
+        backend.devices["fixture"] = SimpleNamespace(
+            performSDPQuery_=lambda _: 0, services=lambda: [service],
+            openRFCOMMChannelAsync_withChannelID_delegate_=lambda *args: (0, channel),
+        )
+        timeout = asyncio.timeout
+
+        def short_timeout(seconds):
+            deadlines.append(seconds)
+            return timeout(0.001)
+
+        with patch.object(classic_macos.asyncio, "timeout", short_timeout):
+            with self.assertRaises(TimeoutError):
+                await backend.connect("fixture", lambda _: None, lambda: None)
+        self.assertEqual(deadlines, [25, 60])
+        self.assertEqual(closed, [True])
+
     async def scan(self, *, paired=False, callback=False):
         backend, candidates = Backend(), []
         device = SimpleNamespace(

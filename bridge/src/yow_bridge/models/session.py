@@ -28,6 +28,11 @@ from .protocol import (
 LOG = logging.getLogger("yow")
 CLASSIC_RESET_WAIT = 1.0
 CLASSIC_PROBE_FIRST_TIMEOUT = 5.0
+WBS06_551_CLASSIC_REQUIRED = (
+    "WBS06 v551 requires Classic Bluetooth for firmware updates. "
+    "Disconnect, put the scale back in Start App, then use Scan Classic. "
+    "Classic requires a Mac or Linux computer."
+)
 
 
 def timestamp():
@@ -63,8 +68,11 @@ class ScaleSession:
             raise ValueError("Unsupported model")
         self.model, self.transport = model, transport
         self.spec = spec(model)
+        # Keep the wire framing selected by discovery even if the identity
+        # normalizes a Classic candidate to the dual-mode WBS06 model.
+        self.transport_kind = self.spec.transport
         self.serial_reset = asyncio.Event()
-        self.decoder = SerialDecoder(self.serial_reset.set) if self.spec.transport == "classic" else Decoder()
+        self.decoder = SerialDecoder(self.serial_reset.set) if self.transport_kind == "classic" else Decoder()
         self.inbox = asyncio.Queue()
         self.identity = None
         self.mtu = self.spec.mtu
@@ -81,7 +89,7 @@ class ScaleSession:
         self.inbox.put_nowait(ConnectionError("Scale disconnected"))
 
     async def send(self, data):
-        packet = serial_packet(data) if self.spec.transport == "classic" else data
+        packet = serial_packet(data) if self.transport_kind == "classic" else data
         if len(packet) > self.transport.max_write:
             raise ProtocolError("Command exceeds the Bluetooth write limit")
         await self.transport.write(packet)
@@ -109,7 +117,7 @@ class ScaleSession:
         packet = encode(command, payload)
         # The proven BLE path sends each control frame in one ATT write. Do
         # not assume the scale reassembles arbitrarily split control frames.
-        if self.spec.transport != "classic" and len(packet) > self.mtu:
+        if self.transport_kind != "classic" and len(packet) > self.mtu:
             raise ProtocolError("Control frame exceeds the scale's negotiated MTU")
         await self.send(packet)
         return await self.wait(command, timeout)
@@ -118,8 +126,9 @@ class ScaleSession:
         # A failed or changed identity/MTU response must never retain a prior
         # successful probe's write capabilities on the same connection.
         self.identity = None
+        self.mtu = self.spec.mtu
         payload = tlv(0x12A, b"\x01\x01\x00\x00\x00\x01")
-        if self.spec.transport == "classic":
+        if self.transport_kind == "classic":
             self.serial_reset.clear()
             await self.transport.write(b"\x01\x00")
             try:
@@ -150,18 +159,19 @@ class ScaleSession:
         modern = getattr(self.transport, "wpp_profile", None) == "WBS13"
         cardio = getattr(self.transport, "wpp_profile", None) == "WBS04"
         body_plus = getattr(self.transport, "wpp_profile", None) == "WBS05"
-        if self.spec.transport != "classic" and modern:
+        if self.transport_kind != "classic" and modern:
             self.model, self.spec = "WBS13", MODELS["WBS13"]
-        if self.spec.transport != "classic" and cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF:
+        if self.transport_kind != "classic" and cardio and name == "Body Cardio" and boot == 12 and identity["hardwareVersion"] == 0xFFFFFF:
             self.model, self.spec = "WBS04", MODELS["WBS04"]
-        if self.spec.transport != "classic" and body_plus and name == "Body+" and boot == 6 and identity["hardwareVersion"] == 0xFFFFFF:
+        if self.transport_kind != "classic" and body_plus and name == "Body+" and boot == 6 and identity["hardwareVersion"] == 0xFFFFFF:
             self.model, self.spec = "WBS05", MODELS["WBS05"]
-        classic = self.spec.transport == "classic"
+        classic = self.transport_kind == "classic"
         if classic:
             # Normalize the candidate model from the observed probe identity.
             matched = classic_model_for(boot, name)
             if matched:
                 self.model, self.spec = matched, MODELS[matched]
+            self.mtu = 512 if self.model == "WBS06" else self.spec.mtu
         s = self.spec
         supported = bool(
             s.name.search(name)
@@ -179,7 +189,11 @@ class ScaleSession:
         secret = identity["secret"]
         if not re.fullmatch(r"[0-9a-fA-F]{16}", secret) and ((supported and self.model != "WBS13") or secret):
             raise ProtocolError("Probe contains an invalid device identity")
-        if not classic and supported:
+        # v551 predates command 0x155 (unknown command, -3). Finish its BLE
+        # identity probe so we can direct the user to Classic. Do not turn an
+        # arbitrary failed MTU exchange into a legacy-firmware assumption.
+        legacy_ble = self.model == "WBS06" and identity["firmwareVersion"] == 551
+        if not classic and supported and not legacy_ble:
             reply = await self.request(0x155, tlv(0x990, struct.pack(">H", 512)))
             if self.model == "WBS13":
                 # Original v1311 handler: 0x990 maximum packet, 0x992 ATT MTU
@@ -201,7 +215,18 @@ class ScaleSession:
         identity.update(model=self.model, mac=mac, observedAt=timestamp(), supported=supported)
         self.identity = identity
         self.ota_started = False
+        if warning := self.connection_warning():
+            LOG.warning(warning)
         return self.public_identity()
+
+    def connection_warning(self):
+        if not self.identity or not self.identity.get("supported") or self.model != "WBS06":
+            return None
+        if self.identity["firmwareVersion"] == 551 and self.transport_kind != "classic":
+            return WBS06_551_CLASSIC_REQUIRED
+        if self.identity["firmwareVersion"] != 551 and self.transport_kind == "classic":
+            return "Use Scan BLE to reconnect to this WBS06. Classic is enabled only for the stock v551 firmware update."
+        return None
 
     def require_identity(self):
         if self.identity is None:
@@ -222,6 +247,17 @@ class ScaleSession:
                 completeSetup=False, firmwareRead=False, otaDestinationRead=False,
             )
         version = self.identity["firmwareVersion"]
+        if self.model == "WBS06" and (version == 551 or self.transport_kind == "classic"):
+            # Stock v551 BLE fails after ~40 seconds on the tested Mac. The
+            # direct Classic OTA passed on hardware (512 bytes, window 4).
+            # Other WBS06 versions use their established BLE provisioning path.
+            return dict(
+                ota=version == 551 and self.transport_kind == "classic", serverRead=False, serverWrite=False,
+                serverTransports=[], hostnameMaxBytes=0,
+                wifiWrite=False, wifiRead=False, wifiConnectionResult=False,
+                completeSetup=False, setTime=False, enrollment=False,
+                firmwareRead=False, otaDestinationRead=False,
+            )
         if self.model == "WBS05":
             # The normal probe supplies the secret on stock and YOW firmware.
             # YOW uses local users; vendor import needs a client certificate.
@@ -296,6 +332,8 @@ class ScaleSession:
         self.require_identity()
         return {
             **{key: value for key, value in self.identity.items() if key != "secret"},
+            "transport": self.transport_kind,
+            "connectionWarning": self.connection_warning(),
             "secretAvailable": bool(self.identity["secret"]),
             "capabilities": self.capabilities(),
         }
@@ -546,7 +584,12 @@ class ScaleSession:
         """Transfer a previously inspected full image; no erase/slot selection API."""
         self.require_probe()
         if not self.capabilities()["ota"]:
-            raise ProtocolError("Unqualified source firmware; OTA is unavailable")
+            raise ProtocolError(self.connection_warning() or "Unqualified source firmware; OTA is unavailable")
+        classic = self.transport_kind == "classic"
+        if self.model == "WBS06" and classic and self.transport.max_write < 512 + 4:
+            # v551 requires 512-byte payloads plus four serial framing bytes.
+            # Reject a known-incompatible transport before START can erase a slot.
+            raise ProtocolError("Classic OTA packet exceeds the RFCOMM MTU")
         self.ota_started = True  # START may erase even if its response is lost.
         progress("starting", 0, len(image))
         reply = await self.request(
@@ -555,21 +598,23 @@ class ScaleSession:
         if len(reply.payload) != 4 or reply.payload[0] != 0:
             raise ProtocolError("OTA START rejected or malformed")
         offered, batch = struct.unpack_from(">HB", reply.payload, 1)
-        maximum = self.spec.mtu if self.spec.transport == "classic" else 512
+        maximum = self.mtu if classic else 512
         if not 1 <= offered <= maximum or not 1 <= batch <= 32:
             raise ProtocolError("Invalid OTA packet/window size")
         if self.model == "WBS13" and batch != 15:
             raise ProtocolError("WBS13 OTA window differs from the reviewed BLE protocol")
-        if self.spec.transport == "classic" and offered + 4 > self.transport.max_write:
+        if self.model == "WBS06" and classic and (offered != 512 or batch != 4):
+            raise ProtocolError("WBS06 v551 OTA packet/window differs from the reviewed Classic protocol")
+        if classic and offered + 4 > self.transport.max_write:
             # The classic START reply specifies the packet size; silently reducing
             # it would change the acknowledgment window compared with the vendor app.
             raise ProtocolError("Classic OTA packet exceeds the RFCOMM MTU")
         size = min(
             offered,
-            self.transport.max_write - (4 if self.spec.transport == "classic" else 0),
+            self.transport.max_write - (4 if classic else 0),
             self.mtu,
         )
-        if self.spec.transport != "classic" and size < 20:
+        if not classic and size < 20:
             raise ProtocolError("BLE negotiated write size is too small")
         sent, packets = 0, 0
         while sent < len(image):
@@ -582,7 +627,7 @@ class ScaleSession:
                 ack = await self.wait(0x402, 60)
                 if ack.payload:
                     raise ProtocolError("Invalid OTA progress acknowledgment")
-                await asyncio.sleep(0.005 if self.spec.transport == "classic" else 0.03)
+                await asyncio.sleep(0.005 if classic else 0.03)
         # A final full batch may emit progress before the COMPLETE response.
         async with asyncio.timeout(90):
             while True:
