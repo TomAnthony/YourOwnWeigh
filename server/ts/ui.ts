@@ -171,6 +171,44 @@ export function dashboardPage(
       : '<section><p class="empty">No users have been added yet.</p><a class="button" href="/firmware">Add Your First Scale</a></section>'
   }`;
 }
+function scaleUserIds(value: unknown): number[] {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (id) => Number.isSafeInteger(id) && id > 0 && id < 2147483648,
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+function readingWeightKg(reading: Row): string {
+  if (reading.weight_value == null || reading.weight_unit == null) return "";
+  const kg = n(reading.weight_value) * 10 ** n(reading.weight_unit);
+  return Number.isFinite(kg) ? String(Number(kg.toFixed(3))) : "";
+}
+function nameScaleUserDialog(
+  reading: Row,
+  ids: number[],
+  csrf: string,
+): string {
+  return `<dialog id="name-scale-user-${e(reading.id)}"><button type="button" class="dialog-close" data-close-dialog>×</button><h2>Name Scale User</h2>
+    <p>This scale sent user ID${ids.length > 1 ? "s" : ""} <code>${e(ids.join(", "))}</code>. Creating a local user with that ID lets future readings attribute automatically.</p>
+    <form action="/readings/${e(reading.id)}/name-scale-user" method="post">${hidden(csrf)}
+      ${ids.length > 1 ? `<label>Scale User ID<select name="candidate_id">${ids.map((id) => option(id, String(id), "")).join("")}</select></label>` : `<input type="hidden" name="candidate_id" value="${e(ids[0])}">`}
+      <div class="device-grid">
+        <label>Name<input name="name" required></label>
+        <label>Short Name<input name="short_name" maxlength="3" required></label>
+        <label>Height (cm)<input name="height_cm" type="number" step="1" required></label>
+        <label>Date of Birth<input name="birth_date" type="date"></label>
+        <label>Approximate Age (if DOB unknown)<input name="age_years" type="number" step="0.1"></label>
+        <label>Sex<select name="sex">${option(0, "Male", 0)}${option(1, "Female", 0)}</select></label>
+        <label>Recognition Weight (kg)<input name="reference_weight_kg" type="number" step="any" value="${e(readingWeightKg(reading))}" required></label>
+      </div>
+      <div class="dialog-actions"><button>Save And Assign</button><button class="secondary" type="button" data-close-dialog>Cancel</button></div>
+    </form></dialog>`;
+}
 export function readingsPage(
   readings: Row[],
   users: Row[],
@@ -182,21 +220,29 @@ export function readingsPage(
   return `<section><h1>Readings</h1>${metricPicker(metrics, metric)}
     ${
       readings.length
-        ? `<div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>User</th><th>Scale</th>${metric === 1 ? "<th>Health Sync</th>" : ""}<th>Actions</th></tr></thead><tbody>
+        ? `<div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>User</th><th>Scale</th><th>Scale ID</th>${metric === 1 ? "<th>Health Sync</th>" : ""}<th>Actions</th></tr></thead><tbody>
     ${readings
-      .map(
-        (r) =>
-          `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${r.user_id ? `<a href="/users/${e(r.user_id)}/readings">${e(r.user_name)}</a>` : '<span class="badge warn">Unassigned</span>'}</td><td>${e(r.scale_label)}</td>${metric === 1 ? `<td>${healthSyncStatus(r)}</td>` : ""}<td>${
-            r.user_id
-              ? "—"
-              : `<div class="actions">${users.length ? `<form class="inline-form" action="/readings/${e(r.id)}/assign" method="post">${hidden(csrf)}<label class="hint">Assign To</label><select name="user_id" required><option value="">Choose User</option>${users.map((u) => option(u.id, u.name, "")).join("")}</select><button>Assign</button></form>` : ""}
+      .map((r) => {
+        const ids = scaleUserIds(r.candidate_ids);
+        return `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${r.user_id ? `<a href="/users/${e(r.user_id)}/readings">${e(r.user_name)}</a>` : '<span class="badge warn">Unassigned</span>'}</td><td>${e(r.scale_label)}</td><td>${ids.length ? ids.map((id) => `<code>${e(id)}</code>`).join(", ") : "—"}</td>${metric === 1 ? `<td>${healthSyncStatus(r)}</td>` : ""}<td>${
+          r.user_id
+            ? "—"
+            : `<div class="actions">${
+                ids.length
+                  ? `<button type="button" class="secondary" data-open-dialog="name-scale-user-${e(r.id)}">Name Scale User</button>`
+                  : ""
+              }${users.length ? `<form class="inline-form" action="/readings/${e(r.id)}/assign" method="post">${hidden(csrf)}<label class="hint">Assign To</label><select name="user_id" required><option value="">Choose User</option>${users.map((u) => option(u.id, u.name, "")).join("")}</select><button>Assign</button></form>` : ""}
       <form action="/readings/${e(r.id)}/delete" method="post" data-confirm="Delete this unassigned reading permanently?">${hidden(csrf)}<button class="danger">Delete</button></form></div>`
-          }</td></tr>`,
-      )
+        }</td></tr>`;
+      })
       .join("")}
     </tbody></table></div>`
         : '<p class="empty">No readings recorded yet.</p>'
-    }</section>`;
+    }
+    ${readings
+      .filter((r) => !r.user_id && scaleUserIds(r.candidate_ids).length)
+      .map((r) => nameScaleUserDialog(r, scaleUserIds(r.candidate_ids), csrf))
+      .join("")}</section>`;
 }
 export function userReadingsPage(
   user: Row,
