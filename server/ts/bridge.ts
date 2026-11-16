@@ -55,6 +55,8 @@ export const BRIDGE_COMMANDS = new Set([
   "device.read_configuration",
   "device.set_server",
   "device.connect_wifi",
+  "device.set_secondary_wifi",
+  "device.clear_secondary_wifi",
   "device.set_time",
   "firmware.generate",
   "firmware.inspect",

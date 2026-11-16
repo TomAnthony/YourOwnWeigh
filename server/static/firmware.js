@@ -37,6 +37,8 @@
     "read-configuration",
     "set-server",
     "connect-wifi",
+    "save-secondary-wifi",
+    "clear-secondary-wifi",
     "set-time",
     "import-device",
     "export-device",
@@ -165,6 +167,9 @@
     $("complete-setup").disabled ||=
       !device || unsupported || !caps.completeSetup;
     $("connect-wifi").disabled ||= !device || unsupported || !caps.wifiWrite;
+    $("secondary-wifi-form").hidden = !caps.secondaryWifi;
+    $("save-secondary-wifi").disabled ||= !device || unsupported || !caps.secondaryWifi;
+    $("clear-secondary-wifi").disabled ||= !device || unsupported || !caps.secondaryWifi;
     $("set-time").disabled ||= !device || unsupported || caps.setTime === false;
     $("read-configuration").disabled ||=
       !device || unsupported || (!caps.serverRead && !caps.wifiRead);
@@ -1100,6 +1105,16 @@
           r.wifi.ssid ? "Wi-Fi Settings Read" : "Wi-Fi Not Configured",
         );
       }
+      if (r.secondaryWifi?.available === false) {
+        errors.push(`Backup Wi-Fi: ${r.secondaryWifi.error || "Read Failed"}`);
+        $("secondary-wifi-status").textContent = "Backup Wi-Fi Read Failed";
+      } else if (r.secondaryWifi?.supported) {
+        $("secondary-wifi-ssid").value = r.secondaryWifi.ssid || "";
+        $("secondary-wifi-password").value = "";
+        $("secondary-wifi-status").textContent = r.secondaryWifi.unset
+          ? "No backup network configured"
+          : "Backup network stored · Connection not tested";
+      }
       message([...errors, ...status].join(" · "), errors.length > 0);
     });
   $("use-this-host").onclick = () => {
@@ -1163,6 +1178,30 @@
       );
     });
   };
+  $("secondary-wifi-form").onsubmit = (e) => {
+    e.preventDefault();
+    return action(async () => {
+      const password = $("secondary-wifi-password").value;
+      if (!password) throw new Error("Enter the backup network password before saving.");
+      $("secondary-wifi-password").value = "";
+      const r = await command("device.set_secondary_wifi", {
+        ssid: $("secondary-wifi-ssid").value, password,
+      });
+      if (!r.readbackMatches || !r.primaryPreserved)
+        throw new Error("Backup Wi-Fi storage was not verified.");
+      $("secondary-wifi-status").textContent =
+        `Backup network saved: ${r.ssid}. Primary network: ${r.primarySsid}. Connection not tested.`;
+      message("Backup network saved and read back. Take a normal measurement to test sync.");
+    });
+  };
+  $("clear-secondary-wifi").onclick = () => action(async () => {
+    const r = await command("device.clear_secondary_wifi");
+    if (!r.unset || !r.readbackMatches) throw new Error("Backup Wi-Fi removal was not verified.");
+    $("secondary-wifi-ssid").value = "";
+    $("secondary-wifi-password").value = "";
+    $("secondary-wifi-status").textContent = "Backup network removed. The primary network is unchanged.";
+    message("Backup network removed");
+  });
   $("set-time").onclick = () =>
     action(async () => {
       await command("device.set_time", await clock());

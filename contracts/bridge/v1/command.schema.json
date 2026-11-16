@@ -70,7 +70,9 @@
         "artifact.discard",
         "artifact.read",
         "operation.get",
-        "operation.cancel"
+        "operation.cancel",
+        "device.set_secondary_wifi",
+        "device.clear_secondary_wifi"
       ]
     },
     "parameters": {
@@ -475,7 +477,10 @@
                 "pattern": "^[a-f0-9]{64}$"
               },
               "confirmation": {
-                "enum": ["FLASH", "FLASH UNKNOWN"]
+                "enum": [
+                  "FLASH",
+                  "FLASH UNKNOWN"
+                ]
               }
             },
             "required": [
@@ -691,6 +696,53 @@
             "required": [
               "operationId"
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.set_secondary_wifi"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ssid": {
+                "type": "string"
+              },
+              "password": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ssid",
+              "password"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "device.clear_secondary_wifi"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
           }
         }
       }
