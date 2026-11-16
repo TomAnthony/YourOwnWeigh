@@ -20,9 +20,10 @@ export function firmwareWorkspace(csrf: string): string {
     <div id="bridge-online" hidden>
       <section id="connect-panel"><div class="section-heading"><h2>Connect</h2><span class="badge" id="connection-state">Disconnected</span></div>
         <p class="hint">Put your scale into setup mode with its hardware button.</p>
-        <div class="action-row"><button id="scan-ble" type="button" title="Find Body, Body+, Body Cardio and Body Smart scales using Bluetooth Low Energy.">Scan BLE</button><button id="scan-classic" type="button" title="Find WS-30 and WS-50 scales using Bluetooth Classic.">Scan Classic</button><span id="scan-status" role="status" aria-live="polite"></span></div>
+        <div class="action-row"><button id="scan-ble" type="button" title="Find Body, Body+, Body Cardio and Body Smart scales using Bluetooth Low Energy.">Scan BLE</button><button id="scan-classic" type="button" title="Find WS-30, WS-50 and Body (WBS06 v551) scales using Bluetooth Classic.">Scan Classic</button><span id="scan-status" role="status" aria-live="polite"></span></div>
         <div id="candidates" class="wide"></div>
         <dl id="device-identity" class="identity-grid"></dl>
+        <p id="connection-warning" class="notice" role="alert" hidden></p>
         <div id="unsupported-firmware" class="unsupported-firmware form-block" hidden>
           <h3>Help Identify This Scale</h3><p class="hint">This scale answered the identity probe, but its model is not yet supported for setup or updates. You can ask Withings what firmware it offers without installing anything. The device MAC and secret are used for this request and are excluded from the details you copy.</p>
           <div class="field-list"><label>Model Code From Scale Label<input id="offer-model-code" placeholder="WBS08" maxlength="6" autocapitalize="characters" spellcheck="false" required></label><label>Firmware Version To Report<input id="offer-reported-version" type="number" min="0" max="65535" required></label><label>Manufacturer ID (If Known)<input id="offer-manufacturer-id" type="number" min="0" max="2147483647" value="0"></label></div>

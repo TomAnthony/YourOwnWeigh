@@ -241,7 +241,9 @@ class Backend:
             raise RuntimeError(f"RFCOMM channel could not open ({result})")
         transport = Transport(channel, self.delegate, device, self)
         try:
-            async with asyncio.timeout(25):
+            # The first v551 RFCOMM open can take over 25 seconds on macOS.
+            # Keep receiving callbacks while pairing/connection settles.
+            async with asyncio.timeout(60):
                 while not channel.isOpen():
                     if self.receive_error is not None:
                         raise self.receive_error
@@ -253,7 +255,9 @@ class Backend:
             transport.max_write = int(channel.getMTU())
             return transport
         except BaseException:
-            await transport.disconnect()
+            # isOpen() may still be false while macOS owns a pending open.
+            # Cancel that channel too, so a timeout cannot connect later.
+            channel.closeChannel()
             raise
 
 

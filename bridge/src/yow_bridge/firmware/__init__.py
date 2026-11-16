@@ -36,6 +36,23 @@ BLOCKED = {
     "076179dd6f6fbaa6c400d1bafc5c725b404a21e68af40b63d9ac661ea3513a7f",
 }
 
+# Additional stock images are inspection-only: generation still requires the
+# recipe's original source. Key by the COMPLETE image hash, so FLASH UNKNOWN
+# cannot admit modified applications carrying an unreviewed radio payload.
+STOCK_PROFILES = {
+    ("WBS06", "670c1baf639130873ca74e5ce352541d8f7804e8faaedb7ab4e5f1dbb86b7c27"): {
+        "version": 551,
+        "runtimeVersionOffset": 0x84 + 440796 - 4,
+        "resources": {
+            1: {  # Older BCM4343A1 Bluetooth payload; Wi-Fi and bootloader match v1181.
+                "size": 17405,
+                "version": 0,
+                "sha256": "62eeee983b310807f30cada80192891e0e17b98b2cd5ae2f4e26d47fd2348a64",
+            },
+        },
+    },
+}
+
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -61,6 +78,7 @@ def inspect(data: bytes, model: str) -> dict:
         raise ValueError("Image size outside model bounds")
     if model == "WBS13":
         return inspect_wbs13(data, p, h)
+    stock = STOCK_PROFILES.get((model, h))
 
     def u(offset):
         return struct.unpack_from("<I", data, offset)[0]
@@ -86,7 +104,7 @@ def inspect(data: bytes, model: str) -> dict:
         ):
             raise ValueError(f"Section {i + 1} bounds/CRC invalid")
         if i:
-            expected = p["resources"][i - 1]
+            expected = (stock["resources"] if stock else {}).get(i - 1, p["resources"][i - 1])
             if (
                 size != expected["size"]
                 or detail != expected["version"]
@@ -112,8 +130,10 @@ def inspect(data: bytes, model: str) -> dict:
         or not u(0x88) & 1
     ):
         raise ValueError("Application flash bounds/reset vector invalid")
+    runtime_offset = stock["runtimeVersionOffset"] if stock else p["expansionAt"] - 4
     if (
-        u(p["expansionAt"] - 4) != p.get("runtimeVersion", version)
+        u(runtime_offset) != (stock["version"] if stock else p.get("runtimeVersion", version))
+        or (stock is not None and version != stock["version"])
         or u(boot[1] + boot[2] - 4) != p["bootloader"]
     ):
         raise ValueError("Runtime or bootloader version differs")
@@ -125,7 +145,7 @@ def inspect(data: bytes, model: str) -> dict:
         "known_release"
         if h == p["outputSha256"]
         else "known_stock"
-        if h == p["sourceSha256"]
+        if h == p["sourceSha256"] or stock is not None
         else "custom"
     )
     return dict(

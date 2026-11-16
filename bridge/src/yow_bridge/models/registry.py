@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ModelSpec:
-    transport: str  # "ble" | "classic"
+    transport: str  # Default scan transport: "ble" | "classic".
     name: re.Pattern  # matched against the probe's advertised name via .search
     bootloader: int
     hardware: int | None  # required hardwareVersion; None = unchecked (Classic)
@@ -48,7 +48,7 @@ MODELS: dict[str, ModelSpec] = {
         mtu=20,
         export_format="YOW-BLE-device-v1",
         owner_firmware=(123, 124, 125, 126, 127),
-        known_firmware=(1181, 123, 124, 125, 126, 127),
+        known_firmware=(551, 1181, 123, 124, 125, 126, 127),
         hostname_limit=48,
         display="Body",
     ),
@@ -114,6 +114,8 @@ def spec(model: str) -> ModelSpec:
 def classic_model_for(bootloader: int, name: str) -> str | None:
     """Classic model whose probe identity matches, for scan-time normalization."""
     for model, s in MODELS.items():
-        if s.transport == "classic" and s.bootloader == bootloader and s.name.search(name):
+        # WBS06 is dual-mode. Its stock v551 update uses Classic; the session
+        # checks the hardware and firmware before enabling that route.
+        if (s.transport == "classic" or model == "WBS06") and s.bootloader == bootloader and s.name.search(name):
             return model
     return None
