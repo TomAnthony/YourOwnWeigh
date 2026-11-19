@@ -452,8 +452,10 @@ class ScaleSession:
             return dict(supported=False)
         reply = await self.request(0x104)
         # WBS13 v1311 and WBS02 v1721 (also retained by their owner patches)
-        # send no payload when the stored Wi-Fi DB item is absent.
-        if self.model in ("WBS13", "WBS02") and not reply.payload:
+        # send no payload when the stored Wi-Fi DB item is absent. A WBS06
+        # on v127 that had lost its Wi-Fi settings answered without a 0x104
+        # value as well, and synced again once Wi-Fi was rewritten.
+        if self.model in ("WBS13", "WBS02", "WBS06") and not reply.payload:
             return dict(ssid="", unset=True, supported=True, observedAt=timestamp())
         data = reply.value(0x104)
         if not data or len(data) < data[0] + 2:
