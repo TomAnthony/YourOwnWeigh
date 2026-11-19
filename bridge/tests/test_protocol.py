@@ -565,13 +565,31 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(ProtocolError):
                         await transport.session.read_wifi()
 
-    async def test_empty_wifi_reply_is_not_accepted_for_other_models(self):
-        for model in ("WBS06", "WBS03"):
-            with self.subTest(model=model):
-                transport = MockTransport(model)
-                await transport.session.probe()
+    async def test_wbs06_unconfigured_wifi_has_an_empty_settings_reply(self):
+        transport = MockTransport("WBS06")
+        await transport.session.probe()
+        result = await transport.session.read_wifi()
+        self.assertEqual(result["ssid"], "")
+        self.assertTrue(result["unset"])
+        self.assertTrue(result["supported"])
+
+    async def test_wbs06_malformed_wifi_reply_is_still_rejected(self):
+        transport = MockTransport("WBS06")
+        await transport.session.probe()
+        for payload in (tlv(0x104), tlv(0x105, b"\x00"), tlv(0x104, b"\x07Test AP")):
+            with self.subTest(payload=payload):
+                async def reply_wifi(packet, payload=payload):
+                    transport.reply(encode(0x104, payload))
+
+                transport.write = reply_wifi
                 with self.assertRaises(ProtocolError):
                     await transport.session.read_wifi()
+
+    async def test_empty_wifi_reply_is_not_accepted_for_other_models(self):
+        transport = MockTransport("WBS03")
+        await transport.session.probe()
+        with self.assertRaises(ProtocolError):
+            await transport.session.read_wifi()
 
     async def test_body_smart_without_secret_is_identified_without_followup_commands(self):
         transport = MockTransport("WBS06")
