@@ -52,6 +52,26 @@ request scheme and per-client login limits). The image already sets
 `YOW_TRUST_PROXY=1`, so it honours these headers from loopback and private
 (LAN/Docker) addresses only.
 
+### TLS certificate: keep the chain small
+
+An HTTPS scale only accepts handshake records of up to 4096 bytes. A large
+certificate chain makes it abort the handshake with a `record_overflow` alert,
+and no request ever reaches the server. Use an ECDSA (P-256) certificate. An
+RSA-2048 chain also stays under the limit, but RSA-4096 (or a long chain) does
+not.
+
+Traefik's ACME resolver issues RSA-4096 by default, so set the key type on the
+resolver used for this router:
+
+```yaml
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      keyType: EC256
+```
+
+Caddy uses ECDSA by default. With certbot, pass `--key-type ecdsa`.
+
 ### Proxy on another machine
 
 The compose publishes the port on the host's loopback only, so the proxy must
